@@ -1,0 +1,48 @@
+name: Build TiPA
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Theos
+        uses: actions/checkout@v4
+        with:
+          repository: theos/theos
+          path: theos
+          submodules: recursive
+
+      - name: Cache Theos SDKs
+        id: cache-sdks
+        uses: actions/cache@v4
+        with:
+          path: theos/sdks
+          key: theos-sdks-16.5
+
+      - name: Download SDK
+        if: steps.cache-sdks.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p theos/sdks
+          curl -fsSL -o sdk.tar.xz \
+            "https://github.com/theos/sdks/releases/download/2024-09-08/iPhoneOS16.5.sdk.tar.xz"
+          tar -xJf sdk.tar.xz -C theos/sdks
+          rm sdk.tar.xz
+
+      - name: Build
+        run: |
+          export THEOS=${{ github.workspace }}/theos
+          make package FINALPACKAGE=1 ARCHS=arm64
+
+      - name: Upload TiPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: PastaWare
+          path: packages/*.tipa
