@@ -1,0 +1,13 @@
+// Обновление PhotonPlayer (Ники, ХП, Команды)
+// Файл: esp/drawing_view/esp.mm
+// Строки: 417, 658, 688, 833, 1177, 1206, 1241, 1268
+
+// Было: player + 0x158
+// Стало: player + 0x160
+mach_vm_address_t photon = Read<mach_vm_address_t>(player + 0x160, task);
+
+// Чтение свойств игрока через Photon
+mach_vm_address_t props = Read<mach_vm_address_t>(photon + 0x38, task);
+if (props > 0x1000000) {
+    // Тут уже читаются конкретные данные (HP, Team и т.д.)
+}
