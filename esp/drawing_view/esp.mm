@@ -259,9 +259,8 @@ struct ESPBoxData {
     self.triggerbotShooting = NO;
     self.triggerbotLastShotTime = 0;
 
-    self.menuView = [[MenuView alloc] initWithFrame:CGRectMake(0, 0, 270, 280)];
-    self.menuView.center = CGPointMake(frame.size.width / 2, frame.size.height / 2);
-    [self addSubview:self.menuView];
+    // MenuView disabled — controlled from RootViewController
+    self.menuView = nil;
 
     [[NSNotificationCenter defaultCenter]
         addObserver:self
@@ -377,7 +376,54 @@ struct ESPBoxData {
         mach_vm_address_t dict28         = 0;
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
-        typeInfo = Read<mach_vm_address_t>(unity_base + 164201496, so2_task);
+        // ── TypeInfo: try cached offset, then scan ±2MB for current game version ──
+        {
+            static mach_vm_address_t s_ti_offset = 164201496; // known offset
+
+            auto validateChain = [&](mach_vm_address_t ti) -> bool {
+                if (ti < 0x1000000) return false;
+                mach_vm_address_t pti = Read<mach_vm_address_t>(ti + 0x58, so2_task);
+                if (pti < 0x1000000) return false;
+                mach_vm_address_t sf = Read<mach_vm_address_t>(pti + 0xB8, so2_task);
+                if (!sf || sf < 0x1000000) sf = Read<mach_vm_address_t>(pti + 0xB0, so2_task);
+                if (!sf || sf < 0x1000000) return false;
+                mach_vm_address_t pm = Read<mach_vm_address_t>(sf + 0x0, so2_task);
+                if (pm < 0x1000000) return false;
+                return true;
+            };
+
+            // 1. Try cached offset first (fast path)
+            typeInfo = Read<mach_vm_address_t>(unity_base + s_ti_offset, so2_task);
+            if (!validateChain(typeInfo)) {
+                typeInfo = 0;
+                // 2. Bulk-scan ±2MB around cached offset
+                const mach_vm_size_t RANGE  = 2 * 1024 * 1024;
+                const mach_vm_size_t CHUNK  = 65536;
+                mach_vm_address_t scan_base = (unity_base + s_ti_offset > RANGE)
+                                              ? unity_base + s_ti_offset - RANGE
+                                              : unity_base;
+                mach_vm_size_t scan_size = RANGE * 2;
+                uint8_t *buf = (uint8_t*)malloc(CHUNK);
+                if (buf) {
+                    for (mach_vm_size_t off = 0; off < scan_size && !typeInfo; off += CHUNK) {
+                        mach_vm_size_t chunk = (off + CHUNK > scan_size) ? (scan_size - off) : CHUNK;
+                        mach_vm_size_t outs  = 0;
+                        if (mach_vm_read_overwrite(so2_task, scan_base + off, chunk,
+                                                   (mach_vm_address_t)buf, &outs) != KERN_SUCCESS) continue;
+                        for (mach_vm_size_t i = 0; i + 8 <= outs; i += 8) {
+                            mach_vm_address_t cand = *(mach_vm_address_t*)(buf + i);
+                            if (cand < 0x100000000ULL || cand > 0x300000000000ULL) continue;
+                            if (validateChain(cand)) {
+                                s_ti_offset = (scan_base + off + i) - unity_base;
+                                typeInfo    = cand;
+                                break;
+                            }
+                        }
+                    }
+                    free(buf);
+                }
+            }
+        }
         if (!typeInfo || typeInfo < 0x1000000) goto CLEAR_BOXES;
 
         parentTypeInfo = Read<mach_vm_address_t>(typeInfo + 0x58, so2_task);

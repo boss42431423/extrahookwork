@@ -270,30 +270,47 @@ static UIView *Spacer(CGFloat h) {
     sideDiv.backgroundColor = KSep();
     [clip addSubview:sideDiv];
 
-    NSArray *icons  = @[@"👁", @"🎯", @"🏃", @"⚡", @"⚙️"];
-    NSArray *labels = @[@"ESP", @"AIM", @"MOVE", @"MISC", @"CFG"];
+    // SF Symbol names + labels for each tab
+    NSArray *sfNames = @[@"eye.fill", @"scope", @"figure.run", @"bolt.fill", @"gearshape.fill"];
+    NSArray *labels  = @[@"ESP",      @"AIM",   @"MOVE",       @"MISC",      @"CFG"];
     NSMutableArray *btns = [NSMutableArray new];
-    CGFloat tabH = (ph - 44) / (CGFloat)icons.count;
+    CGFloat tabH = (ph - 44) / (CGFloat)sfNames.count;
 
-    for (NSInteger i = 0; i < (NSInteger)icons.count; i++) {
+    for (NSInteger i = 0; i < (NSInteger)sfNames.count; i++) {
         TabButton *btn = [TabButton buttonWithType:UIButtonTypeCustom];
-        btn.frame   = CGRectMake(0, tabH * i, sw, tabH);
-        btn.tabIdx  = i;
-        btn.tag     = i;
+        btn.frame  = CGRectMake(0, tabH * i, sw, tabH);
+        btn.tabIdx = i;
+        btn.tag    = i;
 
-        UILabel *ic = [[UILabel alloc] initWithFrame:CGRectMake(0, 4, sw, tabH * 0.52)];
-        ic.text          = icons[i];
-        ic.font          = [UIFont systemFontOfSize:19];
-        ic.textAlignment = NSTextAlignmentCenter;
-        [btn addSubview:ic];
+        // SF Symbol icon
+        UIImageView *iv = [[UIImageView alloc] init];
+        iv.translatesAutoresizingMaskIntoConstraints = NO;
+        UIImage *sym = [UIImage systemImageNamed:sfNames[i]
+                               withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:18 weight:UIImageSymbolWeightRegular]];
+        iv.image               = sym;
+        iv.tintColor           = KSub();
+        iv.contentMode         = UIViewContentModeScaleAspectFit;
+        iv.tag                 = 501;
+        [btn addSubview:iv];
 
-        UILabel *nm = [[UILabel alloc] initWithFrame:CGRectMake(0, tabH * 0.54, sw, tabH * 0.38)];
+        // Tab label
+        UILabel *nm = [UILabel new];
+        nm.translatesAutoresizingMaskIntoConstraints = NO;
         nm.text          = labels[i];
-        nm.font          = [UIFont systemFontOfSize:7.5 weight:UIFontWeightMedium];
+        nm.font          = [UIFont systemFontOfSize:8 weight:UIFontWeightMedium];
         nm.textColor     = KSub();
         nm.textAlignment = NSTextAlignmentCenter;
         nm.tag           = 500;
         [btn addSubview:nm];
+
+        [NSLayoutConstraint activateConstraints:@[
+            [iv.centerXAnchor constraintEqualToAnchor:btn.centerXAnchor],
+            [iv.topAnchor     constraintEqualToAnchor:btn.topAnchor constant:tabH * 0.18],
+            [iv.widthAnchor   constraintEqualToConstant:22],
+            [iv.heightAnchor  constraintEqualToConstant:22],
+            [nm.centerXAnchor constraintEqualToAnchor:btn.centerXAnchor],
+            [nm.topAnchor     constraintEqualToAnchor:iv.bottomAnchor constant:4],
+        ]];
 
         [btn addTarget:self action:@selector(tabTap:) forControlEvents:UIControlEventTouchUpInside];
         [side addSubview:btn];
@@ -372,9 +389,11 @@ static UIView *Spacer(CGFloat h) {
             [b addSubview:bar];
         }
         bar.hidden        = !sel;
-        b.backgroundColor = sel ? [UIColor colorWithRed:0.62 green:0.12 blue:0.95 alpha:0.10] : UIColor.clearColor;
+        b.backgroundColor = sel ? [UIColor colorWithRed:0.62 green:0.12 blue:0.95 alpha:0.12] : UIColor.clearColor;
         UILabel *nm = (UILabel *)[b viewWithTag:500];
         if (nm) nm.textColor = sel ? KAccent2() : KSub();
+        UIImageView *iv = (UIImageView *)[b viewWithTag:501];
+        if (iv) iv.tintColor = sel ? KAccent2() : KSub();
     }
 }
 
