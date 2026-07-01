@@ -25,11 +25,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: theos/sdks
-          key: theos-sdks-16.5-v2
+          key: theos-sdks-16.5-v3
 
       - name: Download SDKs
         if: steps.cache-sdks.outputs.cache-hit != 'true'
         run: |
+          rm -rf theos/sdks
           git clone --depth=1 https://github.com/theos/sdks.git theos/sdks
 
       - name: Build
