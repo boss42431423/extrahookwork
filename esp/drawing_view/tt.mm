@@ -6,7 +6,6 @@
 #include <vector>
 #include <map>
 #import "../../sources/UIView+SecureView.h"
-#include "skins_data.h"
 
 extern volatile bool esp_screenshot_safe;
 
@@ -1068,11 +1067,6 @@ static __attribute__((unused)) std::string readUnityString(uintptr_t str_ptr, ta
     uintptr_t inventoryManager = Read<uintptr_t>(staticFields, c_task); 
     if (!inventoryManager) return;
     
-    // Auto-generated: initialize all skins list from embedded data
-    if (_allSkinsList.empty()) {
-        _allSkinsList = getAllSkins();
-    }
-
     if (_skinContainer.hidden) return;
 
     _ownedSkinsInfo.clear();
