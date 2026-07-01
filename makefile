@@ -23,8 +23,8 @@ sources/KIF/UITouch-KIFAdditions.m_CFLAGS := $(filter-out -mllvm -enable-fco,$(P
 $(APPLICATION_NAME)_CFLAGS += -fobjc-arc -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-value -Wno-module-import-in-extern-c -Wunused-but-set-variable
 $(APPLICATION_NAME)_OBJCCFLAGS += -fobjc-arc
 
-$(APPLICATION_NAME)_CXXFLAGS += -std=c++17
-$(APPLICATION_NAME)_OBJCXXFLAGS += -std=c++17
+$(APPLICATION_NAME)_CXXFLAGS += -std=c++17 -Wno-vla-cxx-extension
+$(APPLICATION_NAME)_OBJCXXFLAGS += -std=c++17 -Wno-vla-cxx-extension
 
 $(APPLICATION_NAME)_CFLAGS += -Iheaders
 $(APPLICATION_NAME)_CFLAGS += -Isources
