@@ -120,44 +120,47 @@
     [self updateState];
 }
 
-- (void)updateState {
-    BOOL active = IsHUDEnabled();
-
+- (void)applyVisualState:(BOOL)active {
     if (active) {
         _statusDot.backgroundColor = [UIColor colorWithRed:0.20f green:0.85f blue:0.40f alpha:1.0f];
         _statusLbl.textColor       = [UIColor colorWithRed:0.20f green:0.85f blue:0.40f alpha:1.0f];
         _statusLbl.text            = @"ACTIVE";
         _mainBtn.backgroundColor   = [UIColor colorWithRed:0.78f green:0.10f blue:0.22f alpha:1.0f];
-        [_mainBtn setTitle:@"◼  STOP" forState:UIControlStateNormal];
+        [_mainBtn setTitle:@"\u25fc  STOP" forState:UIControlStateNormal];
     } else {
         _statusDot.backgroundColor = [UIColor colorWithRed:0.35f green:0.35f blue:0.42f alpha:1.0f];
         _statusLbl.textColor       = [UIColor colorWithRed:0.48f green:0.48f blue:0.55f alpha:1.0f];
         _statusLbl.text            = @"INACTIVE";
         _mainBtn.backgroundColor   = [UIColor colorWithRed:0.62f green:0.12f blue:0.95f alpha:1.0f];
-        [_mainBtn setTitle:@"▶  INJECT" forState:UIControlStateNormal];
+        [_mainBtn setTitle:@"\u25b6  INJECT" forState:UIControlStateNormal];
     }
-
-    // Centre status row contents
+    // Centre status row
     UIView  *row = _statusDot.superview;
     CGFloat  rw  = row ? row.frame.size.width : 280;
-    CGSize   ts  = [_statusLbl.text
-                    sizeWithAttributes:@{NSFontAttributeName: _statusLbl.font}];
+    CGSize   ts  = [_statusLbl.text sizeWithAttributes:@{NSFontAttributeName: _statusLbl.font}];
     CGFloat total  = 8 + 4 + ts.width;
     CGFloat startX = (rw - total) * 0.5f;
-    _statusDot.frame = CGRectMake(startX,      7, 8,          8);
-    _statusLbl.frame = CGRectMake(startX + 12, 0, ts.width + 4, 22);
+    _statusDot.frame = CGRectMake(startX,      7, 8,           8);
+    _statusLbl.frame = CGRectMake(startX + 12, 0, ts.width+4, 22);
+}
+
+- (void)updateState {
+    [self applyVisualState:IsHUDEnabled()];
 }
 
 - (void)reloadMainButtonState {
-    [self updateState];
+    [self applyVisualState:IsHUDEnabled()];
 }
 
 - (void)tapMain {
     UIImpactFeedbackGenerator *hap =
         [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
     [hap impactOccurred];
-    SetHUDEnabled(!IsHUDEnabled());
-    [self updateState];
+    // Read current state, flip it, apply UI immediately
+    // (IsHUDEnabled reads PID file which may lag — don't re-read after set)
+    BOOL nowActive = !IsHUDEnabled();
+    SetHUDEnabled(nowActive);
+    [self applyVisualState:nowActive];
 }
 
 @end

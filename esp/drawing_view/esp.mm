@@ -338,11 +338,16 @@ struct ESPBoxData {
 }
 
 - (void)update_data {
-    if (!esp_box_enabled && !esp_box_3d && !esp_box_corner && !esp_line_enabled && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled) {
+    // NOTE: no early return here — hacks (inf ammo, wallshot, etc.) must run
+    // even when all ESP drawing toggles are off.
+    BOOL anyESP = esp_box_enabled || esp_box_3d || esp_box_corner || esp_line_enabled
+               || esp_name_enabled || esp_health_enabled || esp_health_bar_enabled
+               || esp_weapon_enabled;
+    if (!anyESP) {
         [self clearAllBoxes];
         self.watermarkLabel.text = @(OBF("extrahook"));
         [self.watermarkLabel sizeToFit];
-        return;
+        // fall through — don't return, so hacks still execute
     }
 
     static pid_t cached_so2_pid = 0;

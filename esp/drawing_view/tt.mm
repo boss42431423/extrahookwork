@@ -33,12 +33,12 @@ extern volatile bool esp_screenshot_safe;
         _value = current;
 
         _track = [[UIView alloc] initWithFrame:CGRectMake(0, frame.size.height/2 - 1, frame.size.width, 2)];
-        _track.backgroundColor = [UIColor colorWithRed:0.0 green:0.7 blue:0.2 alpha:0.5];
+        _track.backgroundColor = [UIColor colorWithRed:0.40f green:0.05f blue:0.70f alpha:0.6f];
         _track.userInteractionEnabled = NO;
         [self addSubview:_track];
 
         _thumb = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 12, 12)];
-        _thumb.backgroundColor = [UIColor colorWithRed:0.0 green:0.9 blue:0.3 alpha:1.0];
+        _thumb.backgroundColor = [UIColor colorWithRed:0.78f green:0.30f blue:1.00f alpha:1.0f];
         _thumb.layer.cornerRadius = 6;
         _thumb.userInteractionEnabled = NO;
         [self addSubview:_thumb];
@@ -102,7 +102,7 @@ extern volatile bool esp_screenshot_safe;
         _items = items;
         _selectedIndex = current;
         _labels = [NSMutableArray new];
-        self.backgroundColor = [UIColor colorWithRed:0.0 green:0.25 blue:0.05 alpha:1.0];
+        self.backgroundColor = [UIColor colorWithRed:0.12f green:0.12f blue:0.16f alpha:1.0f];
         self.layer.cornerRadius = 6;
         self.clipsToBounds = YES;
         
@@ -113,7 +113,7 @@ extern volatile bool esp_screenshot_safe;
             l.textAlignment = NSTextAlignmentCenter;
             l.font = [UIFont systemFontOfSize:10 weight:(i == current ? UIFontWeightBold : UIFontWeightRegular)];
             l.textColor = (i == current ? [UIColor whiteColor] : [UIColor colorWithWhite:0.6 alpha:1]);
-            l.backgroundColor = (i == current ? [UIColor colorWithRed:0.0 green:0.6 blue:0.15 alpha:1.0] : [UIColor clearColor]);
+            l.backgroundColor = (i == current ? [UIColor colorWithRed:0.62f green:0.12f blue:0.95f alpha:1.0f] : [UIColor clearColor]);
             [self addSubview:l];
             [_labels addObject:l];
         }
@@ -131,7 +131,7 @@ extern volatile bool esp_screenshot_safe;
         UILabel *l = _labels[i];
         BOOL sel = (i == idx);
         l.textColor = sel ? [UIColor whiteColor] : [UIColor colorWithWhite:0.6 alpha:1];
-        l.backgroundColor = sel ? [UIColor colorWithRed:0.0 green:0.6 blue:0.15 alpha:1.0] : [UIColor clearColor];
+        l.backgroundColor = sel ? [UIColor colorWithRed:0.62f green:0.12f blue:0.95f alpha:1.0f] : [UIColor clearColor];
         l.font = [UIFont systemFontOfSize:10 weight:(sel ? UIFontWeightBold : UIFontWeightRegular)];
     }
 }
@@ -146,7 +146,7 @@ extern volatile bool esp_screenshot_safe;
         UILabel *l = _labels[i];
         BOOL sel = (i == idx);
         l.textColor = sel ? [UIColor whiteColor] : [UIColor colorWithWhite:0.6 alpha:1];
-        l.backgroundColor = sel ? [UIColor colorWithRed:0.0 green:0.6 blue:0.15 alpha:1.0] : [UIColor clearColor];
+        l.backgroundColor = sel ? [UIColor colorWithRed:0.62f green:0.12f blue:0.95f alpha:1.0f] : [UIColor clearColor];
         l.font = [UIFont systemFontOfSize:10 weight:(sel ? UIFontWeightBold : UIFontWeightRegular)];
     }
     if (self.valueChanged) self.valueChanged(idx);
@@ -287,21 +287,28 @@ extern volatile bool esp_screenshot_safe;
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
-        self.backgroundColor = [UIColor clearColor];
+        // Dark opaque background — no blur so colours render correctly
+        self.backgroundColor = [UIColor colorWithRed:0.09f green:0.09f blue:0.12f alpha:0.97f];
         self.layer.cornerRadius = 12.0;
         self.clipsToBounds = YES;
         self.userInteractionEnabled = YES;
 
-        UIBlurEffect *blur = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
-        _blurView = [[UIVisualEffectView alloc] initWithEffect:blur];
-        _blurView.frame = self.bounds;
-        _blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        // Purple top stripe (2px)
+        UIView *topStripe = [[UIView alloc] initWithFrame:CGRectMake(0, 0, frame.size.width, 2)];
+        topStripe.backgroundColor = [UIColor colorWithRed:0.62f green:0.12f blue:0.95f alpha:1.0f];
+        topStripe.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        [self addSubview:topStripe];
+
+        // Keep _blurView non-nil so ivar is valid (zero size, hidden)
+        _blurView = [[UIVisualEffectView alloc] initWithEffect:nil];
+        _blurView.frame = CGRectZero;
+        _blurView.alpha = 0;
         _blurView.userInteractionEnabled = NO;
         [self addSubview:_blurView];
 
         CGFloat headerHeight = 35.0;
         _headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, frame.size.width, headerHeight)];
-        _headerView.backgroundColor = [UIColor colorWithRed:0.0 green:0.30 blue:0.08 alpha:0.90];
+        _headerView.backgroundColor = [UIColor colorWithRed:0.11f green:0.11f blue:0.15f alpha:0.97f];
         _headerView.userInteractionEnabled = YES;
         [self addSubview:_headerView];
 
@@ -317,7 +324,7 @@ extern volatile bool esp_screenshot_safe;
         [_headerView addSubview:arrowContainer];
 
         _arrowLayer = [CAShapeLayer layer];
-        _arrowLayer.strokeColor = [UIColor colorWithRed:0.0 green:0.9 blue:0.3 alpha:1.0].CGColor;
+        _arrowLayer.strokeColor = [UIColor colorWithRed:0.78f green:0.30f blue:1.00f alpha:1.0f].CGColor;
         _arrowLayer.fillColor = [UIColor clearColor].CGColor;
         _arrowLayer.lineWidth = 2.0f;
         _arrowLayer.lineCap = kCALineCapRound;
@@ -340,9 +347,15 @@ extern volatile bool esp_screenshot_safe;
         CGFloat leftBarWidth = 70.0;
         
         _leftBarView = [[UIView alloc] initWithFrame:CGRectMake(0, headerHeight, leftBarWidth, frame.size.height - headerHeight)];
-        _leftBarView.backgroundColor = [UIColor colorWithRed:0.0 green:0.5 blue:0.1 alpha:0.25];
+        _leftBarView.backgroundColor = [UIColor colorWithRed:0.12f green:0.12f blue:0.16f alpha:1.0f];
         _leftBarView.userInteractionEnabled = YES;
         [self addSubview:_leftBarView];
+
+        // Divider between sidebar and content
+        UIView *sideDivider = [[UIView alloc] initWithFrame:CGRectMake(leftBarWidth, headerHeight, 0.5f, frame.size.height - headerHeight)];
+        sideDivider.backgroundColor = [UIColor colorWithRed:0.22f green:0.22f blue:0.28f alpha:1.0f];
+        sideDivider.autoresizingMask = UIViewAutoresizingFlexibleHeight;
+        [self addSubview:sideDivider];
         
         NSArray *tabs = @[@(OBF("AIM")), @(OBF("VISUAL")), @(OBF("PLAYER")), @(OBF("CONFIG")), @(OBF("SKINS")), @(OBF("OTHER"))];
         _tabLabels = [NSMutableArray new];
@@ -350,8 +363,15 @@ extern volatile bool esp_screenshot_safe;
             UILabel *tl = [[UILabel alloc] initWithFrame:CGRectMake(0, i * 40, leftBarWidth, 40)];
             tl.text = tabs[i];
             tl.textAlignment = NSTextAlignmentCenter;
+            tl.layer.cornerRadius = 4;
+            tl.layer.masksToBounds = YES;
             tl.font = [UIFont systemFontOfSize:11 weight:(i==0 ? UIFontWeightBold : UIFontWeightRegular)];
-            tl.textColor = (i==0 ? [UIColor whiteColor] : [UIColor colorWithWhite:0.7 alpha:1]);
+            tl.textColor = (i==0
+                ? [UIColor colorWithRed:0.78f green:0.30f blue:1.00f alpha:1.0f]
+                : [UIColor colorWithWhite:0.55f alpha:1.0f]);
+            tl.backgroundColor = (i==0
+                ? [UIColor colorWithRed:0.62f green:0.12f blue:0.95f alpha:0.15f]
+                : UIColor.clearColor);
             tl.userInteractionEnabled = YES;
             [_leftBarView addSubview:tl];
             [_tabLabels addObject:tl];
@@ -579,7 +599,7 @@ extern volatile bool esp_screenshot_safe;
         createLbl.textAlignment = NSTextAlignmentCenter;
         createLbl.font = [UIFont boldSystemFontOfSize:12];
         createLbl.textColor = [UIColor whiteColor];
-        createLbl.backgroundColor = [UIColor colorWithRed:0.0 green:0.55 blue:0.15 alpha:1.0];
+        createLbl.backgroundColor = [UIColor colorWithRed:0.62f green:0.12f blue:0.95f alpha:1.0f];
         createLbl.layer.cornerRadius = 4;
         createLbl.layer.masksToBounds = YES;
         createLbl.userInteractionEnabled = YES;
@@ -603,7 +623,7 @@ extern volatile bool esp_screenshot_safe;
         loadLbl.textAlignment = NSTextAlignmentCenter;
         loadLbl.font = [UIFont boldSystemFontOfSize:12];
         loadLbl.textColor = [UIColor whiteColor];
-        loadLbl.backgroundColor = [UIColor colorWithRed:0.0 green:0.45 blue:0.12 alpha:1.0];
+        loadLbl.backgroundColor = [UIColor colorWithRed:0.48f green:0.08f blue:0.75f alpha:1.0f];
         loadLbl.layer.cornerRadius = 4;
         loadLbl.layer.masksToBounds = YES;
         loadLbl.userInteractionEnabled = YES;
@@ -656,7 +676,7 @@ extern volatile bool esp_screenshot_safe;
 
     UIView *checkbox = [[UIView alloc] initWithFrame:CGRectMake(_innerContent.bounds.size.width - 37, 4, 22, 22)];
     checkbox.layer.borderWidth = 2.0;
-    checkbox.layer.borderColor = [UIColor colorWithRed:0.0 green:0.8 blue:0.2 alpha:1.0].CGColor;
+    checkbox.layer.borderColor = [UIColor colorWithRed:0.62f green:0.12f blue:0.95f alpha:1.0f].CGColor;
     checkbox.layer.cornerRadius = 4.0;
     checkbox.userInteractionEnabled = NO;
     [row addSubview:checkbox];
@@ -680,7 +700,7 @@ extern volatile bool esp_screenshot_safe;
 
     CAShapeLayer *layer = [CAShapeLayer layer];
     layer.path = path.CGPath;
-    layer.strokeColor = [UIColor colorWithRed:0.0 green:0.85 blue:0.25 alpha:0.9].CGColor;
+    layer.strokeColor = [UIColor colorWithRed:0.78f green:0.30f blue:1.00f alpha:1.0f].CGColor;
     layer.fillColor = [UIColor clearColor].CGColor;
     layer.lineWidth = 2.5;
     layer.lineCap = kCALineCapRound;
@@ -996,7 +1016,7 @@ extern volatile bool esp_screenshot_safe;
         lbl.text = [NSString stringWithFormat:@"  %@", name];
         lbl.font = [UIFont systemFontOfSize:14];
         lbl.textColor = [UIColor whiteColor];
-        lbl.backgroundColor = [name isEqualToString:esp_selected_config] ? [UIColor colorWithRed:0.0 green:0.55 blue:0.15 alpha:0.8] : [UIColor colorWithRed:0.0 green:0.3 blue:0.08 alpha:0.4];
+        lbl.backgroundColor = [name isEqualToString:esp_selected_config] ? [UIColor colorWithRed:0.62f green:0.12f blue:0.95f alpha:0.75f] : [UIColor colorWithRed:0.20f green:0.00f blue:0.35f alpha:0.35f];
         lbl.layer.cornerRadius = 4;
         lbl.layer.masksToBounds = YES;
         lbl.userInteractionEnabled = YES;
@@ -1359,10 +1379,12 @@ static __attribute__((unused)) std::string readUnityString(uintptr_t str_ptr, ta
         UILabel *l = _tabLabels[i];
         if (i == tag) {
             l.font = [UIFont systemFontOfSize:11 weight:UIFontWeightBold];
-            l.textColor = [UIColor whiteColor];
+            l.textColor = [UIColor colorWithRed:0.78f green:0.30f blue:1.00f alpha:1.0f];
+            l.backgroundColor = [UIColor colorWithRed:0.62f green:0.12f blue:0.95f alpha:0.15f];
         } else {
             l.font = [UIFont systemFontOfSize:11 weight:UIFontWeightRegular];
-            l.textColor = [UIColor colorWithWhite:0.7 alpha:1];
+            l.textColor = [UIColor colorWithWhite:0.55f alpha:1.0f];
+            l.backgroundColor = UIColor.clearColor;
         }
     }
     _aimContainer.hidden = (tag != 0);
