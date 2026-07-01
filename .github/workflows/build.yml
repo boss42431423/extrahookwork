@@ -1,0 +1,62 @@
+name: Build TiPA
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Theos
+        uses: actions/checkout@v4
+        with:
+          repository: theos/theos
+          path: theos
+          submodules: recursive
+
+      - name: Cache Theos SDKs
+        id: cache-sdks
+        uses: actions/cache@v4
+        with:
+          path: theos/sdks
+          key: theos-sdks-16.5-v3
+
+      - name: Download SDKs
+        if: steps.cache-sdks.outputs.cache-hit != 'true'
+        run: |
+          rm -rf theos/sdks
+          git clone --depth=1 https://github.com/theos/sdks.git theos/sdks
+
+      - name: Install ldid
+        run: |
+          brew install ldid
+
+      - name: Patch pid.mm
+        run: |
+          python3 - <<'PYEOF'
+          with open('esp/helpers/pid.mm', 'r') as f:
+              src = f.read()
+          src = src.replace(
+              'pid_t pids[count];\n    proc_listallpids(pids, sizeof(pids));',
+              'pid_t *pids = (pid_t *)malloc(count * sizeof(pid_t));\n    if (!pids) return -1;\n    proc_listallpids(pids, count * sizeof(pid_t));'
+          )
+          with open('esp/helpers/pid.mm', 'w') as f:
+              f.write(src)
+          print("Patched ok")
+          PYEOF
+
+      - name: Build
+        run: |
+          make THEOS=${{ github.workspace }}/theos package FINALPACKAGE=1 ARCHS=arm64
+
+      - name: Upload TiPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: extrahook
+          path: packages/*.tipa
