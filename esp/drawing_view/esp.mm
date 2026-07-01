@@ -5,7 +5,7 @@
 #import <objc/runtime.h>
 #import <sys/sysctl.h>
 #include "obfusheader.h"
-#import "../../sources/UIView+SecureView.h"
+#import "UIView+SecureView.h"
 #include <atomic>
 // Rifles
 #import "assets/rifles/akr.h"
