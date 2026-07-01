@@ -52,4 +52,5 @@ extern volatile float viewmodel_y;
 extern volatile float viewmodel_z;
 
 extern volatile bool esp_auto_load;
+extern volatile bool esp_screenshot_safe;
 extern NSString *esp_selected_config;
