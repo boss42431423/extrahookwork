@@ -1,0 +1,33 @@
+name: Build extrahook
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Theos
+        uses: theos/theos-action@v1
+        with:
+          theos-version: master
+          cache: true
+          sdk-version: '16.5'
+
+      - name: Build .tipa
+        run: make package FINALPACKAGE=1 DEBUG=0
+        env:
+          THEOS: ${{ env.THEOS }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: extrahook
+          path: packages/*.tipa
+          if-no-files-found: error
