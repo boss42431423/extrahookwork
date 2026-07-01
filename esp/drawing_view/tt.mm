@@ -305,7 +305,7 @@ extern volatile bool esp_screenshot_safe;
         [self addSubview:_headerView];
 
         _headerLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 0, frame.size.width - 50, headerHeight)];
-        _headerLabel.text = @(OBF("t.me/projectios"));
+        _headerLabel.text = @(OBF("extrahook"));
         _headerLabel.textAlignment = NSTextAlignmentLeft;
         _headerLabel.textColor = [UIColor whiteColor];
         _headerLabel.font = [UIFont boldSystemFontOfSize:14];

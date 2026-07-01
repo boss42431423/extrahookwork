@@ -233,7 +233,7 @@ struct ESPBoxData {
     [self.layer addSublayer:self.fovCircleLayer];
 
     UILabel *wm = [[UILabel alloc] init];
-    wm.text = @(OBF("t.me/projectios"));
+    wm.text = @(OBF("extrahook"));
     wm.textColor = [UIColor whiteColor];
     wm.font = [UIFont boldSystemFontOfSize:16.0f];
     wm.userInteractionEnabled = NO;
@@ -325,7 +325,7 @@ struct ESPBoxData {
 - (void)update_data {
     if (!esp_box_enabled && !esp_box_3d && !esp_box_corner && !esp_line_enabled && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled) {
         [self clearAllBoxes];
-        self.watermarkLabel.text = @(OBF("t.me/projectios"));
+        self.watermarkLabel.text = @(OBF("extrahook"));
         [self.watermarkLabel sizeToFit];
         return;
     }
@@ -346,7 +346,7 @@ struct ESPBoxData {
         self.playerCountLabel.text      = @(OBF("LAUNCHING..."));
         self.playerCountLabel.textColor = [UIColor redColor];
         self.noPlayersLabel.hidden      = YES;
-        self.watermarkLabel.text = @(OBF("t.me/projectios"));
+        self.watermarkLabel.text = @(OBF("extrahook"));
         [self.watermarkLabel sizeToFit];
 
         if (!self.hasAttemptedLaunch) {
@@ -634,7 +634,7 @@ struct ESPBoxData {
 
             if (!drawBoxes && !drawLines && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled && !esp_weapon_icon_enabled && !esp_platform_enabled) {
                 [self clearAllBoxes];
-                self.watermarkLabel.text = @"t.me/projectios";
+                self.watermarkLabel.text = @"extrahook";
                 [self.watermarkLabel sizeToFit];
                 return;
             }
@@ -1116,7 +1116,7 @@ struct UnityString32 { uint16_t chars[32]; };
                     }
                 }
             }
-            self.playerCountLabel.text = [NSString stringWithFormat:@"PastaWare | Players: %d", (int)validPlayers];
+            self.playerCountLabel.text = [NSString stringWithFormat:@"extrahook | Players: %d", (int)validPlayers];
             self.playerCountLabel.hidden = NO;
             [self.playerCountLabel sizeToFit];
             free(players);
@@ -1133,7 +1133,7 @@ struct UnityString32 { uint16_t chars[32]; };
             [CATransaction commit];
             [CATransaction flush];
 
-            self.watermarkLabel.text = @(OBF("t.me/projectios"));
+            self.watermarkLabel.text = @(OBF("extrahook"));
             [self.watermarkLabel sizeToFit];
             return;
         }
@@ -1141,7 +1141,7 @@ struct UnityString32 { uint16_t chars[32]; };
 
 CLEAR_BOXES:
     [self clearAllBoxes];
-    self.watermarkLabel.text = @"t.me/projectios";
+    self.watermarkLabel.text = @"extrahook";
     [self.watermarkLabel sizeToFit];
 
     self.playerCountLabel.textColor = [[UIColor greenColor] colorWithAlphaComponent:0.5];

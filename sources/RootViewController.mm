@@ -84,7 +84,7 @@ else
     [self.backgroundView addSubview:mainButton];
 
     UILabel *linkLabel = [[UILabel alloc] init];
-    linkLabel.text = @(OBF("t.me/projectios"));
+    linkLabel.text = @(OBF("extrahook"));
     linkLabel.textColor = [UIColor blackColor];
     linkLabel.font = [UIFont systemFontOfSize:14.0f];
     linkLabel.textAlignment = NSTextAlignmentCenter;
@@ -142,7 +142,7 @@ else
     
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        NSString *urlStr = @(OBF("https://t.me/projectios"));
+        NSString *urlStr = @(OBF("https://extrahook"));
         NSURL *url = [NSURL URLWithString:urlStr];
         [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
     });
