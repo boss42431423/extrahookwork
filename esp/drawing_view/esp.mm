@@ -1116,7 +1116,7 @@ struct UnityString32 { uint16_t chars[32]; };
                     }
                 }
             }
-            self.playerCountLabel.text = [NSString stringWithFormat:@"PastaWare | Players: %d", (int)validPlayers];
+            self.playerCountLabel.text = [NSString stringWithFormat:@"extrahook | Players: %d", (int)validPlayers];
             self.playerCountLabel.hidden = NO;
             [self.playerCountLabel sizeToFit];
             free(players);
