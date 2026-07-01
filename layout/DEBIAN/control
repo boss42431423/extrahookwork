@@ -1,5 +1,5 @@
 Package: dev.metaware.external
-Name: PastaWare
+Name: extrahook
 Version: 555
 Section: Tweaks
 Depends: firmware (>= 14.0)

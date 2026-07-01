@@ -16,7 +16,7 @@ if [ -z "${THEOS:-}" ]; then
 	exit 1
 fi
 
-APP_NAME="PastaWare"
+APP_NAME="extrahook"
 
 echo "[*] THEOS: $THEOS"
 echo "[*] Cleaning..."
