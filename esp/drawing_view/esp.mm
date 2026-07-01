@@ -524,7 +524,7 @@ struct ESPBoxData {
                 if (wc > 0x1000000) {
                     mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                     if (ctrl > 0x1000000) {
-                        mach_vm_address_t gun = Read<mach_vm_address_t>(ctrl + 0x168, so2_task);
+                        mach_vm_address_t gun = Read<mach_vm_address_t>(ctrl + 0xD0, so2_task);
                         if (gun > 0x1000000) {
                             mach_vm_address_t rcp = Read<mach_vm_address_t>(gun + 0x158, so2_task);
                             if (rcp > 0x1000000) {
@@ -560,10 +560,8 @@ struct ESPBoxData {
                 if (wc > 0x1000000) {
                     mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                     if (ctrl > 0x1000000) {
-                        Write<int32_t>(ctrl + 0x120, 0,   so2_task);
-                        Write<int32_t>(ctrl + 0x124, 999, so2_task);
-                        Write<int32_t>(ctrl + 0x128, 0,   so2_task);
-                        Write<int32_t>(ctrl + 0x12C, 999, so2_task);
+                        Write<int32_t>(ctrl + 0xA0, 999, so2_task);
+                        Write<int32_t>(ctrl + 0xA4, 999, so2_task);
                     }
                 }
             }
@@ -1049,16 +1047,13 @@ struct UnityString32 { uint16_t chars[32]; };
                         if (wc > 0x1000000) {
                             mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                             if (ctrl > 0x1000000) {
-                                mach_vm_address_t wp = Read<mach_vm_address_t>(ctrl + 0xA8, so2_task);
-                                if (wp > 0x1000000) {
-                                    mach_vm_address_t namePtr = Read<mach_vm_address_t>(wp + 0x20, so2_task);
-                                    if (namePtr > 0x1000000) {
-                                        int nameLen = Read<int>(namePtr + 0x10, so2_task);
-                                        if (nameLen > 0 && nameLen < 32) {
-                                            struct UnityString32 { uint16_t chars[32]; };
-                                            UnityString32 strData = Read<UnityString32>(namePtr + 0x14, so2_task);
-                                            weaponStr = [NSString stringWithCharacters:(const unichar *)strData.chars length:nameLen];
-                                        }
+                                mach_vm_address_t namePtr = Read<mach_vm_address_t>(ctrl + 0x98, so2_task);
+                                if (namePtr > 0x1000000) {
+                                    int nameLen = Read<int>(namePtr + 0x10, so2_task);
+                                    if (nameLen > 0 && nameLen < 32) {
+                                        struct UnityString32 { uint16_t chars[32]; };
+                                        UnityString32 strData = Read<UnityString32>(namePtr + 0x14, so2_task);
+                                        weaponStr = [NSString stringWithCharacters:(const unichar *)strData.chars length:nameLen];
                                     }
                                 }
                             }
@@ -1447,8 +1442,8 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
         if (wc > 0x1000000) {
             mach_vm_address_t wctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
             if (wctrl > 0x1000000) {
-                uint8_t fireState = Read<uint8_t>(wctrl + 0x148, so2_task);
-                if (fireState != 3) {
+                bool isFiring = Read<bool>(wctrl + 0xC1, so2_task);
+                if (!isFiring) {
                     self.aimbotCurrentTarget = 0;
                     return;
                 }
