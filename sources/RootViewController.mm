@@ -283,7 +283,7 @@
     // Glow эффект
     [_glowLayer removeFromSuperlayer];
     _glowLayer = [CALayer layer];
-    _glowLayer.frame       = _glowView.bounds.CGRectIsEmpty
+    _glowLayer.frame       = CGRectIsEmpty(_glowView.bounds)
                              ? CGRectMake(0, 0, 220, 64)
                              : _glowView.bounds;
     _glowLayer.cornerRadius = 16.0f;
