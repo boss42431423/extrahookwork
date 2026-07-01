@@ -25,16 +25,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: theos/sdks
-          key: theos-sdks-16.5
+          key: theos-sdks-16.5-v2
 
-      - name: Download SDK
+      - name: Download SDKs
         if: steps.cache-sdks.outputs.cache-hit != 'true'
         run: |
-          mkdir -p theos/sdks
-          curl -fsSL -o sdk.tar.xz \
-            "https://github.com/theos/sdks/releases/download/2024-09-08/iPhoneOS16.5.sdk.tar.xz"
-          tar -xJf sdk.tar.xz -C theos/sdks
-          rm sdk.tar.xz
+          git clone --depth=1 https://github.com/theos/sdks.git theos/sdks
 
       - name: Build
         run: |
