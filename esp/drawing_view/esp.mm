@@ -189,7 +189,7 @@ struct ESPBoxData {
     [self.layer addSublayer:self.espBoxOutlineLayer];
 
     self.espBoxLayer = [CAShapeLayer layer];
-    self.espBoxLayer.strokeColor = [UIColor whiteColor].CGColor;
+    self.espBoxLayer.strokeColor = [UIColor colorWithRed:0.0 green:0.9 blue:0.3 alpha:1.0].CGColor;
     self.espBoxLayer.fillColor   = [UIColor clearColor].CGColor;
     self.espBoxLayer.lineWidth   = 1.5;
     [self.layer addSublayer:self.espBoxLayer];
@@ -213,7 +213,7 @@ struct ESPBoxData {
     [self.layer addSublayer:self.espLineOutlineLayer];
 
     self.espLineLayer = [CAShapeLayer layer];
-    self.espLineLayer.strokeColor = [UIColor whiteColor].CGColor;
+    self.espLineLayer.strokeColor = [UIColor colorWithRed:0.0 green:0.9 blue:0.3 alpha:1.0].CGColor;
     self.espLineLayer.fillColor   = [UIColor clearColor].CGColor;
     self.espLineLayer.lineWidth   = 1.0;
     [self.layer addSublayer:self.espLineLayer];
@@ -227,7 +227,7 @@ struct ESPBoxData {
 
     self.fovCircleLayer = [CAShapeLayer layer];
     self.fovCircleLayer.fillColor   = [UIColor clearColor].CGColor;
-    self.fovCircleLayer.strokeColor = [UIColor whiteColor].CGColor;
+    self.fovCircleLayer.strokeColor = [UIColor colorWithRed:0.0 green:0.9 blue:0.3 alpha:1.0].CGColor;
     self.fovCircleLayer.lineWidth   = 1.5;
     self.fovCircleLayer.hidden      = YES;
     [self.layer addSublayer:self.fovCircleLayer];

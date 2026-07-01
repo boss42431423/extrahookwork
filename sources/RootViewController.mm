@@ -40,11 +40,11 @@ static const CGFloat _gAuthorLabelBottomConstraintConstantRegular = -80.f;
     CGRect bounds = UIScreen.mainScreen.bounds;
 
     self.view = [[UIView alloc] initWithFrame:bounds];
-    self.view.backgroundColor = [UIColor whiteColor];  
+    self.view.backgroundColor = [UIColor colorWithRed:0.03 green:0.08 blue:0.03 alpha:1.0];
 
     self.backgroundView = [[UIView alloc] initWithFrame:bounds];
     self.backgroundView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    self.backgroundView.backgroundColor = [UIColor whiteColor];  
+    self.backgroundView.backgroundColor = [UIColor colorWithRed:0.03 green:0.08 blue:0.03 alpha:1.0];
     [self.view addSubview:self.backgroundView];
 
    
@@ -59,13 +59,13 @@ static const CGFloat _gAuthorLabelBottomConstraintConstantRegular = -80.f;
     [self.backgroundView addSubview:iconImageView];
 
     mainButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [mainButton setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+    [mainButton setTitleColor:[UIColor colorWithRed:0.0 green:0.9 blue:0.3 alpha:1.0] forState:UIControlStateNormal];
     [mainButton addTarget:self action:@selector(tapMainButton:) forControlEvents:UIControlEventTouchUpInside];
     
 if (@available(iOS 15.0, *))
 {
     UIButtonConfiguration *config = [UIButtonConfiguration plainButtonConfiguration];
-    config.baseForegroundColor = [UIColor blackColor]; 
+    config.baseForegroundColor = [UIColor colorWithRed:0.0 green:0.9 blue:0.3 alpha:1.0];
     [config setTitleTextAttributesTransformer:^NSDictionary <NSAttributedStringKey, id> * _Nonnull(NSDictionary <NSAttributedStringKey, id> * _Nonnull textAttributes) {
         NSMutableDictionary *newAttributes = [textAttributes mutableCopy];
         [newAttributes setObject:[UIFont boldSystemFontOfSize:32.0] forKey:NSFontAttributeName];
@@ -77,15 +77,15 @@ if (@available(iOS 15.0, *))
 else
 {
     [mainButton.titleLabel setFont:[UIFont boldSystemFontOfSize:32.0]];
-    [mainButton setBackgroundColor:[UIColor clearColor]]; 
-    [mainButton setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+    [mainButton setBackgroundColor:[UIColor clearColor]];
+    [mainButton setTitleColor:[UIColor colorWithRed:0.0 green:0.9 blue:0.3 alpha:1.0] forState:UIControlStateNormal];
     mainButton.layer.cornerRadius = 8.0f;
 }
     [self.backgroundView addSubview:mainButton];
 
     UILabel *linkLabel = [[UILabel alloc] init];
     linkLabel.text = @(OBF("extrahook"));
-    linkLabel.textColor = [UIColor blackColor];
+    linkLabel.textColor = [UIColor colorWithRed:0.0 green:0.75 blue:0.2 alpha:1.0];
     linkLabel.font = [UIFont systemFontOfSize:14.0f];
     linkLabel.textAlignment = NSTextAlignmentCenter;
     linkLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -93,7 +93,7 @@ else
 
     UILabel *versionLabel = [[UILabel alloc] init];
     versionLabel.text = [NSString stringWithFormat:@(OBF("iOS - %@")), [[UIDevice currentDevice] systemVersion]];
-    versionLabel.textColor = [UIColor blackColor];
+    versionLabel.textColor = [UIColor colorWithRed:0.0 green:0.75 blue:0.2 alpha:1.0];
     versionLabel.font = [UIFont boldSystemFontOfSize:14.0f];
     versionLabel.textAlignment = NSTextAlignmentCenter;
     versionLabel.translatesAutoresizingMaskIntoConstraints = NO;
