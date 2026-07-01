@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 #include <map>
-#import "../../sources/UIView+SecureView.h"
+#import "UIView+SecureView.h"
 #include "skins_data.h"
 
 extern volatile bool esp_screenshot_safe;
