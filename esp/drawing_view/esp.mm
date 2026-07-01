@@ -391,21 +391,28 @@ struct ESPBoxData {
         playerManager = Read<mach_vm_address_t>(staticFields + 0x0, so2_task);
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
 
-        dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
+        {
+            static const int kDictOffsets[] = {0x18, 0x20, 0x28, 0x30};
+            for (int _di = 0; _di < 4; _di++) {
+                mach_vm_address_t cand = Read<mach_vm_address_t>(playerManager + kDictOffsets[_di], so2_task);
+                if (cand < 0x1000000) continue;
+                c20 = Read<int>(cand + 0x20, so2_task);
+                c40 = Read<int>(cand + 0x40, so2_task);
+                c18 = Read<int>(cand + 0x18, so2_task);
+                if      (c20 > 0 && c20 <= 32) { dict28 = cand; playersCount = c20; break; }
+                else if (c40 > 0 && c40 <= 32) { dict28 = cand; playersCount = c40; break; }
+                else if (c18 > 0 && c18 <= 32) { dict28 = cand; playersCount = c18; break; }
+            }
+        }
         playersDict = dict28;
 
-        c20 = Read<int>(playersDict + 0x20, so2_task);
-        c40 = Read<int>(playersDict + 0x40, so2_task);
-        c18 = Read<int>(playersDict + 0x18, so2_task);
-
-        if      (c20 > 0 && c20 <= 32) playersCount = c20;
-        else if (c40 > 0 && c40 <= 32) playersCount = c40;
-        else if (c18 > 0 && c18 <= 32) playersCount = c18;
-
         if (playersCount > 0 && playersCount <= 32) {
-            mach_vm_address_t localPlayer = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
-            if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0)
-                localPlayer = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
+            mach_vm_address_t localPlayer = Read<mach_vm_address_t>(playerManager + 0x10, so2_task);
+            if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0) {
+                localPlayer = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
+                if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0)
+                    localPlayer = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
+            }
 
             if (esp_invisible && localPlayer > 0x1000000) {
                 mach_vm_address_t weaponryController = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
