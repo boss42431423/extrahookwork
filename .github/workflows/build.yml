@@ -33,6 +33,10 @@ jobs:
           rm -rf theos/sdks
           git clone --depth=1 https://github.com/theos/sdks.git theos/sdks
 
+      - name: Install ldid
+        run: |
+          brew install ldid
+
       - name: Patch pid.mm
         run: |
           python3 - <<'PYEOF'
