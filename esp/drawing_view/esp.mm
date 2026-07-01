@@ -259,12 +259,13 @@ struct ESPBoxData {
     self.triggerbotShooting = NO;
     self.triggerbotLastShotTime = 0;
 
-    // In-game menu overlay (tap watermark label to show/hide)
+    // In-game menu overlay — tap watermark to show, tap again to hide
     {
         CGRect  sc  = UIScreen.mainScreen.bounds;
         CGFloat mw  = 300, mh = 360;
         CGFloat mx  = (sc.size.width - mw) * 0.5f;
         self.menuView = [[MenuView alloc] initWithFrame:CGRectMake(mx, 60, mw, mh)];
+        self.menuView.hidden = YES;   // hidden by default — tap watermark to open
         [self addSubview:self.menuView];
     }
     self.watermarkLabel.userInteractionEnabled = YES;
@@ -473,15 +474,17 @@ struct ESPBoxData {
         }
         playersDict = dict28;
 
-        if (playersCount > 0 && playersCount <= 32) {
-            mach_vm_address_t localPlayer = Read<mach_vm_address_t>(playerManager + 0x10, so2_task);
-            if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0) {
-                localPlayer = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
-                if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0)
-                    localPlayer = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
-            }
+        // ── Read localPlayer IMMEDIATELY — hacks work even outside a match ──
+        mach_vm_address_t localPlayer = Read<mach_vm_address_t>(playerManager + 0x10, so2_task);
+        if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0) {
+            localPlayer = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
+            if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0)
+                localPlayer = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
+        }
 
-            if (esp_invisible && localPlayer > 0x1000000) {
+        // ── Run ALL hacks whenever localPlayer is valid (not gated on playersCount) ──
+        // Ensures inf ammo, wallshot, etc. work in lobby / training / any game state
+        if (esp_invisible && localPlayer > 0x1000000) {
                 mach_vm_address_t weaponryController = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
                 if (weaponryController > 0x1000000)
                     Write<uint8_t>(weaponryController + 0x88, 10, so2_task);
@@ -660,16 +663,19 @@ struct ESPBoxData {
                 }
             }
 
-            if (esp_fire_rate && localPlayer > 0x1000000) {
-                mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-                if (wc > 0x1000000) {
-                    mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-                    if (ctrl > 0x1000000) {
-                        Write<int32_t>(ctrl + 0x108, 0, so2_task);
-                        Write<int32_t>(ctrl + 0x10C, 0, so2_task);
-                    }
+        if (esp_fire_rate && localPlayer > 0x1000000) {
+            mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
+            if (wc > 0x1000000) {
+                mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
+                if (ctrl > 0x1000000) {
+                    Write<int32_t>(ctrl + 0x108, 0, so2_task);
+                    Write<int32_t>(ctrl + 0x10C, 0, so2_task);
                 }
             }
+        }
+
+        // ── ESP / aimbot drawing: only runs when players are in a match ──
+        if (playersCount > 0 && playersCount <= 32) {
 
             SO2_Matrix viewMatrix = {0};
             if (localPlayer > 0x1000000) {
