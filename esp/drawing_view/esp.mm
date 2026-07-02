@@ -5,7 +5,7 @@
 #import <objc/runtime.h>
 #import <sys/sysctl.h>
 #include "obfusheader.h"
-#import "UIView+SecureView.h"
+#import "../../sources/UIView+SecureView.h"
 #include <atomic>
 // Rifles
 #import "assets/rifles/akr.h"
@@ -70,7 +70,6 @@ volatile bool esp_box_outline = false;
 volatile bool esp_box_fill = false;
 volatile bool esp_box_corner = false;
 volatile bool esp_box_3d = false;
-volatile bool esp_box_3d_corner = false;
 volatile bool esp_line_enabled = false;
 volatile bool esp_line_outline = false;
 volatile bool esp_invisible = false;
@@ -190,7 +189,7 @@ struct ESPBoxData {
     [self.layer addSublayer:self.espBoxOutlineLayer];
 
     self.espBoxLayer = [CAShapeLayer layer];
-    self.espBoxLayer.strokeColor = [UIColor colorWithRed:0.0 green:0.9 blue:0.3 alpha:1.0].CGColor;
+    self.espBoxLayer.strokeColor = [UIColor whiteColor].CGColor;
     self.espBoxLayer.fillColor   = [UIColor clearColor].CGColor;
     self.espBoxLayer.lineWidth   = 1.5;
     [self.layer addSublayer:self.espBoxLayer];
@@ -214,7 +213,7 @@ struct ESPBoxData {
     [self.layer addSublayer:self.espLineOutlineLayer];
 
     self.espLineLayer = [CAShapeLayer layer];
-    self.espLineLayer.strokeColor = [UIColor colorWithRed:0.0 green:0.9 blue:0.3 alpha:1.0].CGColor;
+    self.espLineLayer.strokeColor = [UIColor whiteColor].CGColor;
     self.espLineLayer.fillColor   = [UIColor clearColor].CGColor;
     self.espLineLayer.lineWidth   = 1.0;
     [self.layer addSublayer:self.espLineLayer];
@@ -228,33 +227,18 @@ struct ESPBoxData {
 
     self.fovCircleLayer = [CAShapeLayer layer];
     self.fovCircleLayer.fillColor   = [UIColor clearColor].CGColor;
-    self.fovCircleLayer.strokeColor = [UIColor colorWithRed:0.0 green:0.9 blue:0.3 alpha:1.0].CGColor;
+    self.fovCircleLayer.strokeColor = [UIColor whiteColor].CGColor;
     self.fovCircleLayer.lineWidth   = 1.5;
     self.fovCircleLayer.hidden      = YES;
     [self.layer addSublayer:self.fovCircleLayer];
 
     UILabel *wm = [[UILabel alloc] init];
-    wm.text = @(OBF("extrahook"));
+    wm.text = @(OBF("t.me/projectios"));
     wm.textColor = [UIColor whiteColor];
     wm.font = [UIFont boldSystemFontOfSize:16.0f];
     wm.userInteractionEnabled = NO;
     [self addSubview:wm];
     self.watermarkLabel = wm;
-
-    // Dedicated menu toggle button — larger hit area, works without gesture recognizer
-    UIButton *menuBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-    menuBtn.frame = CGRectMake(6, 4, 110, 28);
-    menuBtn.backgroundColor = [[UIColor colorWithRed:0.09f green:0.09f blue:0.12f alpha:0.75f] colorWithAlphaComponent:0.75f];
-    menuBtn.layer.cornerRadius = 6;
-    menuBtn.layer.borderColor = [UIColor colorWithRed:0.62f green:0.12f blue:0.95f alpha:0.8f].CGColor;
-    menuBtn.layer.borderWidth = 1.0f;
-    [menuBtn setTitle:@"☰ extrahook" forState:UIControlStateNormal];
-    menuBtn.titleLabel.font = [UIFont boldSystemFontOfSize:13.0f];
-    [menuBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    [menuBtn setTitleColor:[UIColor colorWithRed:0.78f green:0.30f blue:1.00f alpha:1.0f] forState:UIControlStateHighlighted];
-    menuBtn.userInteractionEnabled = YES;
-    [menuBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
-    [self addSubview:menuBtn];
 
     UILabel *playerCountLabel = [UILabel new];
     playerCountLabel.hidden = YES;
@@ -275,16 +259,9 @@ struct ESPBoxData {
     self.triggerbotShooting = NO;
     self.triggerbotLastShotTime = 0;
 
-    // In-game menu overlay — tap watermark to show, tap again to hide
-    {
-        CGFloat mw  = 300, mh = 340;
-        CGFloat mx  = (self.frame.size.width  - mw) * 0.5f;
-        CGFloat my  = (self.frame.size.height - mh) * 0.5f;
-        self.menuView = [[MenuView alloc] initWithFrame:CGRectMake(mx, my, mw, mh)];
-        self.menuView.hidden = YES;   // hidden by default — tap watermark to open
-        [self addSubview:self.menuView];
-    }
-    // watermarkLabel stays non-interactive; toggle handled by menuBtn above
+    self.menuView = [[MenuView alloc] initWithFrame:CGRectMake(0, 0, 270, 280)];
+    self.menuView.center = CGPointMake(frame.size.width / 2, frame.size.height / 2);
+    [self addSubview:self.menuView];
 
     [[NSNotificationCenter defaultCenter]
         addObserver:self
@@ -310,19 +287,13 @@ struct ESPBoxData {
 }
 
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    for (UIView *sub in self.subviews.reverseObjectEnumerator) {
-        if (sub.isHidden || !sub.userInteractionEnabled || sub.alpha < 0.01f) continue;
-        CGPoint p = [self convertPoint:point toView:sub];
-        if ([sub pointInside:p withEvent:event]) {
-            UIView *hit = [sub hitTest:p withEvent:event];
-            if (hit) return hit;
+    if (self.menuView) {
+        CGPoint pointInMenu = [self convertPoint:point toView:self.menuView];
+        if ([self.menuView pointInside:pointInMenu withEvent:event]) {
+            return [self.menuView hitTest:pointInMenu withEvent:event];
         }
     }
     return nil;
-}
-
-- (void)toggleMenu {
-    if (self.menuView) self.menuView.hidden = !self.menuView.isHidden;
 }
 
 
@@ -352,16 +323,11 @@ struct ESPBoxData {
 }
 
 - (void)update_data {
-    // NOTE: no early return here — hacks (inf ammo, wallshot, etc.) must run
-    // even when all ESP drawing toggles are off.
-    BOOL anyESP = esp_box_enabled || esp_box_3d || esp_box_corner || esp_line_enabled
-               || esp_name_enabled || esp_health_enabled || esp_health_bar_enabled
-               || esp_weapon_enabled;
-    if (!anyESP) {
+    if (!esp_box_enabled && !esp_box_3d && !esp_box_corner && !esp_line_enabled && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled) {
         [self clearAllBoxes];
-        self.watermarkLabel.text = @(OBF("extrahook"));
+        self.watermarkLabel.text = @(OBF("t.me/projectios"));
         [self.watermarkLabel sizeToFit];
-        // fall through — don't return, so hacks still execute
+        return;
     }
 
     static pid_t cached_so2_pid = 0;
@@ -380,7 +346,7 @@ struct ESPBoxData {
         self.playerCountLabel.text      = @(OBF("LAUNCHING..."));
         self.playerCountLabel.textColor = [UIColor redColor];
         self.noPlayersLabel.hidden      = YES;
-        self.watermarkLabel.text = @(OBF("extrahook"));
+        self.watermarkLabel.text = @(OBF("t.me/projectios"));
         [self.watermarkLabel sizeToFit];
 
         if (!self.hasAttemptedLaunch) {
@@ -411,54 +377,7 @@ struct ESPBoxData {
         mach_vm_address_t dict28         = 0;
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
-        // ── TypeInfo: try cached offset, then scan ±2MB for current game version ──
-        {
-            static mach_vm_address_t s_ti_offset = 164201496; // known offset
-
-            auto validateChain = [&](mach_vm_address_t ti) -> bool {
-                if (ti < 0x1000000) return false;
-                mach_vm_address_t pti = Read<mach_vm_address_t>(ti + 0x58, so2_task);
-                if (pti < 0x1000000) return false;
-                mach_vm_address_t sf = Read<mach_vm_address_t>(pti + 0xB8, so2_task);
-                if (!sf || sf < 0x1000000) sf = Read<mach_vm_address_t>(pti + 0xB0, so2_task);
-                if (!sf || sf < 0x1000000) return false;
-                mach_vm_address_t pm = Read<mach_vm_address_t>(sf + 0x0, so2_task);
-                if (pm < 0x1000000) return false;
-                return true;
-            };
-
-            // 1. Try cached offset first (fast path)
-            typeInfo = Read<mach_vm_address_t>(unity_base + s_ti_offset, so2_task);
-            if (!validateChain(typeInfo)) {
-                typeInfo = 0;
-                // 2. Bulk-scan ±2MB around cached offset
-                const mach_vm_size_t RANGE  = 2 * 1024 * 1024;
-                const mach_vm_size_t CHUNK  = 65536;
-                mach_vm_address_t scan_base = (unity_base + s_ti_offset > RANGE)
-                                              ? unity_base + s_ti_offset - RANGE
-                                              : unity_base;
-                mach_vm_size_t scan_size = RANGE * 2;
-                uint8_t *buf = (uint8_t*)malloc(CHUNK);
-                if (buf) {
-                    for (mach_vm_size_t off = 0; off < scan_size && !typeInfo; off += CHUNK) {
-                        mach_vm_size_t chunk = (off + CHUNK > scan_size) ? (scan_size - off) : CHUNK;
-                        mach_vm_size_t outs  = 0;
-                        if (mach_vm_read_overwrite(so2_task, scan_base + off, chunk,
-                                                   (mach_vm_address_t)buf, &outs) != KERN_SUCCESS) continue;
-                        for (mach_vm_size_t i = 0; i + 8 <= outs; i += 8) {
-                            mach_vm_address_t cand = *(mach_vm_address_t*)(buf + i);
-                            if (cand < 0x100000000ULL || cand > 0x300000000000ULL) continue;
-                            if (validateChain(cand)) {
-                                s_ti_offset = (scan_base + off + i) - unity_base;
-                                typeInfo    = cand;
-                                break;
-                            }
-                        }
-                    }
-                    free(buf);
-                }
-            }
-        }
+        typeInfo = Read<mach_vm_address_t>(unity_base + 164201496, so2_task);
         if (!typeInfo || typeInfo < 0x1000000) goto CLEAR_BOXES;
 
         parentTypeInfo = Read<mach_vm_address_t>(typeInfo + 0x58, so2_task);
@@ -472,32 +391,23 @@ struct ESPBoxData {
         playerManager = Read<mach_vm_address_t>(staticFields + 0x0, so2_task);
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
 
-        {
-            static const int kDictOffsets[] = {0x18, 0x20, 0x28, 0x30};
-            for (int _di = 0; _di < 4; _di++) {
-                mach_vm_address_t cand = Read<mach_vm_address_t>(playerManager + kDictOffsets[_di], so2_task);
-                if (cand < 0x1000000) continue;
-                c20 = Read<int>(cand + 0x20, so2_task);
-                c40 = Read<int>(cand + 0x40, so2_task);
-                c18 = Read<int>(cand + 0x18, so2_task);
-                if      (c20 > 0 && c20 <= 32) { dict28 = cand; playersCount = c20; break; }
-                else if (c40 > 0 && c40 <= 32) { dict28 = cand; playersCount = c40; break; }
-                else if (c18 > 0 && c18 <= 32) { dict28 = cand; playersCount = c18; break; }
-            }
-        }
+        dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
         playersDict = dict28;
 
-        // ── Read localPlayer IMMEDIATELY — hacks work even outside a match ──
-        mach_vm_address_t localPlayer = Read<mach_vm_address_t>(playerManager + 0x10, so2_task);
-        if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0) {
-            localPlayer = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
+        c20 = Read<int>(playersDict + 0x20, so2_task);
+        c40 = Read<int>(playersDict + 0x40, so2_task);
+        c18 = Read<int>(playersDict + 0x18, so2_task);
+
+        if      (c20 > 0 && c20 <= 32) playersCount = c20;
+        else if (c40 > 0 && c40 <= 32) playersCount = c40;
+        else if (c18 > 0 && c18 <= 32) playersCount = c18;
+
+        if (playersCount > 0 && playersCount <= 32) {
+            mach_vm_address_t localPlayer = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
             if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0)
                 localPlayer = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
-        }
 
-        // ── Run ALL hacks whenever localPlayer is valid (not gated on playersCount) ──
-        // Ensures inf ammo, wallshot, etc. work in lobby / training / any game state
-        if (esp_invisible && localPlayer > 0x1000000) {
+            if (esp_invisible && localPlayer > 0x1000000) {
                 mach_vm_address_t weaponryController = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
                 if (weaponryController > 0x1000000)
                     Write<uint8_t>(weaponryController + 0x88, 10, so2_task);
@@ -573,8 +483,8 @@ struct ESPBoxData {
                 if (wc > 0x1000000) {
                     mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                     if (ctrl > 0x1000000) {
-                        Write<int32_t>(ctrl + 0xA0, 999, so2_task);
-                        Write<int32_t>(ctrl + 0xA4, 999, so2_task);
+                        Write<int32_t>(ctrl + 0xA0, 999, so2_task); // AmmoInMagazine (v0.39.1)
+                        Write<int32_t>(ctrl + 0xA4, 999, so2_task); // AmmoReserve (v0.39.1)
                     }
                 }
             }
@@ -674,19 +584,16 @@ struct ESPBoxData {
                 }
             }
 
-        if (esp_fire_rate && localPlayer > 0x1000000) {
-            mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-            if (wc > 0x1000000) {
-                mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-                if (ctrl > 0x1000000) {
-                    Write<int32_t>(ctrl + 0x108, 0, so2_task);
-                    Write<int32_t>(ctrl + 0x10C, 0, so2_task);
+            if (esp_fire_rate && localPlayer > 0x1000000) {
+                mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
+                if (wc > 0x1000000) {
+                    mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
+                    if (ctrl > 0x1000000) {
+                        Write<int32_t>(ctrl + 0x108, 0, so2_task);
+                        Write<int32_t>(ctrl + 0x10C, 0, so2_task);
+                    }
                 }
             }
-        }
-
-        // ── ESP / aimbot drawing: only runs when players are in a match ──
-        if (playersCount > 0 && playersCount <= 32) {
 
             SO2_Matrix viewMatrix = {0};
             if (localPlayer > 0x1000000) {
@@ -725,7 +632,7 @@ struct ESPBoxData {
 
             if (!drawBoxes && !drawLines && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled && !esp_weapon_icon_enabled && !esp_platform_enabled) {
                 [self clearAllBoxes];
-                self.watermarkLabel.text = @"extrahook";
+                self.watermarkLabel.text = @"t.me/projectios";
                 [self.watermarkLabel sizeToFit];
                 return;
             }
@@ -1060,13 +967,16 @@ struct UnityString32 { uint16_t chars[32]; };
                         if (wc > 0x1000000) {
                             mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                             if (ctrl > 0x1000000) {
-                                mach_vm_address_t namePtr = Read<mach_vm_address_t>(ctrl + 0x98, so2_task);
-                                if (namePtr > 0x1000000) {
-                                    int nameLen = Read<int>(namePtr + 0x10, so2_task);
-                                    if (nameLen > 0 && nameLen < 32) {
-                                        struct UnityString32 { uint16_t chars[32]; };
-                                        UnityString32 strData = Read<UnityString32>(namePtr + 0x14, so2_task);
-                                        weaponStr = [NSString stringWithCharacters:(const unichar *)strData.chars length:nameLen];
+                                mach_vm_address_t wp = Read<mach_vm_address_t>(ctrl + 0xA8, so2_task);
+                                if (wp > 0x1000000) {
+                                    mach_vm_address_t namePtr = Read<mach_vm_address_t>(wp + 0x20, so2_task);
+                                    if (namePtr > 0x1000000) {
+                                        int nameLen = Read<int>(namePtr + 0x10, so2_task);
+                                        if (nameLen > 0 && nameLen < 32) {
+                                            struct UnityString32 { uint16_t chars[32]; };
+                                            UnityString32 strData = Read<UnityString32>(namePtr + 0x14, so2_task);
+                                            weaponStr = [NSString stringWithCharacters:(const unichar *)strData.chars length:nameLen];
+                                        }
                                     }
                                 }
                             }
@@ -1204,7 +1114,7 @@ struct UnityString32 { uint16_t chars[32]; };
                     }
                 }
             }
-            self.playerCountLabel.text = [NSString stringWithFormat:@"extrahook | Players: %d", (int)validPlayers];
+            self.playerCountLabel.text = [NSString stringWithFormat:@"PastaWare | Players: %d", (int)validPlayers];
             self.playerCountLabel.hidden = NO;
             [self.playerCountLabel sizeToFit];
             free(players);
@@ -1221,7 +1131,7 @@ struct UnityString32 { uint16_t chars[32]; };
             [CATransaction commit];
             [CATransaction flush];
 
-            self.watermarkLabel.text = @(OBF("extrahook"));
+            self.watermarkLabel.text = @(OBF("t.me/projectios"));
             [self.watermarkLabel sizeToFit];
             return;
         }
@@ -1229,7 +1139,7 @@ struct UnityString32 { uint16_t chars[32]; };
 
 CLEAR_BOXES:
     [self clearAllBoxes];
-    self.watermarkLabel.text = @"extrahook";
+    self.watermarkLabel.text = @"t.me/projectios";
     [self.watermarkLabel sizeToFit];
 
     self.playerCountLabel.textColor = [[UIColor greenColor] colorWithAlphaComponent:0.5];
@@ -1455,8 +1365,8 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
         if (wc > 0x1000000) {
             mach_vm_address_t wctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
             if (wctrl > 0x1000000) {
-                bool isFiring = Read<bool>(wctrl + 0xC1, so2_task);
-                if (!isFiring) {
+                uint8_t fireState = Read<uint8_t>(wctrl + 0x148, so2_task);
+                if (fireState != 3) {
                     self.aimbotCurrentTarget = 0;
                     return;
                 }
