@@ -36,7 +36,14 @@
     CGFloat cw  = MIN(W - 48.0f, 300.0f);
     CGFloat ch  = 264.0f;
     CGFloat cx  = (W - cw) * 0.5f;
-    CGFloat cy  = (H - ch) * 0.5f;
+
+    // Safe-area-aware vertical centering
+    UIEdgeInsets safeInsets = UIEdgeInsetsZero;
+    if (@available(iOS 11.0, *)) {
+        safeInsets = UIApplication.sharedApplication.keyWindow.safeAreaInsets;
+    }
+    CGFloat usableH = H - safeInsets.top - safeInsets.bottom;
+    CGFloat cy = safeInsets.top + (usableH - ch) * 0.5f;
 
     // Shadow wrapper (masksToBounds = NO so shadow shows)
     UIView *shadow = [[UIView alloc] initWithFrame:CGRectMake(cx, cy, cw, ch)];
