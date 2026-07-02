@@ -380,10 +380,21 @@ struct ESPBoxData {
         mach_vm_address_t dict28         = 0;
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
+        // Show unity_base range first so we know if it's sane
+        // On arm64 iOS, dylibs load at 0x1xxxxxxxx+ (>4GB). Show top byte.
+        uint64_t ub_hi = unity_base >> 28; // should be 0x10 or higher if valid
+
         typeInfo = Read<mach_vm_address_t>(unity_base + 178356728, so2_task); // PlayerManager_TypeInfo v0.39.1
         if (!typeInfo || typeInfo < 0x1000000) {
-            // show unity_base so we know if it's valid
-            s_dbgMsg = [NSString stringWithFormat:@"TI=0 UB=%llX", unity_base >> 24];
+            s_dbgMsg = [NSString stringWithFormat:@"TI=0 UB=%llX", ub_hi];
+            goto CLEAR_BOXES;
+        }
+
+        // typeInfo should also be >0x100000000 on arm64
+        if (typeInfo < 0x100000000ULL) {
+            // Try reading as 32-bit pointer and adding unity_base slide
+            uint32_t ti32 = Read<uint32_t>(unity_base + 178356728, so2_task);
+            s_dbgMsg = [NSString stringWithFormat:@"BADTI UB=%llX TI=%X ti32=%X", ub_hi, (uint32_t)(typeInfo), ti32];
             goto CLEAR_BOXES;
         }
 
@@ -396,19 +407,17 @@ struct ESPBoxData {
                 if (v > 0x100000000ULL) { parentTypeInfo = v; parentOff = kParentOffsets[i]; break; }
             }
             if (!parentTypeInfo) {
-                // None found — dump raw upper 8 bits of each slot
                 uint64_t v40 = Read<uint64_t>(typeInfo + 0x40, so2_task) >> 32;
                 uint64_t v48 = Read<uint64_t>(typeInfo + 0x48, so2_task) >> 32;
                 uint64_t v50 = Read<uint64_t>(typeInfo + 0x50, so2_task) >> 32;
                 uint64_t v58 = Read<uint64_t>(typeInfo + 0x58, so2_task) >> 32;
                 uint64_t v60 = Read<uint64_t>(typeInfo + 0x60, so2_task) >> 32;
-                uint64_t v68 = Read<uint64_t>(typeInfo + 0x68, so2_task) >> 32;
                 s_dbgMsg = [NSString stringWithFormat:
-                    @"TI=%llX 40:%llX 48:%llX 50:%llX 58:%llX 60:%llX 68:%llX",
-                    typeInfo >> 24, v40, v48, v50, v58, v60, v68];
+                    @"UB=%llX TI=%llX 40:%llX 48:%llX 50:%llX 58:%llX 60:%llX",
+                    ub_hi, typeInfo >> 28, v40, v48, v50, v58, v60];
                 goto CLEAR_BOXES;
             }
-            (void)parentOff; // suppress warning if not used
+            (void)parentOff;
         }
 
         // Scan for static_fields at multiple offsets in parentTypeInfo
