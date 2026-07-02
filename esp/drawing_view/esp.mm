@@ -364,12 +364,15 @@ struct ESPBoxData {
         cached_so2_pid = so2_pid;
     }
 
+    static NSString *s_dbgMsg = nil;
+    s_dbgMsg = nil;
+
     task_t so2_task = cached_so2_task;
-    if (!so2_task) goto CLEAR_BOXES;
+    if (!so2_task) { s_dbgMsg = @"DBG: no_task"; goto CLEAR_BOXES; }
 
     {
         mach_vm_address_t unity_base = cached_unity_base;
-        if (!unity_base) goto CLEAR_BOXES;
+        if (!unity_base) { s_dbgMsg = @"DBG: no_unity_base"; goto CLEAR_BOXES; }
 
         mach_vm_address_t typeInfo       = 0, staticFields  = 0;
         mach_vm_address_t playerManager  = 0, playersDict   = 0;
@@ -379,15 +382,13 @@ struct ESPBoxData {
 
         typeInfo = Read<mach_vm_address_t>(unity_base + 178356728, so2_task); // PlayerManager_TypeInfo v0.39.1
         if (!typeInfo || typeInfo < 0x1000000) {
-            self.watermarkLabel.text = @"DBG: TypeInfo=0";
-            [self.watermarkLabel sizeToFit];
+            s_dbgMsg = @"DBG: TypeInfo=0";
             goto CLEAR_BOXES;
         }
 
         parentTypeInfo = Read<mach_vm_address_t>(typeInfo + 0x58, so2_task);
         if (!parentTypeInfo || parentTypeInfo < 0x1000000) {
-            self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: PTI=0 TI=0x%llX", typeInfo];
-            [self.watermarkLabel sizeToFit];
+            s_dbgMsg = [NSString stringWithFormat:@"DBG: PTI=0 TI=0x%llX", typeInfo];
             goto CLEAR_BOXES;
         }
 
@@ -395,15 +396,13 @@ struct ESPBoxData {
         if (!staticFields || staticFields < 0x1000000)
             staticFields = Read<mach_vm_address_t>(parentTypeInfo + 0xB0, so2_task);
         if (!staticFields || staticFields < 0x1000000) {
-            self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: SF=0 PTI=0x%llX", parentTypeInfo];
-            [self.watermarkLabel sizeToFit];
+            s_dbgMsg = [NSString stringWithFormat:@"DBG: SF=0 PTI=0x%llX", parentTypeInfo];
             goto CLEAR_BOXES;
         }
 
         playerManager = Read<mach_vm_address_t>(staticFields + 0x0, so2_task);
         if (!playerManager || playerManager < 0x1000000) {
-            self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: PM=0 SF=0x%llX", staticFields];
-            [self.watermarkLabel sizeToFit];
+            s_dbgMsg = [NSString stringWithFormat:@"DBG: PM=0 SF=0x%llX", staticFields];
             goto CLEAR_BOXES;
         }
 
@@ -1155,7 +1154,7 @@ struct UnityString32 { uint16_t chars[32]; };
 
 CLEAR_BOXES:
     [self clearAllBoxes];
-    self.watermarkLabel.text = @"t.me/projectios";
+    self.watermarkLabel.text = s_dbgMsg ? s_dbgMsg : @"t.me/projectios";
     [self.watermarkLabel sizeToFit];
 
     self.playerCountLabel.textColor = [[UIColor greenColor] colorWithAlphaComponent:0.5];
