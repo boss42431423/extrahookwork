@@ -377,7 +377,7 @@ struct ESPBoxData {
         mach_vm_address_t dict28         = 0;
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
-        typeInfo = Read<mach_vm_address_t>(unity_base + 164201496, so2_task);
+        typeInfo = Read<mach_vm_address_t>(unity_base + 178356728, so2_task); // PlayerManager_TypeInfo v0.39.1
         if (!typeInfo || typeInfo < 0x1000000) goto CLEAR_BOXES;
 
         parentTypeInfo = Read<mach_vm_address_t>(typeInfo + 0x58, so2_task);
