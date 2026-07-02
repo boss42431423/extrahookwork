@@ -378,18 +378,34 @@ struct ESPBoxData {
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
         typeInfo = Read<mach_vm_address_t>(unity_base + 178356728, so2_task); // PlayerManager_TypeInfo v0.39.1
-        if (!typeInfo || typeInfo < 0x1000000) goto CLEAR_BOXES;
+        if (!typeInfo || typeInfo < 0x1000000) {
+            self.watermarkLabel.text = @"DBG: TypeInfo=0";
+            [self.watermarkLabel sizeToFit];
+            goto CLEAR_BOXES;
+        }
 
         parentTypeInfo = Read<mach_vm_address_t>(typeInfo + 0x58, so2_task);
-        if (!parentTypeInfo || parentTypeInfo < 0x1000000) goto CLEAR_BOXES;
+        if (!parentTypeInfo || parentTypeInfo < 0x1000000) {
+            self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: PTI=0 TI=0x%llX", typeInfo];
+            [self.watermarkLabel sizeToFit];
+            goto CLEAR_BOXES;
+        }
 
         staticFields = Read<mach_vm_address_t>(parentTypeInfo + 0xB8, so2_task);
         if (!staticFields || staticFields < 0x1000000)
             staticFields = Read<mach_vm_address_t>(parentTypeInfo + 0xB0, so2_task);
-        if (!staticFields || staticFields < 0x1000000) goto CLEAR_BOXES;
+        if (!staticFields || staticFields < 0x1000000) {
+            self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: SF=0 PTI=0x%llX", parentTypeInfo];
+            [self.watermarkLabel sizeToFit];
+            goto CLEAR_BOXES;
+        }
 
         playerManager = Read<mach_vm_address_t>(staticFields + 0x0, so2_task);
-        if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
+        if (!playerManager || playerManager < 0x1000000) {
+            self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: PM=0 SF=0x%llX", staticFields];
+            [self.watermarkLabel sizeToFit];
+            goto CLEAR_BOXES;
+        }
 
         dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
         playersDict = dict28;
