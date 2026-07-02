@@ -18,6 +18,17 @@
 #import "../esp/drawing_view/esp.h"
 #import "UIView+SecureView.h"
 
+// Pass-through view: forwards touches only to visible/interactive subviews;
+// returns nil (not self) when no subview is hit, so touches fall through to the game.
+@interface HUDPassthroughView : UIView
+@end
+@implementation HUDPassthroughView
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [super hitTest:point withEvent:event];
+    return (hit == self) ? nil : hit;
+}
+@end
+
 
 @interface HUDLandscapeContainerViewController : UIViewController
 @property (nonatomic, strong) UIView *contentView;
@@ -25,14 +36,20 @@
 
 @implementation HUDLandscapeContainerViewController
 
+- (void)loadView {
+    // Use passthrough root view so the controller doesn't eat untargeted touches
+    self.view = [[HUDPassthroughView alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    self.view.backgroundColor = [UIColor clearColor];
+}
+
 - (instancetype)init {
     self = [super init];
     if (self) {
         // Создаем контейнер СРАЗУ в init, чтобы он не был nil при настройке делегата
         CGRect screenBounds = [UIScreen mainScreen].bounds;
         CGRect landscapeBounds = CGRectMake(0, 0, MAX(screenBounds.size.width, screenBounds.size.height), MIN(screenBounds.size.width, screenBounds.size.height));
-        
-        self.contentView = [[UIView alloc] initWithFrame:landscapeBounds];
+
+        self.contentView = [[HUDPassthroughView alloc] initWithFrame:landscapeBounds];
         self.contentView.backgroundColor = [UIColor clearColor];
         self.contentView.transform = CGAffineTransformMakeRotation(M_PI_2);
         self.contentView.center = CGPointMake(screenBounds.size.width / 2, screenBounds.size.height / 2);

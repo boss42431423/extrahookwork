@@ -241,6 +241,21 @@ struct ESPBoxData {
     [self addSubview:wm];
     self.watermarkLabel = wm;
 
+    // Dedicated menu toggle button — larger hit area, works without gesture recognizer
+    UIButton *menuBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+    menuBtn.frame = CGRectMake(6, 4, 110, 28);
+    menuBtn.backgroundColor = [[UIColor colorWithRed:0.09f green:0.09f blue:0.12f alpha:0.75f] colorWithAlphaComponent:0.75f];
+    menuBtn.layer.cornerRadius = 6;
+    menuBtn.layer.borderColor = [UIColor colorWithRed:0.62f green:0.12f blue:0.95f alpha:0.8f].CGColor;
+    menuBtn.layer.borderWidth = 1.0f;
+    [menuBtn setTitle:@"☰ extrahook" forState:UIControlStateNormal];
+    menuBtn.titleLabel.font = [UIFont boldSystemFontOfSize:13.0f];
+    [menuBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    [menuBtn setTitleColor:[UIColor colorWithRed:0.78f green:0.30f blue:1.00f alpha:1.0f] forState:UIControlStateHighlighted];
+    menuBtn.userInteractionEnabled = YES;
+    [menuBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
+    [self addSubview:menuBtn];
+
     UILabel *playerCountLabel = [UILabel new];
     playerCountLabel.hidden = YES;
     self.playerCountLabel = playerCountLabel;
@@ -269,10 +284,7 @@ struct ESPBoxData {
         self.menuView.hidden = YES;   // hidden by default — tap watermark to open
         [self addSubview:self.menuView];
     }
-    self.watermarkLabel.userInteractionEnabled = YES;
-    UITapGestureRecognizer *wmTap = [[UITapGestureRecognizer alloc]
-        initWithTarget:self action:@selector(toggleMenu)];
-    [self.watermarkLabel addGestureRecognizer:wmTap];
+    // watermarkLabel stays non-interactive; toggle handled by menuBtn above
 
     [[NSNotificationCenter defaultCenter]
         addObserver:self
