@@ -11,6 +11,7 @@ include $(THEOS)/makefiles/common.mk
 APPLICATION_NAME := extrahook
 
 $(APPLICATION_NAME)_USE_MODULES := 0
+$(APPLICATION_NAME)_INFO_PLIST = Info.plist
 
 $(APPLICATION_NAME)_FILES += $(wildcard sources/*.mm sources/*.m)
 $(APPLICATION_NAME)_FILES += $(wildcard sources/KIF/*.mm sources/KIF/*.m)
