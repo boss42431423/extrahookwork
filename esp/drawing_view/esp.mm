@@ -396,58 +396,25 @@ struct ESPBoxData {
             }
         }
 
-        // Read parent from Il2CppClass. In Unity 2021+ the struct fields may also
-        // be self-relative int32 pointers. Try relative first, fall back to absolute.
+        // DUMP: show upper 32-bits of each 8-byte field in Il2CppClass
+        // This reveals which offsets hold valid iOS pointers (upper32 = 0x00000001 typically)
         {
-            // Scan offsets 0x40-0x70 for a valid parent pointer (relative or absolute)
-            static const int kParentOff[] = {0x58, 0x50, 0x60, 0x48, 0x68, 0x40, 0x70};
-            for (int i = 0; i < 7 && !parentTypeInfo; i++) {
-                mach_vm_address_t slot_addr = typeInfo + kParentOff[i];
-                // Try as relative int32
-                int32_t rv = Read<int32_t>(slot_addr, so2_task);
-                if (rv) {
-                    mach_vm_address_t cand = slot_addr + (int64_t)rv;
-                    if (cand > 0x100000000ULL) { parentTypeInfo = cand; break; }
-                }
-                // Try as absolute uint64
-                mach_vm_address_t av = Read<mach_vm_address_t>(slot_addr, so2_task);
-                if (av > 0x100000000ULL) { parentTypeInfo = av; break; }
+            uint32_t f[16];
+            for (int i = 0; i < 16; i++) {
+                f[i] = (uint32_t)(Read<uint64_t>(typeInfo + i*8, so2_task) >> 32);
             }
-            if (!parentTypeInfo) {
-                s_dbgMsg = [NSString stringWithFormat:@"PTI=0 TI=%llX", typeInfo >> 24];
-                goto CLEAR_BOXES;
-            }
+            // Show fields 0x00-0x78 as 16 hex bytes (upper 32 bits of each qword)
+            // Non-zero = pointer to high address; 0 = null/int/small value
+            s_dbgMsg = [NSString stringWithFormat:
+                @"%X%X%X%X%X%X%X%X %X%X%X%X%X%X%X%X",
+                f[0]&0xF,f[1]&0xF,f[2]&0xF,f[3]&0xF,
+                f[4]&0xF,f[5]&0xF,f[6]&0xF,f[7]&0xF,
+                f[8]&0xF,f[9]&0xF,f[10]&0xF,f[11]&0xF,
+                f[12]&0xF,f[13]&0xF,f[14]&0xF,f[15]&0xF];
+            goto CLEAR_BOXES;
         }
 
-        // Read static_fields from parent Il2CppClass (relative or absolute, multiple offsets)
-        {
-            static const int kSFOff[] = {0xB8, 0xB0, 0xC0, 0xA8, 0xC8};
-            for (int i = 0; i < 5 && !staticFields; i++) {
-                mach_vm_address_t slot_addr = parentTypeInfo + kSFOff[i];
-                int32_t rv = Read<int32_t>(slot_addr, so2_task);
-                if (rv) {
-                    mach_vm_address_t cand = slot_addr + (int64_t)rv;
-                    if (cand > 0x1000000) { staticFields = cand; break; }
-                }
-                mach_vm_address_t av = Read<mach_vm_address_t>(slot_addr, so2_task);
-                if (av > 0x1000000) { staticFields = av; break; }
-            }
-            if (!staticFields) {
-                s_dbgMsg = [NSString stringWithFormat:@"SF=0 PTI=%llX", parentTypeInfo >> 24];
-                goto CLEAR_BOXES;
-            }
-        }
-
-        playerManager = Read<mach_vm_address_t>(staticFields + 0x0, so2_task);
-        if (!playerManager || playerManager < 0x1000000) {
-            // maybe MonoBehaviourRef<T> needs extra deref
-            mach_vm_address_t tmp = Read<mach_vm_address_t>(staticFields + 0x0, so2_task);
-            playerManager = Read<mach_vm_address_t>(tmp, so2_task);
-            if (!playerManager || playerManager < 0x1000000) {
-                s_dbgMsg = [NSString stringWithFormat:@"PM=0 SF=%llX", staticFields >> 24];
-                goto CLEAR_BOXES;
-            }
-        }
+        playerManager = 0; // unreachable — keep compiler happy
 
         dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
         playersDict = dict28;
