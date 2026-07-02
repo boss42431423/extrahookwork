@@ -382,27 +382,51 @@ struct ESPBoxData {
 
         typeInfo = Read<mach_vm_address_t>(unity_base + 178356728, so2_task); // PlayerManager_TypeInfo v0.39.1
         if (!typeInfo || typeInfo < 0x1000000) {
-            s_dbgMsg = @"DBG: TypeInfo=0";
+            // show unity_base so we know if it's valid
+            s_dbgMsg = [NSString stringWithFormat:@"TI=0 UB=%llX", unity_base >> 24];
             goto CLEAR_BOXES;
         }
 
-        parentTypeInfo = Read<mach_vm_address_t>(typeInfo + 0x58, so2_task);
-        if (!parentTypeInfo || parentTypeInfo < 0x1000000) {
-            s_dbgMsg = [NSString stringWithFormat:@"DBG: PTI=0 TI=0x%llX", typeInfo];
-            goto CLEAR_BOXES;
+        // Scan for parent pointer at multiple Il2CppClass offsets (varies by Unity version)
+        {
+            int parentOff = 0;
+            static const int kParentOffsets[] = {0x40, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70};
+            for (int i = 0; i < 7; i++) {
+                mach_vm_address_t v = Read<mach_vm_address_t>(typeInfo + kParentOffsets[i], so2_task);
+                if (v > 0x100000000ULL) { parentTypeInfo = v; parentOff = kParentOffsets[i]; break; }
+            }
+            if (!parentTypeInfo) {
+                // None found — dump raw upper 8 bits of each slot
+                uint64_t v40 = Read<uint64_t>(typeInfo + 0x40, so2_task) >> 32;
+                uint64_t v48 = Read<uint64_t>(typeInfo + 0x48, so2_task) >> 32;
+                uint64_t v50 = Read<uint64_t>(typeInfo + 0x50, so2_task) >> 32;
+                uint64_t v58 = Read<uint64_t>(typeInfo + 0x58, so2_task) >> 32;
+                uint64_t v60 = Read<uint64_t>(typeInfo + 0x60, so2_task) >> 32;
+                uint64_t v68 = Read<uint64_t>(typeInfo + 0x68, so2_task) >> 32;
+                s_dbgMsg = [NSString stringWithFormat:
+                    @"TI=%llX 40:%llX 48:%llX 50:%llX 58:%llX 60:%llX 68:%llX",
+                    typeInfo >> 24, v40, v48, v50, v58, v60, v68];
+                goto CLEAR_BOXES;
+            }
+            (void)parentOff; // suppress warning if not used
         }
 
-        staticFields = Read<mach_vm_address_t>(parentTypeInfo + 0xB8, so2_task);
-        if (!staticFields || staticFields < 0x1000000)
-            staticFields = Read<mach_vm_address_t>(parentTypeInfo + 0xB0, so2_task);
-        if (!staticFields || staticFields < 0x1000000) {
-            s_dbgMsg = [NSString stringWithFormat:@"DBG: SF=0 PTI=0x%llX", parentTypeInfo];
-            goto CLEAR_BOXES;
+        // Scan for static_fields at multiple offsets in parentTypeInfo
+        {
+            static const int kSFOffsets[] = {0xA8, 0xB0, 0xB8, 0xC0, 0xC8};
+            for (int i = 0; i < 5; i++) {
+                mach_vm_address_t v = Read<mach_vm_address_t>(parentTypeInfo + kSFOffsets[i], so2_task);
+                if (v > 0x1000000) { staticFields = v; break; }
+            }
+            if (!staticFields) {
+                s_dbgMsg = [NSString stringWithFormat:@"SF=0 PTI=%llX", parentTypeInfo >> 24];
+                goto CLEAR_BOXES;
+            }
         }
 
         playerManager = Read<mach_vm_address_t>(staticFields + 0x0, so2_task);
         if (!playerManager || playerManager < 0x1000000) {
-            s_dbgMsg = [NSString stringWithFormat:@"DBG: PM=0 SF=0x%llX", staticFields];
+            s_dbgMsg = [NSString stringWithFormat:@"PM=0 SF=%llX", staticFields >> 24];
             goto CLEAR_BOXES;
         }
 
