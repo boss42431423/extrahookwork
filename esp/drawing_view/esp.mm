@@ -396,21 +396,35 @@ struct ESPBoxData {
             }
         }
 
-        // DUMP: show upper 32-bits of each 8-byte field in Il2CppClass
-        // This reveals which offsets hold valid iOS pointers (upper32 = 0x00000001 typically)
+        // STRUCT DUMP: read 8 qwords from typeInfo and show upper-32 of each.
+        // Freezes once any non-zero value is found so user can read it.
         {
-            uint32_t f[16];
-            for (int i = 0; i < 16; i++) {
-                f[i] = (uint32_t)(Read<uint64_t>(typeInfo + i*8, so2_task) >> 32);
+            static NSString *s_frozen = nil;
+            static uint64_t s_lastTI  = 0;
+
+            // Reset freeze if typeInfo address changed (e.g. after re-inject)
+            if (typeInfo != s_lastTI) { s_frozen = nil; s_lastTI = typeInfo; }
+
+            if (!s_frozen) {
+                uint64_t v[8];
+                int nz = 0;
+                for (int i = 0; i < 8; i++) {
+                    v[i] = Read<uint64_t>(typeInfo + i * 8, so2_task);
+                    if (v[i] > 0x100000000ULL) nz++;
+                }
+                if (nz > 0) {
+                    // Compact: show upper-32 of offsets 00,08,10,18,20,28,30,38
+                    s_frozen = [NSString stringWithFormat:
+                        @"TI+8:%X|%X|%X|%X|%X|%X|%X",
+                        (uint32_t)(v[1]>>32),(uint32_t)(v[2]>>32),(uint32_t)(v[3]>>32),
+                        (uint32_t)(v[4]>>32),(uint32_t)(v[5]>>32),(uint32_t)(v[6]>>32),
+                        (uint32_t)(v[7]>>32)];
+                } else {
+                    s_dbgMsg = [NSString stringWithFormat:@"ALL0 ti=%llX", typeInfo >> 28];
+                    goto CLEAR_BOXES;
+                }
             }
-            // Show fields 0x00-0x78 as 16 hex bytes (upper 32 bits of each qword)
-            // Non-zero = pointer to high address; 0 = null/int/small value
-            s_dbgMsg = [NSString stringWithFormat:
-                @"%X%X%X%X%X%X%X%X %X%X%X%X%X%X%X%X",
-                f[0]&0xF,f[1]&0xF,f[2]&0xF,f[3]&0xF,
-                f[4]&0xF,f[5]&0xF,f[6]&0xF,f[7]&0xF,
-                f[8]&0xF,f[9]&0xF,f[10]&0xF,f[11]&0xF,
-                f[12]&0xF,f[13]&0xF,f[14]&0xF,f[15]&0xF];
+            s_dbgMsg = s_frozen;
             goto CLEAR_BOXES;
         }
 
