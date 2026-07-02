@@ -396,39 +396,56 @@ struct ESPBoxData {
             }
         }
 
-        // STRUCT DUMP: read 8 qwords from typeInfo and show upper-32 of each.
-        // Freezes once any non-zero value is found so user can read it.
+        // PAC-aware pointer reading: strip arm64e PAC tag bits (upper 25 bits)
+        // Real arm64e user-space address fits in lower 39 bits (0x0000007FFFFFFFFF)
+        #define READPTR(addr) (Read<uint64_t>((addr), so2_task) & 0x0000007FFFFFFFFFULL)
+
+        // Try parent at multiple offsets (strip PAC, check if result is valid iOS ptr)
         {
-            static NSString *s_frozen = nil;
-            static uint64_t s_lastTI  = 0;
-
-            // Reset freeze if typeInfo address changed (e.g. after re-inject)
-            if (typeInfo != s_lastTI) { s_frozen = nil; s_lastTI = typeInfo; }
-
-            if (!s_frozen) {
-                uint64_t v[8];
-                int nz = 0;
-                for (int i = 0; i < 8; i++) {
-                    v[i] = Read<uint64_t>(typeInfo + i * 8, so2_task);
-                    if (v[i] > 0x100000000ULL) nz++;
-                }
-                if (nz > 0) {
-                    // Compact: show upper-32 of offsets 00,08,10,18,20,28,30,38
-                    s_frozen = [NSString stringWithFormat:
-                        @"TI+8:%X|%X|%X|%X|%X|%X|%X",
-                        (uint32_t)(v[1]>>32),(uint32_t)(v[2]>>32),(uint32_t)(v[3]>>32),
-                        (uint32_t)(v[4]>>32),(uint32_t)(v[5]>>32),(uint32_t)(v[6]>>32),
-                        (uint32_t)(v[7]>>32)];
-                } else {
-                    s_dbgMsg = [NSString stringWithFormat:@"ALL0 ti=%llX", typeInfo >> 28];
-                    goto CLEAR_BOXES;
-                }
+            static const int kPOff[] = {0x58, 0x50, 0x60, 0x48, 0x68, 0x40, 0x70};
+            for (int i = 0; i < 7 && !parentTypeInfo; i++) {
+                mach_vm_address_t v = READPTR(typeInfo + kPOff[i]);
+                if (v > 0x100000000ULL && v < 0x800000000000ULL) { parentTypeInfo = v; break; }
             }
-            s_dbgMsg = s_frozen;
+            if (!parentTypeInfo) {
+                // show lower-32 of each candidate so we can identify which is parent
+                static NSString *s_fr = nil;
+                static uint64_t s_ti = 0;
+                if (typeInfo != s_ti) { s_fr = nil; s_ti = typeInfo; }
+                if (!s_fr) {
+                    s_fr = [NSString stringWithFormat:
+                        @"50:%X 58:%X 60:%X 68:%X 70:%X",
+                        (uint32_t)Read<uint64_t>(typeInfo+0x50,so2_task),
+                        (uint32_t)Read<uint64_t>(typeInfo+0x58,so2_task),
+                        (uint32_t)Read<uint64_t>(typeInfo+0x60,so2_task),
+                        (uint32_t)Read<uint64_t>(typeInfo+0x68,so2_task),
+                        (uint32_t)Read<uint64_t>(typeInfo+0x70,so2_task)];
+                }
+                s_dbgMsg = s_fr;
+                goto CLEAR_BOXES;
+            }
+        }
+
+        // static_fields: try multiple offsets from parent, strip PAC
+        {
+            static const int kSFOff[] = {0xB8, 0xB0, 0xC0, 0xA8, 0x80, 0x88, 0xC8};
+            for (int i = 0; i < 7 && !staticFields; i++) {
+                mach_vm_address_t v = READPTR(parentTypeInfo + kSFOff[i]);
+                if (v > 0x1000000 && v < 0x800000000000ULL) { staticFields = v; break; }
+            }
+            if (!staticFields) {
+                s_dbgMsg = [NSString stringWithFormat:@"SF=0 PTI=%llX", parentTypeInfo >> 24];
+                goto CLEAR_BOXES;
+            }
+        }
+
+        playerManager = READPTR(staticFields + 0x0);
+        if (!playerManager || playerManager < 0x1000000 || playerManager > 0x800000000000ULL) {
+            s_dbgMsg = [NSString stringWithFormat:@"PM=0 SF=%llX", staticFields >> 24];
             goto CLEAR_BOXES;
         }
 
-        playerManager = 0; // unreachable — keep compiler happy
+        #undef READPTR
 
         dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
         playersDict = dict28;
