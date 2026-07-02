@@ -70,6 +70,7 @@ volatile bool esp_box_outline = false;
 volatile bool esp_box_fill = false;
 volatile bool esp_box_corner = false;
 volatile bool esp_box_3d = false;
+volatile bool esp_box_3d_corner = false;
 volatile bool esp_line_enabled = false;
 volatile bool esp_line_outline = false;
 volatile bool esp_invisible = false;
@@ -261,10 +262,10 @@ struct ESPBoxData {
 
     // In-game menu overlay — tap watermark to show, tap again to hide
     {
-        CGRect  sc  = UIScreen.mainScreen.bounds;
-        CGFloat mw  = 300, mh = 360;
-        CGFloat mx  = (sc.size.width - mw) * 0.5f;
-        self.menuView = [[MenuView alloc] initWithFrame:CGRectMake(mx, 60, mw, mh)];
+        CGFloat mw  = 300, mh = 340;
+        CGFloat mx  = (self.frame.size.width  - mw) * 0.5f;
+        CGFloat my  = (self.frame.size.height - mh) * 0.5f;
+        self.menuView = [[MenuView alloc] initWithFrame:CGRectMake(mx, my, mw, mh)];
         self.menuView.hidden = YES;   // hidden by default — tap watermark to open
         [self addSubview:self.menuView];
     }
@@ -524,7 +525,7 @@ struct ESPBoxData {
                 if (wc > 0x1000000) {
                     mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                     if (ctrl > 0x1000000) {
-                        mach_vm_address_t gun = Read<mach_vm_address_t>(ctrl + 0xD0, so2_task);
+                        mach_vm_address_t gun = Read<mach_vm_address_t>(ctrl + 0x168, so2_task);
                         if (gun > 0x1000000) {
                             mach_vm_address_t rcp = Read<mach_vm_address_t>(gun + 0x158, so2_task);
                             if (rcp > 0x1000000) {
