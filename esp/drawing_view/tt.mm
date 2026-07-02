@@ -1073,19 +1073,42 @@ static __attribute__((unused)) std::string readUnityString(uintptr_t str_ptr, ta
 
     if (!c_task || !c_base) return;
 
-    uintptr_t typeInfo = Read<uintptr_t>(c_base + 178348240, c_task); // InventoryManager_TypeInfo v0.39.1
-    if (!typeInfo) return;
-    
-    uintptr_t parentTypeInfo = Read<uintptr_t>(typeInfo + 0x58, c_task);
+    // Unity 2021+: TypeInfo stored as self-relative int32 pointer
+    uintptr_t ti_ptr_addr = c_base + 178348240; // InventoryManager_TypeInfo RVA v0.39.1
+    int32_t raw_ti = Read<int32_t>(ti_ptr_addr, c_task);
+    if (!raw_ti) return;
+    uintptr_t typeInfo = ti_ptr_addr + (int64_t)raw_ti;
+    if (typeInfo < 0x100000000ULL) return;
+
+    // parent field — try relative int32 at multiple offsets, fall back to absolute
+    uintptr_t parentTypeInfo = 0;
+    {
+        static const int kPOff[] = {0x58, 0x50, 0x60, 0x48, 0x68};
+        for (int i = 0; i < 5 && !parentTypeInfo; i++) {
+            uintptr_t slot = typeInfo + kPOff[i];
+            int32_t rv = Read<int32_t>(slot, c_task);
+            if (rv) { uintptr_t c = slot + (int64_t)rv; if (c > 0x100000000ULL) { parentTypeInfo = c; break; } }
+            uintptr_t av = Read<uintptr_t>(slot, c_task);
+            if (av > 0x100000000ULL) { parentTypeInfo = av; break; }
+        }
+    }
     if (!parentTypeInfo) return;
-    
-    uintptr_t staticFields = Read<uintptr_t>(parentTypeInfo + 0xB8, c_task);
-    if (!staticFields || staticFields < 0x1000000)
-        staticFields = Read<uintptr_t>(parentTypeInfo + 0xB0, c_task);
-        
+
+    // static_fields — try relative int32 at multiple offsets, fall back to absolute
+    uintptr_t staticFields = 0;
+    {
+        static const int kSFOff[] = {0xB8, 0xB0, 0xC0, 0xA8, 0xC8};
+        for (int i = 0; i < 5 && !staticFields; i++) {
+            uintptr_t slot = parentTypeInfo + kSFOff[i];
+            int32_t rv = Read<int32_t>(slot, c_task);
+            if (rv) { uintptr_t c = slot + (int64_t)rv; if (c > 0x1000000) { staticFields = c; break; } }
+            uintptr_t av = Read<uintptr_t>(slot, c_task);
+            if (av > 0x1000000) { staticFields = av; break; }
+        }
+    }
     if (!staticFields) return;
-    
-    uintptr_t inventoryManager = Read<uintptr_t>(staticFields, c_task); 
+
+    uintptr_t inventoryManager = Read<uintptr_t>(staticFields, c_task);
     if (!inventoryManager) return;
     
     // Auto-generated: initialize all skins list from embedded data

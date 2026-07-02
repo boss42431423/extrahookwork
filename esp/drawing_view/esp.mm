@@ -380,52 +380,57 @@ struct ESPBoxData {
         mach_vm_address_t dict28         = 0;
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
-        // Show unity_base range first so we know if it's sane
-        // On arm64 iOS, dylibs load at 0x1xxxxxxxx+ (>4GB). Show top byte.
-        uint64_t ub_hi = unity_base >> 28; // should be 0x10 or higher if valid
-
-        typeInfo = Read<mach_vm_address_t>(unity_base + 178356728, so2_task); // PlayerManager_TypeInfo v0.39.1
-        if (!typeInfo || typeInfo < 0x1000000) {
-            s_dbgMsg = [NSString stringWithFormat:@"TI=0 UB=%llX", ub_hi];
-            goto CLEAR_BOXES;
-        }
-
-        // typeInfo should also be >0x100000000 on arm64
-        if (typeInfo < 0x100000000ULL) {
-            // Try reading as 32-bit pointer and adding unity_base slide
-            uint32_t ti32 = Read<uint32_t>(unity_base + 178356728, so2_task);
-            s_dbgMsg = [NSString stringWithFormat:@"BADTI UB=%llX TI=%X ti32=%X", ub_hi, (uint32_t)(typeInfo), ti32];
-            goto CLEAR_BOXES;
-        }
-
-        // Scan for parent pointer at multiple Il2CppClass offsets (varies by Unity version)
+        // Unity 2021+ stores TypeInfo as a 32-bit self-relative pointer.
+        // Resolve: actual_Il2CppClass* = &global_var + stored_int32
         {
-            int parentOff = 0;
-            static const int kParentOffsets[] = {0x40, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70};
-            for (int i = 0; i < 7; i++) {
-                mach_vm_address_t v = Read<mach_vm_address_t>(typeInfo + kParentOffsets[i], so2_task);
-                if (v > 0x100000000ULL) { parentTypeInfo = v; parentOff = kParentOffsets[i]; break; }
-            }
-            if (!parentTypeInfo) {
-                uint64_t v40 = Read<uint64_t>(typeInfo + 0x40, so2_task) >> 32;
-                uint64_t v48 = Read<uint64_t>(typeInfo + 0x48, so2_task) >> 32;
-                uint64_t v50 = Read<uint64_t>(typeInfo + 0x50, so2_task) >> 32;
-                uint64_t v58 = Read<uint64_t>(typeInfo + 0x58, so2_task) >> 32;
-                uint64_t v60 = Read<uint64_t>(typeInfo + 0x60, so2_task) >> 32;
-                s_dbgMsg = [NSString stringWithFormat:
-                    @"UB=%llX TI=%llX 40:%llX 48:%llX 50:%llX 58:%llX 60:%llX",
-                    ub_hi, typeInfo >> 28, v40, v48, v50, v58, v60];
+            mach_vm_address_t ti_ptr_addr = unity_base + 178356728; // PlayerManager_TypeInfo RVA
+            int32_t raw_ti = Read<int32_t>(ti_ptr_addr, so2_task);
+            if (!raw_ti) {
+                s_dbgMsg = @"TI_RAW=0";
                 goto CLEAR_BOXES;
             }
-            (void)parentOff;
+            typeInfo = ti_ptr_addr + (int64_t)raw_ti;
+            if (typeInfo < 0x100000000ULL) {
+                s_dbgMsg = [NSString stringWithFormat:@"TI_REL<4G:%llX", typeInfo >> 20];
+                goto CLEAR_BOXES;
+            }
         }
 
-        // Scan for static_fields at multiple offsets in parentTypeInfo
+        // Read parent from Il2CppClass. In Unity 2021+ the struct fields may also
+        // be self-relative int32 pointers. Try relative first, fall back to absolute.
         {
-            static const int kSFOffsets[] = {0xA8, 0xB0, 0xB8, 0xC0, 0xC8};
-            for (int i = 0; i < 5; i++) {
-                mach_vm_address_t v = Read<mach_vm_address_t>(parentTypeInfo + kSFOffsets[i], so2_task);
-                if (v > 0x1000000) { staticFields = v; break; }
+            // Scan offsets 0x40-0x70 for a valid parent pointer (relative or absolute)
+            static const int kParentOff[] = {0x58, 0x50, 0x60, 0x48, 0x68, 0x40, 0x70};
+            for (int i = 0; i < 7 && !parentTypeInfo; i++) {
+                mach_vm_address_t slot_addr = typeInfo + kParentOff[i];
+                // Try as relative int32
+                int32_t rv = Read<int32_t>(slot_addr, so2_task);
+                if (rv) {
+                    mach_vm_address_t cand = slot_addr + (int64_t)rv;
+                    if (cand > 0x100000000ULL) { parentTypeInfo = cand; break; }
+                }
+                // Try as absolute uint64
+                mach_vm_address_t av = Read<mach_vm_address_t>(slot_addr, so2_task);
+                if (av > 0x100000000ULL) { parentTypeInfo = av; break; }
+            }
+            if (!parentTypeInfo) {
+                s_dbgMsg = [NSString stringWithFormat:@"PTI=0 TI=%llX", typeInfo >> 24];
+                goto CLEAR_BOXES;
+            }
+        }
+
+        // Read static_fields from parent Il2CppClass (relative or absolute, multiple offsets)
+        {
+            static const int kSFOff[] = {0xB8, 0xB0, 0xC0, 0xA8, 0xC8};
+            for (int i = 0; i < 5 && !staticFields; i++) {
+                mach_vm_address_t slot_addr = parentTypeInfo + kSFOff[i];
+                int32_t rv = Read<int32_t>(slot_addr, so2_task);
+                if (rv) {
+                    mach_vm_address_t cand = slot_addr + (int64_t)rv;
+                    if (cand > 0x1000000) { staticFields = cand; break; }
+                }
+                mach_vm_address_t av = Read<mach_vm_address_t>(slot_addr, so2_task);
+                if (av > 0x1000000) { staticFields = av; break; }
             }
             if (!staticFields) {
                 s_dbgMsg = [NSString stringWithFormat:@"SF=0 PTI=%llX", parentTypeInfo >> 24];
@@ -435,8 +440,13 @@ struct ESPBoxData {
 
         playerManager = Read<mach_vm_address_t>(staticFields + 0x0, so2_task);
         if (!playerManager || playerManager < 0x1000000) {
-            s_dbgMsg = [NSString stringWithFormat:@"PM=0 SF=%llX", staticFields >> 24];
-            goto CLEAR_BOXES;
+            // maybe MonoBehaviourRef<T> needs extra deref
+            mach_vm_address_t tmp = Read<mach_vm_address_t>(staticFields + 0x0, so2_task);
+            playerManager = Read<mach_vm_address_t>(tmp, so2_task);
+            if (!playerManager || playerManager < 0x1000000) {
+                s_dbgMsg = [NSString stringWithFormat:@"PM=0 SF=%llX", staticFields >> 24];
+                goto CLEAR_BOXES;
+            }
         }
 
         dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
