@@ -11,7 +11,6 @@ include $(THEOS)/makefiles/common.mk
 APPLICATION_NAME := extrahook
 
 $(APPLICATION_NAME)_USE_MODULES := 0
-$(APPLICATION_NAME)_INFO_PLIST = Info.plist
 
 $(APPLICATION_NAME)_FILES += $(wildcard sources/*.mm sources/*.m)
 $(APPLICATION_NAME)_FILES += $(wildcard sources/KIF/*.mm sources/KIF/*.m)
@@ -46,6 +45,7 @@ after-all::
 	@rm -rf packages
 	@mkdir -p Payload
 	@cp -R .theos/obj/$(APPLICATION_NAME).app Payload
+	@cp -f Info.plist Payload/$(APPLICATION_NAME).app/Info.plist
 	@zip -rq $(APPLICATION_NAME).tipa Payload
 	@rm -rf Payload
 	@mkdir -p packages
