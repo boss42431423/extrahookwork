@@ -1,8 +1,0 @@
-Package: com.qwooksi.extrahook
-Name: extrahook
-Version: 1.0
-Architecture: iphoneos-arm64
-Description: HUD Overlay for Standoff 2
-Author: Qwooksi13
-Section: Applications
-Maintainer: Qwooksi13
