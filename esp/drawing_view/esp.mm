@@ -553,22 +553,20 @@ struct ESPBoxData {
                 if (wc > 0x1000000) {
                     mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                     if (ctrl > 0x1000000) {
-                        mach_vm_address_t wp = Read<mach_vm_address_t>(ctrl + 0xA8, so2_task);
-                        if (wp > 0x1000000) {
-                            uint8_t weaponId = Read<uint8_t>(wp + 0x18, so2_task);
-                            if (weaponId >= 70 && weaponId < 90) {
-                                mach_vm_address_t knifeParams = Read<mach_vm_address_t>(ctrl + 0x18, so2_task);
-                                if (knifeParams > 0x1000000) {
-                                    Write<float>(knifeParams + 0x110, 0.01f, so2_task);
-                                }
-                                // Nullable<SafeFloat> in KnifeController
-                                bool hasVal = Read<bool>(ctrl + 0x100, so2_task);
-                                if (hasVal) {
-                                    int key = Read<int>(ctrl + 0x104, so2_task);
-                                    float val = 0.01f;
-                                    int valInt = *reinterpret_cast<int*>(&val);
-                                    Write<int>(ctrl + 0x108, key ^ valInt, so2_task);
-                                }
+                        // v0.39.1: detect melee via SlotIndex byte at WeaponController+0x94 (slot 2 = melee)
+                        uint8_t weaponSlot = Read<uint8_t>(ctrl + 0x94, so2_task);
+                        if (weaponSlot == 2) {
+                            mach_vm_address_t knifeParams = Read<mach_vm_address_t>(ctrl + 0x18, so2_task);
+                            if (knifeParams > 0x1000000) {
+                                Write<float>(knifeParams + 0x110, 0.01f, so2_task);
+                            }
+                            // Nullable<SafeFloat> in KnifeController
+                            bool hasVal = Read<bool>(ctrl + 0x100, so2_task);
+                            if (hasVal) {
+                                int key = Read<int>(ctrl + 0x104, so2_task);
+                                float val = 0.01f;
+                                int valInt = *reinterpret_cast<int*>(&val);
+                                Write<int>(ctrl + 0x108, key ^ valInt, so2_task);
                             }
                         }
                     }
@@ -694,27 +692,10 @@ struct ESPBoxData {
             UIBezierPath *healthBarPath   = [UIBezierPath bezierPath];
             UIBezierPath *healthBarOutlinePath = [UIBezierPath bezierPath];
 
+            // Direct read: PlayerController+0x79 → team byte (новые офсеты)
             int localTeam = 0;
             if (esp_team_check) {
-                mach_vm_address_t localPhoton = Read<mach_vm_address_t>(localPlayer + 0x160, so2_task);
-                mach_vm_address_t localProps  = Read<mach_vm_address_t>(localPhoton + 0x38, so2_task);
-                if (localProps > 0x1000000) {
-                    int propsSize = Read<int>(localProps + 0x20, so2_task);
-                    mach_vm_address_t propsList = Read<mach_vm_address_t>(localProps + 0x18, so2_task);
-                    for (int j = 0; j < propsSize; j++) {
-                        mach_vm_address_t propkey = Read<mach_vm_address_t>(propsList + 0x28 + 0x18 * j, so2_task);
-                        if (!propkey) continue;
-                        int keyLen = Read<int>(propkey + 0x10, so2_task);
-                        if (keyLen == 4) {
-                            uint64_t str_val = Read<uint64_t>(propkey + 0x14, so2_task);
-                            if (str_val == 0x006D006100650074ULL) { // "team"
-                                mach_vm_address_t propval = Read<mach_vm_address_t>(propsList + 0x30 + 0x18 * j, so2_task);
-                                localTeam = Read<int>(propval + 0x10, so2_task);
-                                break;
-                            }
-                        }
-                    }
-                }
+                localTeam = (int)Read<uint8_t>(localPlayer + 0x79, so2_task);
             }
             mach_vm_address_t *players = (mach_vm_address_t *)malloc(capacity * sizeof(mach_vm_address_t));
             for (int i = 0; i < capacity; i++) {
@@ -726,16 +707,7 @@ struct ESPBoxData {
                 if (player < 0x1000000 || player == localPlayer) continue;
 
                 if (esp_team_check) {
-                    mach_vm_address_t photon = Read<mach_vm_address_t>(player + 0x160, so2_task);
-                    if (photon > 0x1000000) {
-                        mach_vm_address_t props = Read<mach_vm_address_t>(photon + 0x38, so2_task);
-                        if (props > 0x1000000) {
-                            mach_vm_address_t propsList = Read<mach_vm_address_t>(props + 0x18, so2_task);
-                            if (propsList > 0x1000000) {
-                                if (GetPlayerTeamAim(player, so2_task) == localTeam) continue;
-                            }
-                        }
-                    }
+                    if (GetPlayerTeamAim(player, so2_task) == localTeam) continue;
                 }
 
                 mach_vm_address_t moveCtrl = Read<mach_vm_address_t>(player + 0x98, so2_task);
@@ -998,16 +970,14 @@ struct UnityString32 { uint16_t chars[32]; };
                         if (wc > 0x1000000) {
                             mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                             if (ctrl > 0x1000000) {
-                                mach_vm_address_t wp = Read<mach_vm_address_t>(ctrl + 0xA8, so2_task);
-                                if (wp > 0x1000000) {
-                                    mach_vm_address_t namePtr = Read<mach_vm_address_t>(wp + 0x20, so2_task);
-                                    if (namePtr > 0x1000000) {
-                                        int nameLen = Read<int>(namePtr + 0x10, so2_task);
-                                        if (nameLen > 0 && nameLen < 32) {
-                                            struct UnityString32 { uint16_t chars[32]; };
-                                            UnityString32 strData = Read<UnityString32>(namePtr + 0x14, so2_task);
-                                            weaponStr = [NSString stringWithCharacters:(const unichar *)strData.chars length:nameLen];
-                                        }
+                                // v0.39.1: weapon name is a direct string field at WeaponController+0x98
+                                mach_vm_address_t namePtr = Read<mach_vm_address_t>(ctrl + 0x98, so2_task);
+                                if (namePtr > 0x1000000) {
+                                    int nameLen = Read<int>(namePtr + 0x10, so2_task);
+                                    if (nameLen > 0 && nameLen < 32) {
+                                        struct UnityString32 { uint16_t chars[32]; };
+                                        UnityString32 strData = Read<UnityString32>(namePtr + 0x14, so2_task);
+                                        weaponStr = [NSString stringWithCharacters:(const unichar *)strData.chars length:nameLen];
                                     }
                                 }
                             }
@@ -1203,29 +1173,9 @@ static Vector3 GetBonePosition(mach_vm_address_t player, int boneIdx, task_t tas
 }
 
 static int GetPlayerTeamAim(mach_vm_address_t player, task_t task) {
+    // Direct read: PlayerController+0x79 → team byte (новые офсеты)
     if (!player || player < 0x1000000) return -1;
-    mach_vm_address_t photon = Read<mach_vm_address_t>(player + 0x160, task);
-    if (!photon || photon < 0x1000000) return -1;
-    mach_vm_address_t props = Read<mach_vm_address_t>(photon + 0x38, task);
-    if (!props || props < 0x1000000) return -1;
-    int sz = Read<int>(props + 0x20, task);
-    if (sz <= 0 || sz > 64) return -1;
-    mach_vm_address_t entries = Read<mach_vm_address_t>(props + 0x18, task);
-    if (!entries || entries < 0x1000000) return -1;
-    for (int j = 0; j < sz && j < 32; j++) {
-        mach_vm_address_t pk = Read<mach_vm_address_t>(entries + 0x28 + 0x18 * j, task);
-        if (!pk || pk < 0x1000000) continue;
-        int kl = Read<int>(pk + 0x10, task);
-        if (kl == 4) {
-            uint64_t str_val = Read<uint64_t>(pk + 0x14, task);
-            if (str_val == 0x006D006100650074ULL) { // "team"
-                mach_vm_address_t pv = Read<mach_vm_address_t>(entries + 0x30 + 0x18 * j, task);
-                if (!pv || pv < 0x1000000) continue;
-                return Read<int>(pv + 0x10, task);
-            }
-        }
-    }
-    return -1;
+    return (int)Read<uint8_t>(player + 0x79, task);
 }
 
 
@@ -1294,29 +1244,12 @@ static int GetPlayerPlatform(mach_vm_address_t player, task_t task) {
 }
 
 static int GetPlayerHealthAim(mach_vm_address_t player, task_t task) {
+    // Direct read: PlayerController+0x7C → float Health (новые офсеты)
     if (!player || player < 0x1000000) return 0;
-    mach_vm_address_t photon = Read<mach_vm_address_t>(player + 0x160, task);
-    if (!photon || photon < 0x1000000) return 0;
-    mach_vm_address_t props = Read<mach_vm_address_t>(photon + 0x38, task);
-    if (!props || props < 0x1000000) return 0;
-    int sz = Read<int>(props + 0x20, task);
-    if (sz <= 0 || sz > 64) return 0;
-    mach_vm_address_t entries = Read<mach_vm_address_t>(props + 0x18, task);
-    if (!entries || entries < 0x1000000) return 0;
-    for (int j = 0; j < sz && j < 32; j++) {
-        mach_vm_address_t pk = Read<mach_vm_address_t>(entries + 0x28 + 0x18 * j, task);
-        if (!pk || pk < 0x1000000) continue;
-        int kl = Read<int>(pk + 0x10, task);
-        if (kl == 6) {
-            uint64_t str_val = Read<uint64_t>(pk + 0x14, task);
-            if (str_val == 0x006C006100650068ULL) { // "heal"
-                mach_vm_address_t pv = Read<mach_vm_address_t>(entries + 0x30 + 0x18 * j, task);
-                if (!pv || pv < 0x1000000) continue;
-                return Read<int>(pv + 0x10, task);
-            }
-        }
-    }
-    return 0;
+    float hp = Read<float>(player + 0x7C, task);
+    if (hp < 0.0f) hp = 0.0f;
+    if (hp > 100.0f) hp = 100.0f;
+    return (int)hp;
 }
 
 static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
@@ -1411,13 +1344,11 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
         if (wc > 0x1000000) {
             mach_vm_address_t wctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
             if (wctrl > 0x1000000) {
-                mach_vm_address_t wp = Read<mach_vm_address_t>(wctrl + 0xA8, so2_task);
-                if (wp > 0x1000000) {
-                    uint8_t wid = Read<uint8_t>(wp + 0x18, so2_task);
-                    if (wid >= 70 && wid < 90) {
-                        self.aimbotCurrentTarget = 0;
-                        return;
-                    }
+                // v0.39.1: detect melee via SlotIndex byte at WeaponController+0x94 (slot 2 = melee)
+                uint8_t wid = Read<uint8_t>(wctrl + 0x94, so2_task);
+                if (wid == 2) {
+                    self.aimbotCurrentTarget = 0;
+                    return;
                 }
             }
         }

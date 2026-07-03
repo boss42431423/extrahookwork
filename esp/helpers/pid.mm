@@ -235,9 +235,9 @@ static uint64_t _safe64(task_t task, uint64_t addr) {
 }
 
 uint64_t find_pm_typeinfo_offset(task_t task, mach_vm_address_t unity_base) {
-    const uint64_t KNOWN_OFF  = 164201496ULL; // 0x9CA0A18 — last known (old version)
-    const uint64_t SCAN_RADIUS = 8ULL * 1024 * 1024; // search ±8 MB
-    const uint32_t CHUNK_BYTES = 256 * 1024;          // read 256 KB per chunk
+    const uint64_t KNOWN_OFF  = 164201496ULL; // 0x9CA1C18 — base (pre-v0.39.1), scanner will find new offset
+    const uint64_t SCAN_RADIUS = 256ULL * 1024 * 1024; // search +-256 MB (v0.39.1 offset may have shifted far)
+    const uint64_t CHUNK_BYTES = 256 * 1024;          // read 256 KB per chunk
 
     uint64_t scan_start = (KNOWN_OFF > SCAN_RADIUS) ? (KNOWN_OFF - SCAN_RADIUS) : 0;
     scan_start &= ~7ULL; // 8-byte align
