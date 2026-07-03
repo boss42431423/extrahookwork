@@ -1,0 +1,41 @@
+name: Build PastaWare
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build .tipa
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install ldid make
+
+      - name: Setup Theos
+        env:
+          THEOS: /opt/theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git $THEOS
+          mkdir -p $THEOS/sdks
+          curl -L -o sdks.tar.gz https://github.com/theos/sdks/archive/refs/heads/master.tar.gz
+          tar -xf sdks.tar.gz
+          cp -r sdks-master/iPhoneOS16.5.sdk $THEOS/sdks/ 2>/dev/null || \
+          cp -r sdks-master/$(ls sdks-master | grep -i iphone | sort | tail -1) $THEOS/sdks/
+          rm -rf sdks-master sdks.tar.gz
+
+      - name: Build
+        env:
+          THEOS: /opt/theos
+        run: gmake package FINALPACKAGE=1 DEBUG=0
+
+      - name: Upload .tipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PastaWare
+          path: packages/*.tipa
+          if-no-files-found: error
