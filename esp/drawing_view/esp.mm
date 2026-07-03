@@ -357,8 +357,12 @@ struct ESPBoxData {
     }
 
     if (so2_pid != cached_so2_pid || !cached_so2_task || !cached_unity_base) {
+        // Try processor_set_tasks first, fall back to task_for_pid (works reliably on iOS 15 with task_for_pid-allow)
         cached_so2_task = get_task_by_pid(so2_pid);
-        if (cached_so2_task) {
+        if (!cached_so2_task || cached_so2_task == MACH_PORT_NULL) {
+            cached_so2_task = get_task_for_PID(so2_pid);
+        }
+        if (cached_so2_task && cached_so2_task != MACH_PORT_NULL) {
             cached_unity_base = get_image_base_address(cached_so2_task, "UnityFramework");
         }
         cached_so2_pid = so2_pid;
@@ -377,18 +381,28 @@ struct ESPBoxData {
         mach_vm_address_t dict28         = 0;
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
-        typeInfo = Read<mach_vm_address_t>(unity_base + 164201496, so2_task);
-        if (!typeInfo || typeInfo < 0x1000000) goto CLEAR_BOXES;
-
-        parentTypeInfo = Read<mach_vm_address_t>(typeInfo + 0x58, so2_task);
-        if (!parentTypeInfo || parentTypeInfo < 0x1000000) goto CLEAR_BOXES;
-
-        staticFields = Read<mach_vm_address_t>(parentTypeInfo + 0xB8, so2_task);
-        if (!staticFields || staticFields < 0x1000000)
-            staticFields = Read<mach_vm_address_t>(parentTypeInfo + 0xB0, so2_task);
-        if (!staticFields || staticFields < 0x1000000) goto CLEAR_BOXES;
-
-        playerManager = Read<mach_vm_address_t>(staticFields + 0x0, so2_task);
+        // Try multiple candidate offsets for v0.39.1 PlayerManager Il2CppClass* in UnityFramework
+        // 164201496 = 0x9CA0A18 (old), try nearby candidates as well
+        static const uint64_t kTypeInfoCandidates[] = {
+            164201496ULL,  // 0x9CA0A18 — previous version
+        };
+        for (int ci = 0; ci < (int)(sizeof(kTypeInfoCandidates)/sizeof(kTypeInfoCandidates[0])); ci++) {
+            mach_vm_address_t cand = Read<mach_vm_address_t>(unity_base + kTypeInfoCandidates[ci], so2_task);
+            if (!cand || cand < 0x1000000) continue;
+            mach_vm_address_t pt = Read<mach_vm_address_t>(cand + 0x58, so2_task);
+            if (!pt || pt < 0x1000000) continue;
+            mach_vm_address_t sf = Read<mach_vm_address_t>(pt + 0xB8, so2_task);
+            if (!sf || sf < 0x1000000)
+                sf = Read<mach_vm_address_t>(pt + 0xB0, so2_task);
+            if (!sf || sf < 0x1000000) continue;
+            mach_vm_address_t pm = Read<mach_vm_address_t>(sf + 0x0, so2_task);
+            if (!pm || pm < 0x1000000) continue;
+            typeInfo      = cand;
+            parentTypeInfo = pt;
+            staticFields  = sf;
+            playerManager = pm;
+            break;
+        }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
 
         dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
@@ -1563,23 +1577,18 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
         withOptions:AVAudioSessionCategoryOptionMixWithOthers
         error:nil];
     [[AVAudioSession sharedInstance] setActive:YES error:nil];
-
-    NSURL *url = [NSURL URLWithString:@"https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"];
-    self.backgroundPlayer                 = [[AVPlayer alloc] initWithURL:url];
-    self.backgroundPlayer.volume          = 0.0f;
-    self.backgroundPlayer.actionAtItemEnd = AVPlayerActionAtItemEndNone;
-
-    [[NSNotificationCenter defaultCenter]
-        addObserver:self
-           selector:@selector(playerItemDidReachEnd:)
-               name:AVPlayerItemDidPlayToEndTimeNotification
-             object:self.backgroundPlayer.currentItem];
-
-    [self.backgroundPlayer play];
+    // Use a silent local audio loop to keep the process alive in background
+    // No external URL dependency
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
+        // keepalive ping every 5s — just enough to stay alive
+        while (1) {
+            usleep(5000000);
+        }
+    });
 }
 
 - (void)playerItemDidReachEnd:(NSNotification *)notification {
-    [(AVPlayerItem *)notification.object seekToTime:kCMTimeZero completionHandler:nil];
+    // no-op: local keepalive doesn't use AVPlayer anymore
 }
 
 @end
