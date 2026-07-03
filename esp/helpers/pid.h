@@ -110,6 +110,7 @@ mach_port_t get_task_for_PID(pid_t pid);
 pid_t get_pid_by_name(const char *keyword);
 task_t get_task_by_pid(pid_t pid);
 mach_vm_address_t get_image_base_address(mach_port_t task, const char *image_name);
+uint64_t find_pm_typeinfo_offset(task_t task, mach_vm_address_t unity_base);
 
 template<typename T>
 T Read(uintptr_t address, task_t task)

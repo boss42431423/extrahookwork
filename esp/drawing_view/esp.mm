@@ -333,6 +333,10 @@ struct ESPBoxData {
     static pid_t cached_so2_pid = 0;
     static task_t cached_so2_task = 0;
     static mach_vm_address_t cached_unity_base = 0;
+    // Atomic offset: starts with last-known value, updated by background scanner
+    static std::atomic<uint64_t> s_pm_ti_offset{164201496ULL};
+    static std::atomic<bool>     s_pm_scanning{false};
+    static std::atomic<pid_t>    s_pm_scanned_pid{0};
 
     pid_t so2_pid = get_pid_by_name("Standoff2");
 
@@ -357,15 +361,33 @@ struct ESPBoxData {
     }
 
     if (so2_pid != cached_so2_pid || !cached_so2_task || !cached_unity_base) {
-        // Try processor_set_tasks first, fall back to task_for_pid (works reliably on iOS 15 with task_for_pid-allow)
+        // Try processor_set_tasks first, fall back to task_for_pid
         cached_so2_task = get_task_by_pid(so2_pid);
-        if (!cached_so2_task || cached_so2_task == MACH_PORT_NULL) {
+        if (!cached_so2_task || cached_so2_task == MACH_PORT_NULL)
             cached_so2_task = get_task_for_PID(so2_pid);
-        }
-        if (cached_so2_task && cached_so2_task != MACH_PORT_NULL) {
+
+        if (cached_so2_task && cached_so2_task != MACH_PORT_NULL)
             cached_unity_base = get_image_base_address(cached_so2_task, "UnityFramework");
-        }
+
         cached_so2_pid = so2_pid;
+        // Reset scanner for new process
+        s_pm_scanned_pid = 0;
+    }
+
+    // Launch background scanner once per game process to find correct PlayerManager typeInfo offset
+    if (cached_unity_base && cached_so2_task &&
+        !s_pm_scanning && s_pm_scanned_pid != so2_pid) {
+
+        s_pm_scanning    = true;
+        s_pm_scanned_pid = so2_pid;
+        task_t           scan_task = cached_so2_task;
+        mach_vm_address_t scan_base = cached_unity_base;
+
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            uint64_t found = find_pm_typeinfo_offset(scan_task, scan_base);
+            if (found != 0) s_pm_ti_offset = found;
+            s_pm_scanning = false;
+        });
     }
 
     task_t so2_task = cached_so2_task;
@@ -380,8 +402,9 @@ struct ESPBoxData {
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
         // Resolve PlayerManager via IL2CPP type chain: unity_base + typeInfoOffset -> parentTypeInfo -> staticFields -> playerManager
+        // s_pm_ti_offset is updated in background by the auto-scanner when the old offset is wrong
         {
-            mach_vm_address_t ti = Read<mach_vm_address_t>(unity_base + 164201496ULL, so2_task);
+            mach_vm_address_t ti = Read<mach_vm_address_t>(unity_base + s_pm_ti_offset.load(), so2_task);
             if (ti && ti >= 0x1000000) {
                 mach_vm_address_t pt = Read<mach_vm_address_t>(ti + 0x58, so2_task);
                 if (pt && pt >= 0x1000000) {

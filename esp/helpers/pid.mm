@@ -217,3 +217,80 @@ __attribute__((__annotate__("indibran_use_stack bcf_prob=100 bcf_junkasm bcf_jun
     return 0;
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// PlayerManager Il2CppClass* offset scanner
+// Searches ±8 MB around the last-known offset for a valid typeInfo chain.
+// Runs in a background thread – do NOT call this on the main thread.
+// ──────────────────────────────────────────────────────────────────────────────
+static inline bool _is_vm_ptr(uint64_t v) {
+    return v > 0x1000000ULL && v < 0x1000000000000ULL;
+}
+
+static uint64_t _safe64(task_t task, uint64_t addr) {
+    if (!_is_vm_ptr(addr)) return 0;
+    uint64_t val = 0;
+    mach_vm_size_t sz = sizeof(val);
+    mach_vm_read_overwrite(task, addr, sizeof(val), (mach_vm_address_t)&val, &sz);
+    return val;
+}
+
+uint64_t find_pm_typeinfo_offset(task_t task, mach_vm_address_t unity_base) {
+    const uint64_t KNOWN_OFF  = 164201496ULL; // 0x9CA0A18 — last known (old version)
+    const uint64_t SCAN_RADIUS = 8ULL * 1024 * 1024; // search ±8 MB
+    const uint32_t CHUNK_BYTES = 256 * 1024;          // read 256 KB per chunk
+
+    uint64_t scan_start = (KNOWN_OFF > SCAN_RADIUS) ? (KNOWN_OFF - SCAN_RADIUS) : 0;
+    scan_start &= ~7ULL; // 8-byte align
+    uint64_t scan_end   = KNOWN_OFF + SCAN_RADIUS;
+
+    for (uint64_t off = scan_start; off < scan_end; off += CHUNK_BYTES) {
+        vm_offset_t           buf = 0;
+        mach_msg_type_number_t cnt = 0;
+        if (vm_read(task, unity_base + off, CHUNK_BYTES, &buf, &cnt) != KERN_SUCCESS)
+            continue;
+
+        uint32_t  n_words = cnt / 8;
+        uint64_t *words   = (uint64_t *)buf;
+
+        for (uint32_t i = 0; i < n_words; i++) {
+            uint64_t ti = words[i];
+            if (!_is_vm_ptr(ti)) continue;
+
+            // parentTypeInfo = typeInfo->parent  (+0x58 in Il2CppClass)
+            uint64_t pt = _safe64(task, ti + 0x58);
+            if (!_is_vm_ptr(pt)) continue;
+
+            // staticFields = parent->static_fields  (+0xB8, fallback +0xB0)
+            uint64_t sf = _safe64(task, pt + 0xB8);
+            if (!_is_vm_ptr(sf)) sf = _safe64(task, pt + 0xB0);
+            if (!_is_vm_ptr(sf)) continue;
+
+            // playerManager = *staticFields
+            uint64_t pm = _safe64(task, sf);
+            if (!_is_vm_ptr(pm)) continue;
+
+            // players dict = playerManager+0x28
+            uint64_t dict = _safe64(task, pm + 0x28);
+            if (!_is_vm_ptr(dict)) continue;
+
+            // dict must carry a reasonable player count in any of three count slots
+            int32_t c18 = 0, c20 = 0, c40 = 0;
+            mach_vm_size_t sz = 4;
+            mach_vm_read_overwrite(task, dict + 0x18, 4, (mach_vm_address_t)&c18, &sz); sz = 4;
+            mach_vm_read_overwrite(task, dict + 0x20, 4, (mach_vm_address_t)&c20, &sz); sz = 4;
+            mach_vm_read_overwrite(task, dict + 0x40, 4, (mach_vm_address_t)&c40, &sz);
+
+            bool count_ok = (c18 >= 0 && c18 <= 64) ||
+                            (c20 >= 0 && c20 <= 64) ||
+                            (c40 >= 0 && c40 <= 64);
+            if (!count_ok) continue;
+
+            vm_deallocate(mach_task_self(), buf, cnt);
+            return off + (uint64_t)i * 8; // ← found offset
+        }
+
+        vm_deallocate(mach_task_self(), buf, cnt);
+    }
+    return 0; // not found in this scan range
+}
+
