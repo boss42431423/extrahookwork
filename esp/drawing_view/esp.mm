@@ -375,33 +375,26 @@ struct ESPBoxData {
         mach_vm_address_t unity_base = cached_unity_base;
         if (!unity_base) goto CLEAR_BOXES;
 
-        mach_vm_address_t typeInfo       = 0, staticFields  = 0;
         mach_vm_address_t playerManager  = 0, playersDict   = 0;
-        mach_vm_address_t parentTypeInfo = 0;
         mach_vm_address_t dict28         = 0;
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
-        // Try multiple candidate offsets for v0.39.1 PlayerManager Il2CppClass* in UnityFramework
-        // 164201496 = 0x9CA0A18 (old), try nearby candidates as well
-        static const uint64_t kTypeInfoCandidates[] = {
-            164201496ULL,  // 0x9CA0A18 — previous version
-        };
-        for (int ci = 0; ci < (int)(sizeof(kTypeInfoCandidates)/sizeof(kTypeInfoCandidates[0])); ci++) {
-            mach_vm_address_t cand = Read<mach_vm_address_t>(unity_base + kTypeInfoCandidates[ci], so2_task);
-            if (!cand || cand < 0x1000000) continue;
-            mach_vm_address_t pt = Read<mach_vm_address_t>(cand + 0x58, so2_task);
-            if (!pt || pt < 0x1000000) continue;
-            mach_vm_address_t sf = Read<mach_vm_address_t>(pt + 0xB8, so2_task);
-            if (!sf || sf < 0x1000000)
-                sf = Read<mach_vm_address_t>(pt + 0xB0, so2_task);
-            if (!sf || sf < 0x1000000) continue;
-            mach_vm_address_t pm = Read<mach_vm_address_t>(sf + 0x0, so2_task);
-            if (!pm || pm < 0x1000000) continue;
-            typeInfo      = cand;
-            parentTypeInfo = pt;
-            staticFields  = sf;
-            playerManager = pm;
-            break;
+        // Resolve PlayerManager via IL2CPP type chain: unity_base + typeInfoOffset -> parentTypeInfo -> staticFields -> playerManager
+        {
+            mach_vm_address_t ti = Read<mach_vm_address_t>(unity_base + 164201496ULL, so2_task);
+            if (ti && ti >= 0x1000000) {
+                mach_vm_address_t pt = Read<mach_vm_address_t>(ti + 0x58, so2_task);
+                if (pt && pt >= 0x1000000) {
+                    mach_vm_address_t sf = Read<mach_vm_address_t>(pt + 0xB8, so2_task);
+                    if (!sf || sf < 0x1000000)
+                        sf = Read<mach_vm_address_t>(pt + 0xB0, so2_task);
+                    if (sf && sf >= 0x1000000) {
+                        mach_vm_address_t pm = Read<mach_vm_address_t>(sf + 0x0, so2_task);
+                        if (pm && pm >= 0x1000000)
+                            playerManager = pm;
+                    }
+                }
+            }
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
 
