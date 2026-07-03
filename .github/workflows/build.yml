@@ -1,4 +1,4 @@
-name: Build PastaWare
+name: Build extrahook
 
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
 
       - name: Setup Theos
         env:
-          THEOS: /opt/theos
+          THEOS: ${{ github.workspace }}/theos
         run: |
           git clone --recursive https://github.com/theos/theos.git $THEOS
           mkdir -p $THEOS/sdks
@@ -30,12 +30,12 @@ jobs:
 
       - name: Build
         env:
-          THEOS: /opt/theos
+          THEOS: ${{ github.workspace }}/theos
         run: gmake package FINALPACKAGE=1 DEBUG=0
 
       - name: Upload .tipa artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PastaWare
+          name: extrahook
           path: packages/*.tipa
           if-no-files-found: error
