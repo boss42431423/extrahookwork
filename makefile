@@ -1,15 +1,15 @@
 THEOS ?= /var/mobile/theos
 export THEOS
 ARCHS := arm64
-TARGET := iphone:clang:16.5
+TARGET := iphone:clang:16.5:15.0
 DEBUG = 0
 FINALPACKAGE = 1
 FOR_RELEASE = 1
-INSTALL_TARGET_PROCESSES := PastaWare
+INSTALL_TARGET_PROCESSES := extrahook
 
 include $(THEOS)/makefiles/common.mk
 
-APPLICATION_NAME := PastaWare
+APPLICATION_NAME := extrahook
 
 $(APPLICATION_NAME)_USE_MODULES := 0
 
@@ -19,7 +19,7 @@ $(APPLICATION_NAME)_FILES += $(wildcard esp/drawing_view/*.m esp/drawing_view/*.
 $(APPLICATION_NAME)_FILES += $(wildcard esp/helpers/*.m esp/helpers/*.mm)
 $(APPLICATION_NAME)_FILES += $(wildcard esp/unity_api/*.m esp/unity_api/*.mm)
 
-sources/KIF/UITouch-KIFAdditions.m_CFLAGS := $(filter-out -mllvm -enable-fco,$(PastaWare_CFLAGS))
+sources/KIF/UITouch-KIFAdditions.m_CFLAGS := $(filter-out -mllvm -enable-fco,$(extrahook_CFLAGS))
 
 $(APPLICATION_NAME)_CFLAGS += -fobjc-arc -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-value -Wno-module-import-in-extern-c -Wunused-but-set-variable
 $(APPLICATION_NAME)_OBJCCFLAGS += -fobjc-arc
