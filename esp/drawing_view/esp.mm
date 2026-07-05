@@ -437,6 +437,18 @@ struct ESPBoxData {
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
 
+        // Dump first 12 pointers from PlayerManager to find actual field layout
+        {
+            mach_vm_address_t p[12];
+            for (int i = 0; i < 12; i++)
+                p[i] = Read<mach_vm_address_t>(playerManager + i * 8, so2_task);
+            self.watermarkLabel.text = [NSString stringWithFormat:
+                @"PM: 0:%llx 8:%llx 10:%llx 18:%llx 20:%llx 28:%llx 30:%llx 38:%llx 40:%llx 48:%llx 50:%llx 58:%llx",
+                (uint64_t)p[0], (uint64_t)p[1], (uint64_t)p[2], (uint64_t)p[3],
+                (uint64_t)p[4], (uint64_t)p[5], (uint64_t)p[6], (uint64_t)p[7],
+                (uint64_t)p[8], (uint64_t)p[9], (uint64_t)p[10], (uint64_t)p[11]];
+        }
+
         dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
         playersDict = dict28;
 
@@ -447,17 +459,6 @@ struct ESPBoxData {
         if      (c20 > 0 && c20 <= 32) playersCount = c20;
         else if (c40 > 0 && c40 <= 32) playersCount = c40;
         else if (c18 > 0 && c18 <= 32) playersCount = c18;
-
-        {
-            int d10 = Read<int>(playersDict + 0x10, so2_task);
-            int d14 = Read<int>(playersDict + 0x14, so2_task);
-            int d28 = Read<int>(playersDict + 0x28, so2_task);
-            int d2C = Read<int>(playersDict + 0x2C, so2_task);
-            int d30 = Read<int>(playersDict + 0x30, so2_task);
-            mach_vm_address_t lp68 = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
-            mach_vm_address_t lp70 = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
-            self.watermarkLabel.text = [NSString stringWithFormat:@"d=0x%llx 18:%d 20:%d 28:%d 2C:%d 40:%d lp=0x%llx/0x%llx", (uint64_t)dict28, c18, c20, d28, d2C, c40, (uint64_t)lp68, (uint64_t)lp70];
-        }
 
         if (playersCount > 0 && playersCount <= 32) {
             mach_vm_address_t localPlayer = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
