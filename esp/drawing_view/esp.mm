@@ -472,7 +472,43 @@ struct ESPBoxData {
             }
 
             if (!playerManager) {
-                self.watermarkLabel.text = [NSString stringWithFormat:@"NOPE ti=0x%llx (brute-force failed)", (uint64_t)ti];
+                // Try to read class name from Il2CppClass to verify ti is correct
+                // Il2CppClass.name is typically at offset 0x10 (pointer to C string)
+                char nameBuf[64] = {0};
+                mach_vm_address_t namePtr = 0;
+                // Try name at multiple offsets (varies by Il2Cpp version)
+                int nameOffs[] = {0x10, 0x08, 0x18, 0x20};
+                NSString *className = @"?";
+                for (int ni = 0; ni < 4; ni++) {
+                    namePtr = Read<mach_vm_address_t>(ti + nameOffs[ni], so2_task);
+                    if (namePtr > 0x1000000) {
+                        mach_vm_size_t sz = 63;
+                        mach_vm_read_overwrite(so2_task, namePtr, 63, (mach_vm_address_t)nameBuf, &sz);
+                        nameBuf[63] = 0;
+                        if (nameBuf[0] >= 'A' && nameBuf[0] <= 'Z' && strlen(nameBuf) > 3 && strlen(nameBuf) < 60) {
+                            className = [NSString stringWithFormat:@"+0x%x:%s", nameOffs[ni], nameBuf];
+                            break;
+                        }
+                    }
+                }
+                // Also read parent class name via ti+0x58
+                mach_vm_address_t pt58 = Read<mach_vm_address_t>(ti + 0x58, so2_task);
+                NSString *parentName = @"?";
+                if (pt58 > 0x1000000) {
+                    for (int ni = 0; ni < 4; ni++) {
+                        namePtr = Read<mach_vm_address_t>(pt58 + nameOffs[ni], so2_task);
+                        if (namePtr > 0x1000000) {
+                            mach_vm_size_t sz = 63;
+                            mach_vm_read_overwrite(so2_task, namePtr, 63, (mach_vm_address_t)nameBuf, &sz);
+                            nameBuf[63] = 0;
+                            if (nameBuf[0] >= 'A' && nameBuf[0] <= 'Z' && strlen(nameBuf) > 3 && strlen(nameBuf) < 60) {
+                                parentName = [NSString stringWithFormat:@"+0x%x:%s", nameOffs[ni], nameBuf];
+                                break;
+                            }
+                        }
+                    }
+                }
+                self.watermarkLabel.text = [NSString stringWithFormat:@"NOPE cls=%@ parent=%@ ti=0x%llx", className, parentName, (uint64_t)ti];
             }
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
