@@ -974,45 +974,38 @@ struct ESPBoxData {
                             }
                         }
                     }
-                    // Валидация: кандидат должен давать 20-100 на ВСЕХ игроках, и хотя бы 2 игрока = 100
-                    int bestIdx = -1;
-                    for (int ci = 0; ci < nCands; ci++) {
-                        bool valid = true;
-                        int count100 = 0;
+                    // Диагностика: для каждого кандидата читаем значение на всех игроках
+                    NSMutableString *diag = [NSMutableString stringWithFormat:@"C%d:", nCands];
+                    int shown = 0;
+                    for (int ci = 0; ci < nCands && shown < 8; ci++) {
+                        int vals[3] = {-1, -1, -1};
+                        bool allValid = true;
                         for (int si = 0; si < scanN; si++) {
                             uint64_t sub = Read<uint64_t>(scanP[si] + cands[ci].o1, so2_task);
-                            if (sub < 0x1000000) { valid = false; break; }
+                            if (sub < 0x1000000) { allValid = false; break; }
                             uint64_t obj = sub;
                             if (cands[ci].o2 >= 0) {
                                 obj = Read<uint64_t>(sub + cands[ci].o2, so2_task);
-                                if (obj < 0x1000000) { valid = false; break; }
+                                if (obj < 0x1000000) { allValid = false; break; }
                             }
-                            int hp = 0;
                             if (cands[ci].fmt == 0) {
                                 int k = Read<int>(obj + cands[ci].o3 + 4, so2_task);
                                 int e = Read<int>(obj + cands[ci].o3 + 8, so2_task);
-                                hp = k ^ e;
+                                vals[si] = k ^ e;
                             } else {
                                 int k = Read<int>(obj + cands[ci].o3, so2_task);
                                 int e = Read<int>(obj + cands[ci].o3 + 4, so2_task);
-                                hp = k ^ e;
+                                vals[si] = k ^ e;
                             }
-                            if (hp < 20 || hp > 100) { valid = false; break; }
-                            if (hp == 100) count100++;
                         }
-                        if (valid && count100 < 2) valid = false;
-                        if (valid) { bestIdx = ci; break; }
+                        if (!allValid) continue;
+                        shown++;
+                        if (cands[ci].o2 >= 0)
+                            [diag appendFormat:@" %x.%x+%x.f%d=%d/%d/%d", cands[ci].o1, cands[ci].o2, cands[ci].o3, cands[ci].fmt, vals[0], vals[1], vals[2]];
+                        else
+                            [diag appendFormat:@" %x+%x.f%d=%d/%d/%d", cands[ci].o1, cands[ci].o3, cands[ci].fmt, vals[0], vals[1], vals[2]];
                     }
-                    if (bestIdx >= 0) {
-                        cached_hp_off1 = cands[bestIdx].o1;
-                        cached_hp_off2 = cands[bestIdx].o2;
-                        cached_hp_off3 = cands[bestIdx].o3;
-                        cached_hp_fmt = cands[bestIdx].fmt;
-                        self.watermarkLabel.text = [NSString stringWithFormat:@"HP found: %x.%x+%x f%d",
-                            cached_hp_off1, cached_hp_off2, cached_hp_off3, cached_hp_fmt];
-                    } else {
-                        self.watermarkLabel.text = [NSString stringWithFormat:@"HP scan: %d cands, none valid on %d players", nCands, scanN];
-                    }
+                    self.watermarkLabel.text = diag;
                 }
             }
 
