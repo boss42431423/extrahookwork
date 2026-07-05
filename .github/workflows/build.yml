@@ -1,0 +1,81 @@
+name: Build PastaWare
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build .deb & .tipa
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Cache Theos
+        uses: actions/cache@v4
+        id: theos-cache
+        with:
+          path: ${{ github.workspace }}/theos
+          key: theos-${{ runner.os }}-v1
+
+      - name: Install Theos
+        if: steps.theos-cache.outputs.cache-hit != 'true'
+        env:
+          THEOS: ${{ github.workspace }}/theos
+        run: |
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+
+      - name: Cache iOS SDK
+        uses: actions/cache@v4
+        id: sdk-cache
+        with:
+          path: ${{ github.workspace }}/theos/sdks/iPhoneOS16.5.sdk
+          key: sdk-iPhoneOS16.5
+
+      - name: Download iOS 16.5 SDK
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        env:
+          THEOS: ${{ github.workspace }}/theos
+        run: |
+          curl -L -o sdk.tar.xz \
+            https://github.com/theos/sdks/releases/download/iOS16.5/iPhoneOS16.5.sdk.tar.xz
+          tar -xJf sdk.tar.xz -C $THEOS/sdks/
+          rm sdk.tar.xz
+
+      - name: Build package
+        env:
+          THEOS: ${{ github.workspace }}/theos
+        run: |
+          make package FINALPACKAGE=1 DEBUG=0
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: PastaWare-deb
+          path: packages/*.deb
+          if-no-files-found: warn
+
+      - name: Upload .tipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: PastaWare-tipa
+          path: packages/*.tipa
+          if-no-files-found: warn
+
+      - name: Create Release
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Build ${{ github.run_number }}
+          files: |
+            packages/*.deb
+            packages/*.tipa
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
