@@ -792,7 +792,7 @@ struct ESPBoxData {
                 }
                 if (!matrixFound) {
                     cam_bad_frames++;
-                    if (cam_bad_frames > 5) {
+                    if (cam_bad_frames > 30) {
                         cam_off_cache = -1;
                         cam_bad_frames = 0;
                     }
@@ -933,52 +933,83 @@ struct ESPBoxData {
                 players[i] = Read<mach_vm_address_t>(entries_arr + 0x20 + (i * 0x18) + 0x10, so2_task);
             }
 
-            // Поиск HP: SafeInt в sub/sub-sub компонентах PlayerController
+            // Автопоиск HP: SafeInt в sub-компонентах, валидация на 2 игроках
             if (cached_hp_off1 < 0) {
-                static int hp_scan_idx = 0;
-                mach_vm_address_t scanP[2] = {0, 0};
+                mach_vm_address_t scanP[3] = {0};
                 int scanN = 0;
-                for (int pi = 0; pi < capacity && scanN < 2; pi++) {
+                for (int pi = 0; pi < capacity && scanN < 3; pi++) {
                     mach_vm_address_t p = players[pi];
                     if (p < 0x1000000 || p == localPlayer) continue;
                     scanP[scanN++] = p;
                 }
-                if (scanN >= 1) {
-                    NSMutableString *d = [NSMutableString stringWithString:@"HP:"];
+                if (scanN >= 2) {
+                    struct HpCandidate { int o1; int o2; int o3; int fmt; };
+                    HpCandidate cands[64];
+                    int nCands = 0;
                     mach_vm_address_t p = scanP[0];
-                    for (int off1 = 0x60; off1 <= 0x120; off1 += 8) {
+                    for (int off1 = 0x60; off1 <= 0x120 && nCands < 60; off1 += 8) {
                         uint64_t sub = Read<uint64_t>(p + off1, so2_task);
                         if (sub < 0x1000000 || (sub & 3) != 0) continue;
-                        // Уровень 1: прямо в sub
                         for (int soff = 0x10; soff <= 0x80; soff += 4) {
                             int k = Read<int>(sub + soff + 4, so2_task);
                             int e = Read<int>(sub + soff + 8, so2_task);
-                            if (k != 0) { int v = k ^ e; if (v >= 50 && v <= 100) [d appendFormat:@" %x+%x^%d", off1, soff, v]; }
+                            if (k != 0) { int v = k ^ e; if (v >= 1 && v <= 100) cands[nCands++] = {off1, -1, soff, 0}; }
+                            if (nCands >= 60) break;
                             k = Read<int>(sub + soff, so2_task);
                             e = Read<int>(sub + soff + 4, so2_task);
-                            if (k != 0 && k != e) { int v = k ^ e; if (v >= 50 && v <= 100) [d appendFormat:@" %x+%xn%d", off1, soff, v]; }
+                            if (k != 0 && k != e) { int v = k ^ e; if (v >= 1 && v <= 100) cands[nCands++] = {off1, -1, soff, 1}; }
+                            if (nCands >= 60) break;
                         }
-                        // Уровень 2: sub → sub2
-                        for (int off2 = 0x10; off2 <= 0x80; off2 += 8) {
+                        for (int off2 = 0x10; off2 <= 0x80 && nCands < 60; off2 += 8) {
                             uint64_t sub2 = Read<uint64_t>(sub + off2, so2_task);
                             if (sub2 < 0x1000000 || (sub2 & 3) != 0) continue;
-                            for (int soff = 0x10; soff <= 0x80; soff += 4) {
+                            for (int soff = 0x10; soff <= 0x80 && nCands < 60; soff += 4) {
                                 int k = Read<int>(sub2 + soff + 4, so2_task);
                                 int e = Read<int>(sub2 + soff + 8, so2_task);
-                                if (k != 0) { int v = k ^ e; if (v >= 50 && v <= 100) [d appendFormat:@" %x.%x+%x^%d", off1, off2, soff, v]; }
+                                if (k != 0) { int v = k ^ e; if (v >= 1 && v <= 100) cands[nCands++] = {off1, off2, soff, 0}; }
+                                if (nCands >= 60) break;
                                 k = Read<int>(sub2 + soff, so2_task);
                                 e = Read<int>(sub2 + soff + 4, so2_task);
-                                if (k != 0 && k != e) { int v = k ^ e; if (v >= 50 && v <= 100) [d appendFormat:@" %x.%x+%xn%d", off1, off2, soff, v]; }
+                                if (k != 0 && k != e) { int v = k ^ e; if (v >= 1 && v <= 100) cands[nCands++] = {off1, off2, soff, 1}; }
                             }
                         }
                     }
-                    // Валидация: проверить на 2 игроках (должно быть 50-100 у обоих)
-                    if (d.length > 3 && scanN >= 2) {
-                        [d appendFormat:@" v2:"];
-                        mach_vm_address_t p2 = scanP[1];
-                        // Перечитываем найденные кандидаты на 2-м игроке
+                    // Валидация: кандидат должен давать 1-100 на всех scanN игроках
+                    int bestIdx = -1;
+                    for (int ci = 0; ci < nCands; ci++) {
+                        bool valid = true;
+                        for (int si = 0; si < scanN; si++) {
+                            uint64_t sub = Read<uint64_t>(scanP[si] + cands[ci].o1, so2_task);
+                            if (sub < 0x1000000) { valid = false; break; }
+                            uint64_t obj = sub;
+                            if (cands[ci].o2 >= 0) {
+                                obj = Read<uint64_t>(sub + cands[ci].o2, so2_task);
+                                if (obj < 0x1000000) { valid = false; break; }
+                            }
+                            int hp = 0;
+                            if (cands[ci].fmt == 0) {
+                                int k = Read<int>(obj + cands[ci].o3 + 4, so2_task);
+                                int e = Read<int>(obj + cands[ci].o3 + 8, so2_task);
+                                hp = k ^ e;
+                            } else {
+                                int k = Read<int>(obj + cands[ci].o3, so2_task);
+                                int e = Read<int>(obj + cands[ci].o3 + 4, so2_task);
+                                hp = k ^ e;
+                            }
+                            if (hp < 1 || hp > 100) { valid = false; break; }
+                        }
+                        if (valid) { bestIdx = ci; break; }
                     }
-                    self.watermarkLabel.text = d;
+                    if (bestIdx >= 0) {
+                        cached_hp_off1 = cands[bestIdx].o1;
+                        cached_hp_off2 = cands[bestIdx].o2;
+                        cached_hp_off3 = cands[bestIdx].o3;
+                        cached_hp_fmt = cands[bestIdx].fmt;
+                        self.watermarkLabel.text = [NSString stringWithFormat:@"HP found: %x.%x+%x f%d",
+                            cached_hp_off1, cached_hp_off2, cached_hp_off3, cached_hp_fmt];
+                    } else {
+                        self.watermarkLabel.text = [NSString stringWithFormat:@"HP scan: %d cands, none valid on %d players", nCands, scanN];
+                    }
                 }
             }
 
