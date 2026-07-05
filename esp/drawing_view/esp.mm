@@ -552,14 +552,12 @@ struct ESPBoxData {
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
 
-        // Сброс кэшей камеры при смене PM (новый матч)
+        // Сброс кэшей камеры при смене PM или localPlayer
         {
             static mach_vm_address_t prev_pm = 0;
+            static mach_vm_address_t prev_lp = 0;
             if (playerManager != prev_pm) {
                 cam_off_cache = -1;
-                cached_hp_off1 = -1;
-                cached_hp_off2 = -1;
-                cached_hp_off3 = -1;
                 prev_pm = playerManager;
             }
         }
@@ -580,6 +578,15 @@ struct ESPBoxData {
             if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0)
                 localPlayer = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
 
+
+            // Сброс камеры при смене localPlayer (смерть/респавн)
+            {
+                static mach_vm_address_t prev_lp = 0;
+                if (localPlayer != prev_lp && localPlayer > 0x1000000) {
+                    cam_off_cache = -1;
+                    prev_lp = localPlayer;
+                }
+            }
 
             if (esp_invisible && localPlayer > 0x1000000) {
                 mach_vm_address_t weaponryController = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
@@ -792,7 +799,7 @@ struct ESPBoxData {
                 }
                 if (!matrixFound) {
                     cam_bad_frames++;
-                    if (cam_bad_frames > 30) {
+                    if (cam_bad_frames > 10) {
                         cam_off_cache = -1;
                         cam_bad_frames = 0;
                     }
@@ -933,50 +940,7 @@ struct ESPBoxData {
                 players[i] = Read<mach_vm_address_t>(entries_arr + 0x20 + (i * 0x18) + 0x10, so2_task);
             }
 
-            // HP поиск: Photon custom properties Dictionary
-            static double hp_last_scan = 0;
-            if (cached_hp_off1 < 0 && CACurrentMediaTime() - hp_last_scan > 3.0) {
-                hp_last_scan = CACurrentMediaTime();
-                mach_vm_address_t p = 0;
-                for (int pi = 0; pi < capacity; pi++) {
-                    mach_vm_address_t tp = players[pi];
-                    if (tp < 0x1000000 || tp == localPlayer) continue;
-                    mach_vm_address_t mc = Read<mach_vm_address_t>(tp + 0x98, so2_task);
-                    if (mc > 0x1000000) { p = tp; break; }
-                }
-                if (p) {
-                    NSMutableString *diag = [NSMutableString stringWithString:@"PP:"];
-                    mach_vm_address_t photon = Read<mach_vm_address_t>(p + 0x160, so2_task);
-                    if (photon > 0x1000000) {
-                        // Дамп PhotonPlayer: ищем Dict-подобные объекты (ptr с count 1-30)
-                        for (int poff = 0x10; poff <= 0x60; poff += 8) {
-                            mach_vm_address_t obj = Read<mach_vm_address_t>(photon + poff, so2_task);
-                            if (obj < 0x1000000) continue;
-                            // Проверяем как Dictionary: entries=obj+0x18, count=obj+0x20
-                            mach_vm_address_t ent = Read<mach_vm_address_t>(obj + 0x18, so2_task);
-                            int cnt = Read<int>(obj + 0x20, so2_task);
-                            if (ent > 0x1000000 && cnt > 0 && cnt < 30) {
-                                int arrLen = Read<int>(ent + 0x18, so2_task);
-                                [diag appendFormat:@" %x:c%d/L%d", poff, cnt, arrLen];
-                                // Читаем entries: каждый 24 байта (hash4,next4,key8,val8)
-                                // Boxed int value: val_ptr+0x10 = int value
-                                for (int ei = 0; ei < cnt && ei < 10; ei++) {
-                                    mach_vm_address_t val = Read<mach_vm_address_t>(ent + 0x20 + ei * 24 + 16, so2_task);
-                                    if (val > 0x1000000) {
-                                        int v = Read<int>(val + 0x10, so2_task);
-                                        if (v >= 0 && v <= 200) {
-                                            [diag appendFormat:@" e%d=%d", ei, v];
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        [diag appendFormat:@" no_pp"];
-                    }
-                    self.watermarkLabel.text = diag;
-                }
-            }
+            // HP: пока не найден способ чтения, отключаем поиск
 
             for (int i = 0; i < capacity; i++) {
                 mach_vm_address_t player = players[i];
@@ -1517,36 +1481,9 @@ static int GetPlayerPlatform(mach_vm_address_t player, task_t task) {
     return 0;
 }
 
-static int cached_hp_off1 = -1;
-static int cached_hp_off2 = -1;
-static int cached_hp_off3 = -1;
-static int cached_hp_fmt = 0; // 0=SafeInt{bool,key,enc}, 1=SafeInt{key,enc}, 2=plain int
-
 static int GetPlayerHealthAim(mach_vm_address_t player, task_t task) {
-    if (!player || player < 0x1000000) return 0;
-    if (cached_hp_off1 < 0) return 0;
-    mach_vm_address_t sub = Read<mach_vm_address_t>(player + cached_hp_off1, task);
-    if (sub < 0x1000000) return 0;
-    mach_vm_address_t obj = sub;
-    if (cached_hp_off2 >= 0) {
-        obj = Read<mach_vm_address_t>(sub + cached_hp_off2, task);
-        if (obj < 0x1000000) return 0;
-    }
-    if (cached_hp_fmt == 0) {
-        int key = Read<int>(obj + cached_hp_off3 + 4, task);
-        int enc = Read<int>(obj + cached_hp_off3 + 8, task);
-        int hp = key ^ enc;
-        if (hp >= 0 && hp <= 200) return hp;
-    } else if (cached_hp_fmt == 1) {
-        int key = Read<int>(obj + cached_hp_off3, task);
-        int enc = Read<int>(obj + cached_hp_off3 + 4, task);
-        int hp = key ^ enc;
-        if (hp >= 0 && hp <= 200) return hp;
-    } else {
-        int hp = Read<int>(obj + cached_hp_off3, task);
-        if (hp >= 0 && hp <= 200) return hp;
-    }
-    return 0;
+    (void)player; (void)task;
+    return 100;
 }
 
 static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
