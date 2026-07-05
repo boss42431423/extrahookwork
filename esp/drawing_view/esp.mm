@@ -500,6 +500,21 @@ struct ESPBoxData {
             if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0)
                 localPlayer = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
 
+            // Дебаг: показать localPlayer и его HP чтобы проверить правильность
+            {
+                float hp = 0;
+                uint8_t team = 0;
+                mach_vm_address_t wc88 = 0;
+                if (localPlayer > 0x1000000) {
+                    hp = Read<float>(localPlayer + 0x7C, so2_task);
+                    team = Read<uint8_t>(localPlayer + 0x79, so2_task);
+                    wc88 = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
+                }
+                self.watermarkLabel.text = [NSString stringWithFormat:
+                    @"lp=0x%llx hp=%.0f t=%d wc=0x%llx cnt=%d",
+                    (uint64_t)localPlayer, hp, team, (uint64_t)wc88, playersCount];
+            }
+
             if (esp_invisible && localPlayer > 0x1000000) {
                 mach_vm_address_t weaponryController = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
                 if (weaponryController > 0x1000000)
