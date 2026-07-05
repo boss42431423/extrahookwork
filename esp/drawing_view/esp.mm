@@ -415,9 +415,7 @@ struct ESPBoxData {
                 uint64_t cls = get_found_class();
                 int noff = get_found_name_off();
                 uint64_t tiOff = s_pm_ti_offset.load();
-                // Ищем static_fields и parent в структуре Il2CppClass
-                // Пробуем ВСЕ указатели 0x00..0x150 как static_fields напрямую
-                // (sf → *sf=pm → pm+0x28=dict → dict+0x20=count)
+                // Пробуем ВСЕ указатели как static_fields (sf→*sf=pm→pm+0x28=dict)
                 for (int off = 0x00; off <= 0x150 && !playerManager; off += 8) {
                     uint64_t val = Read<uint64_t>(cls + off, so2_task);
                     if (!val || val < 0x1000000 || (val & 7) != 0) continue;
@@ -427,15 +425,12 @@ struct ESPBoxData {
                     if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
                     int cnt = Read<int>(dict + 0x20, so2_task);
                     if (cnt > 0 && cnt <= 32) {
-                        playerManager = pm;
-                        playersDict = dict;
-                        playersCount = cnt;
+                        playerManager = pm; playersDict = dict; playersCount = cnt;
                         self.watermarkLabel.text = [NSString stringWithFormat:
-                            @"OK! off=%llu sf=+0x%x pm=0x%llx d=0x%llx cnt=%d",
-                            tiOff, off, pm, dict, cnt];
+                            @"OK sf+%x cnt=%d", off, cnt];
                     }
                 }
-                // Также через parent: cls+X → parent, parent+Y → sf, *sf=pm
+                // Через parent
                 for (int poff = 0x20; poff <= 0x100 && !playerManager; poff += 8) {
                     uint64_t pt = Read<uint64_t>(cls + poff, so2_task);
                     if (!pt || pt < 0x1000000 || (pt & 7) != 0) continue;
@@ -448,20 +443,17 @@ struct ESPBoxData {
                         if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
                         int cnt = Read<int>(dict + 0x20, so2_task);
                         if (cnt > 0 && cnt <= 32) {
-                            playerManager = pm;
-                            playersDict = dict;
-                            playersCount = cnt;
+                            playerManager = pm; playersDict = dict; playersCount = cnt;
                             self.watermarkLabel.text = [NSString stringWithFormat:
-                                @"OK! off=%llu p=+0x%x s=+0x%x pm=0x%llx cnt=%d",
-                                tiOff, poff, soff, pm, cnt];
+                                @"OK p+%x s+%x cnt=%d", poff, soff, cnt];
                         }
                     }
                 }
                 if (!playerManager) {
-                    // Показать имена классов на которые указывают поля
-                    NSMutableString *info = [NSMutableString stringWithFormat:@"off=%llu ", tiOff];
+                    // Показать имена классов-полей (до 5шт)
+                    NSMutableString *info = [NSMutableString stringWithFormat:@"%llu:", tiOff];
                     int shown = 0;
-                    for (int off = 0x00; off <= 0x100 && shown < 6; off += 8) {
+                    for (int off = 0x00; off <= 0x100 && shown < 5; off += 8) {
                         uint64_t val = Read<uint64_t>(cls + off, so2_task);
                         if (!val || val < 0x1000000 || (val & 7) != 0) continue;
                         uint64_t np = Read<uint64_t>(val + noff, so2_task);
@@ -471,7 +463,7 @@ struct ESPBoxData {
                             mach_vm_read_overwrite(so2_task, np, 15, (mach_vm_address_t)nb, &sz);
                             nb[15] = 0;
                             if (nb[0] >= 'A' && nb[0] <= 'z' && strlen(nb) > 2) {
-                                [info appendFormat:@"%x=%.10s ", off, nb];
+                                [info appendFormat:@"%x=%.8s ", off, nb];
                                 shown++;
                             }
                         }
