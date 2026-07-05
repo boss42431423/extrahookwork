@@ -408,10 +408,10 @@ struct ESPBoxData {
         mach_vm_address_t dict28         = 0;
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
+        static int cached_p_off = -1;
+        static int cached_s_off = -1;
         // Resolve PlayerManager via Il2CppClass found by background scanner
         {
-            static int cached_p_off = -1;
-            static int cached_s_off = -1;
 
             int phase = get_scan_phase();
             if (phase != 2) {
@@ -488,19 +488,31 @@ struct ESPBoxData {
             if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0)
                 localPlayer = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
 
-            // Дебаг: показать localPlayer и его HP чтобы проверить правильность
-            {
-                float hp = 0;
-                uint8_t team = 0;
-                mach_vm_address_t wc88 = 0;
-                if (localPlayer > 0x1000000) {
-                    hp = Read<float>(localPlayer + 0x7C, so2_task);
-                    team = Read<uint8_t>(localPlayer + 0x79, so2_task);
-                    wc88 = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
+            // Дебаг: сканировать localPlayer на наличие hp=100 и team=0/1
+            if (localPlayer > 0x1000000) {
+                NSMutableString *dbg = [NSMutableString stringWithFormat:@"p%d s%d ",
+                    cached_p_off, cached_s_off];
+                // Ищем float ~100.0 (0x42C80000) в диапазоне 0x60-0x100
+                for (int off = 0x60; off <= 0x100; off += 4) {
+                    float val = Read<float>(localPlayer + off, so2_task);
+                    if (val >= 90.0f && val <= 100.0f) {
+                        [dbg appendFormat:@"hp?%x=%.0f ", off, val];
+                    }
                 }
-                self.watermarkLabel.text = [NSString stringWithFormat:
-                    @"lp=0x%llx hp=%.0f t=%d wc=0x%llx cnt=%d",
-                    (uint64_t)localPlayer, hp, team, (uint64_t)wc88, playersCount];
+                // Ищем byte 0 или 1 рядом (team) в диапазоне 0x60-0x90
+                for (int off = 0x60; off <= 0x90; off++) {
+                    uint8_t val = Read<uint8_t>(localPlayer + off, so2_task);
+                    if (val <= 1) {
+                        // Проверим что рядом нет других нулей (чтобы не ловить пустые поля)
+                        uint8_t prev = Read<uint8_t>(localPlayer + off - 1, so2_task);
+                        uint8_t next = Read<uint8_t>(localPlayer + off + 1, so2_task);
+                        if (prev > 1 || next > 1) {
+                            [dbg appendFormat:@"t?%x=%d ", off, val];
+                            if (dbg.length > 70) break;
+                        }
+                    }
+                }
+                self.watermarkLabel.text = dbg;
             }
 
             if (esp_invisible && localPlayer > 0x1000000) {
