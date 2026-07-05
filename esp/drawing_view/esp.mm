@@ -760,9 +760,9 @@ struct ESPBoxData {
                         for (int moff = 0xC0; moff <= 0x120; moff += 0x10) {
                             SO2_Matrix m = Read<SO2_Matrix>(v3 + moff, so2_task);
                             // Валидация: view matrix должна иметь нормальные значения
-                            float sum = fabsf(m.m[0]) + fabsf(m.m[5]) + fabsf(m.m[10]);
+                            float sum = fabsf(m.m11) + fabsf(m.m22) + fabsf(m.m33);
                             if (sum > 0.5f && sum < 5.0f &&
-                                fabsf(m.m[15]) > 0.5f && fabsf(m.m[15]) < 2.0f) {
+                                fabsf(m.m44) > 0.5f && fabsf(m.m44) < 2.0f) {
                                 viewMatrix = m;
                                 matrixFound = true;
                                 static bool logged = false;
@@ -862,7 +862,7 @@ struct ESPBoxData {
                     self.watermarkLabel.text = [NSString stringWithFormat:
                         @"p=%.1f,%.1f,%.1f m%d [%.2f %.2f %.2f %.2f]",
                         (double)pos.x, (double)pos.y, (double)pos.z, (int)(matrixFound?1:0),
-                        (double)viewMatrix.m[0], (double)viewMatrix.m[5], (double)viewMatrix.m[10], (double)viewMatrix.m[15]];
+                        (double)viewMatrix.m11, (double)viewMatrix.m22, (double)viewMatrix.m33, (double)viewMatrix.m44];
                 }
 
                 Vector3 screenFoot = WorldToScreen(pos, viewMatrix, w, h);
