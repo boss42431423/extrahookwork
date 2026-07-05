@@ -472,30 +472,37 @@ struct ESPBoxData {
             }
 
             if (!playerManager) {
-                // Scan ALL offsets 0x00..0x60 for a char* that looks like a class name
                 char nameBuf[64] = {0};
-                NSMutableString *found = [NSMutableString stringWithFormat:@"ti=0x%llx ", (uint64_t)ti];
-                int strCount = 0;
-                for (int off = 0x00; off <= 0x60 && strCount < 4; off += 8) {
-                    mach_vm_address_t ptr = Read<mach_vm_address_t>(ti + off, so2_task);
-                    if (!ptr || ptr < 0x1000000) continue;
-                    memset(nameBuf, 0, 64);
-                    mach_vm_size_t sz = 63;
-                    kern_return_t kr = mach_vm_read_overwrite(so2_task, ptr, 63, (mach_vm_address_t)nameBuf, &sz);
-                    if (kr != KERN_SUCCESS) continue;
-                    nameBuf[63] = 0;
-                    size_t len = strlen(nameBuf);
-                    if (len >= 3 && len < 60 && nameBuf[0] >= 'A' && nameBuf[0] <= 'z') {
-                        [found appendFormat:@"0x%x=%s ", off, nameBuf];
-                        strCount++;
+                // Try double indirection: maybe ti is a pointer TO the real Il2CppClass
+                mach_vm_address_t ti2 = Read<mach_vm_address_t>(ti, so2_task);
+                mach_vm_address_t targets[2] = {ti, ti2};
+                const char *labels[2] = {"ti", "ti2"};
+                NSMutableString *found = [NSMutableString string];
+                for (int t = 0; t < 2; t++) {
+                    mach_vm_address_t tgt = targets[t];
+                    if (!tgt || tgt < 0x1000000) continue;
+                    for (int off = 0x00; off <= 0x60; off += 8) {
+                        mach_vm_address_t ptr = Read<mach_vm_address_t>(tgt + off, so2_task);
+                        if (!ptr || ptr < 0x1000000) continue;
+                        memset(nameBuf, 0, 64);
+                        mach_vm_size_t sz = 63;
+                        kern_return_t kr = mach_vm_read_overwrite(so2_task, ptr, 63, (mach_vm_address_t)nameBuf, &sz);
+                        if (kr != KERN_SUCCESS) continue;
+                        nameBuf[63] = 0;
+                        size_t len = strlen(nameBuf);
+                        if (len >= 2 && len < 60 && ((nameBuf[0] >= 'A' && nameBuf[0] <= 'Z') || (nameBuf[0] >= 'a' && nameBuf[0] <= 'z') || nameBuf[0] == '<')) {
+                            [found appendFormat:@"%s+0x%x=%s ", labels[t], off, nameBuf];
+                            if (found.length > 80) goto done_scan;
+                        }
                     }
                 }
-                if (strCount == 0) {
-                    // Dump raw hex of first 12 pointers so we can see structure
-                    [found appendString:@"RAW:"];
+                done_scan:
+                if (found.length == 0) {
+                    // Show low16 bits to distinguish pointers + ti2 value
+                    [found appendFormat:@"ti=0x%llx ti2=0x%llx L:", (uint64_t)ti, (uint64_t)ti2];
                     for (int off = 0x00; off <= 0x58; off += 8) {
                         uint64_t val = Read<uint64_t>(ti + off, so2_task);
-                        [found appendFormat:@"%x,", (uint32_t)(val >> 32)];
+                        [found appendFormat:@"%04x,", (uint32_t)(val & 0xFFFF)];
                     }
                 }
                 self.watermarkLabel.text = found;
