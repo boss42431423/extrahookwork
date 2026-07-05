@@ -861,8 +861,8 @@ struct ESPBoxData {
                 if (validPlayers == 0 && i < 3) {
                     self.watermarkLabel.text = [NSString stringWithFormat:
                         @"p=%.1f,%.1f,%.1f m%d [%.2f %.2f %.2f %.2f]",
-                        pos.x, pos.y, pos.z, matrixFound?1:0,
-                        viewMatrix.m[0], viewMatrix.m[5], viewMatrix.m[10], viewMatrix.m[15]];
+                        (double)pos.x, (double)pos.y, (double)pos.z, (int)(matrixFound?1:0),
+                        (double)viewMatrix.m[0], (double)viewMatrix.m[5], (double)viewMatrix.m[10], (double)viewMatrix.m[15]];
                 }
 
                 Vector3 screenFoot = WorldToScreen(pos, viewMatrix, w, h);
