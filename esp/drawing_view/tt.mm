@@ -404,7 +404,32 @@ extern volatile bool esp_screenshot_safe;
         
         _selectedOwnedIdx = -1;
         _selectedReplaceIdx = -1;
-        
+
+        // Load replacement skins from bundled skins.json (updated for new version)
+        {
+            NSString *skinsPath = [[NSBundle mainBundle] pathForResource:@"skins" ofType:@"json"];
+            if (skinsPath) {
+                NSData *skinsData = [NSData dataWithContentsOfFile:skinsPath];
+                if (skinsData) {
+                    NSError *jsonErr = nil;
+                    NSArray *skinsArr = [NSJSONSerialization JSONObjectWithData:skinsData
+                                                                       options:0
+                                                                         error:&jsonErr];
+                    if (!jsonErr && [skinsArr isKindOfClass:[NSArray class]]) {
+                        _allSkinsList.clear();
+                        for (NSDictionary *skin in skinsArr) {
+                            NSNumber *skinId   = skin[@"id"];
+                            NSString *skinName = skin[@"skiname"];
+                            if (skinId && skinName) {
+                                _allSkinsList.push_back({[skinId intValue],
+                                                         std::string([skinName UTF8String])});
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         _innerContent = _skinContent;
         CGFloat yOffSkin = 4;
         [self addSectionHeader:@"SKINS" atY:yOffSkin];
