@@ -444,6 +444,10 @@ struct ESPBoxData {
                         if (pm > 0x1000000) playerManager = pm;
                     }
                 }
+                if (!playerManager) {
+                    cached_p_off = -1;
+                    cached_s_off = -1;
+                }
             } else {
                 // Шаг 1: найти parent по имени "LazySingleton" в полях Il2CppClass
                 uint64_t parentCls = 0;
