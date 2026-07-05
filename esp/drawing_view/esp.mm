@@ -334,7 +334,7 @@ struct ESPBoxData {
     static task_t cached_so2_task = 0;
     static mach_vm_address_t cached_unity_base = 0;
     // Atomic offset: starts with last-known value, updated by background scanner
-    static std::atomic<uint64_t> s_pm_ti_offset{164201496ULL};
+    static std::atomic<uint64_t> s_pm_ti_offset{178356728ULL};
     static std::atomic<bool>     s_pm_scanning{false};
     static std::atomic<pid_t>    s_pm_scanned_pid{0};
 

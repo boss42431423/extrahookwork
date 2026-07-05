@@ -1077,7 +1077,7 @@ static __attribute__((unused)) std::string readUnityString(uintptr_t str_ptr, ta
 
     if (!c_task || !c_base) return;
 
-    uintptr_t typeInfo = Read<uintptr_t>(c_base + 164164080, c_task);
+    uintptr_t typeInfo = Read<uintptr_t>(c_base + 178348240, c_task);
     if (!typeInfo) return;
     
     uintptr_t parentTypeInfo = Read<uintptr_t>(typeInfo + 0x58, c_task);
