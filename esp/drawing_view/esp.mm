@@ -919,8 +919,8 @@ struct ESPBoxData {
                 if (validPlayers == 0 && i < 3) {
                     int dbgHp = GetPlayerHealthAim(player, so2_task);
                     self.watermarkLabel.text = [NSString stringWithFormat:
-                        @"hp=%d hpOff=%x cnt=%d",
-                        dbgHp, cached_hp_off, playersCount];
+                        @"hp=%d off=%x fmt=%d cnt=%d",
+                        dbgHp, cached_hp_off, cached_hp_fmt, playersCount];
                 }
 
                 Vector3 screenFoot = WorldToScreen(pos, viewMatrix, w, h);
@@ -1445,36 +1445,71 @@ static int GetPlayerPlatform(mach_vm_address_t player, task_t task) {
 }
 
 static int cached_hp_off = -1;
+static int cached_hp_fmt = -1; // 0=SafeInt(bool+key+enc), 1=plain int, 2=plain float, 3=SafeFloat
 
 static int GetPlayerHealthAim(mach_vm_address_t player, task_t task) {
     if (!player || player < 0x1000000) return 0;
 
-    // SafeInt: {bool hasValue; int key; int encValue;} → value = key ^ encValue
-    // Пробуем кэшированный оффсет
     if (cached_hp_off >= 0) {
-        bool has = Read<bool>(player + cached_hp_off, task);
-        if (has) {
-            int key = Read<int>(player + cached_hp_off + 4, task);
-            int enc = Read<int>(player + cached_hp_off + 8, task);
-            int hp = key ^ enc;
-            if (hp >= 0 && hp <= 100) return hp;
+        int off = cached_hp_off;
+        switch (cached_hp_fmt) {
+            case 0: { // SafeInt: bool(1) + pad(3) + key(4) + enc(4)
+                int key = Read<int>(player + off + 4, task);
+                int enc = Read<int>(player + off + 8, task);
+                int hp = key ^ enc;
+                return (hp >= 0 && hp <= 200) ? hp : 0;
+            }
+            case 1: { // plain int
+                int hp = Read<int>(player + off, task);
+                return (hp >= 0 && hp <= 200) ? hp : 0;
+            }
+            case 2: { // plain float
+                float hp = Read<float>(player + off, task);
+                return (hp >= 0 && hp <= 200) ? (int)hp : 0;
+            }
+            case 3: { // SafeFloat: bool(1) + pad(3) + key(4) + enc(4)
+                int key = Read<int>(player + off + 4, task);
+                int enc = Read<int>(player + off + 8, task);
+                int decoded = key ^ enc;
+                float hp = *reinterpret_cast<float*>(&decoded);
+                return (hp >= 0 && hp <= 200) ? (int)hp : 0;
+            }
         }
-        // Также пробуем plain int на случай если оффсет верный но формат другой
-        int plain = Read<int>(player + cached_hp_off + 4, task);
-        if (plain > 0 && plain <= 100) return plain;
         return 0;
     }
 
-    // Скан: ищем SafeInt с HP в диапазоне 1-100
-    for (int off = 0x60; off <= 0xC0; off += 4) {
-        bool has = Read<bool>(player + off, task);
-        if (!has) continue;
-        int key = Read<int>(player + off + 4, task);
-        int enc = Read<int>(player + off + 8, task);
-        int hp = key ^ enc;
-        if (hp >= 1 && hp <= 100) {
-            cached_hp_off = off;
-            return hp;
+    // Скан 0x40-0x180, все форматы
+    for (int off = 0x40; off <= 0x180; off += 4) {
+        // SafeInt: bool hasValue at off, key at off+4, enc at off+8
+        {
+            bool has = Read<bool>(player + off, task);
+            if (has) {
+                int key = Read<int>(player + off + 4, task);
+                int enc = Read<int>(player + off + 8, task);
+                int hp = key ^ enc;
+                if (hp >= 50 && hp <= 100) {
+                    cached_hp_off = off; cached_hp_fmt = 0; return hp;
+                }
+                // SafeFloat
+                float hpf = *reinterpret_cast<float*>(&hp);
+                if (hpf >= 50.0f && hpf <= 100.0f) {
+                    cached_hp_off = off; cached_hp_fmt = 3; return (int)hpf;
+                }
+            }
+        }
+        // plain int
+        {
+            int v = Read<int>(player + off, task);
+            if (v == 100) {
+                cached_hp_off = off; cached_hp_fmt = 1; return v;
+            }
+        }
+        // plain float
+        {
+            float v = Read<float>(player + off, task);
+            if (v == 100.0f) {
+                cached_hp_off = off; cached_hp_fmt = 2; return (int)v;
+            }
         }
     }
     return 0;
