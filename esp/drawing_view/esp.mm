@@ -409,14 +409,14 @@ struct ESPBoxData {
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
         static int cached_s_off = -1;
+        static int cached_s_src = -1; // 0=parent, 1=cls
         static pid_t cached_chain_pid = 0;
         if (cached_chain_pid != so2_pid) {
             cached_s_off = -1;
+            cached_s_src = -1;
             cached_chain_pid = so2_pid;
         }
-        // Resolve PlayerManager via Il2CppClass found by background scanner
         {
-
             int phase = get_scan_phase();
             if (phase != 2) {
                 if (phase == 1) {
@@ -431,22 +431,26 @@ struct ESPBoxData {
             }
 
             uint64_t cls = get_found_class();
-
-            int noff = get_found_name_off(); // 0x10
-            // Parent (LazySingleton) подтверждён на 0x58
             uint64_t parentCls = Read<uint64_t>(cls + 0x58, so2_task);
-            if (parentCls > 0x1000000 && (parentCls & 7) == 0) {
-                if (cached_s_off >= 0) {
-                    uint64_t sf = Read<uint64_t>(parentCls + cached_s_off, so2_task);
+            uint64_t targets[2] = { parentCls, cls };
+
+            if (cached_s_off >= 0 && cached_s_src >= 0) {
+                uint64_t base = targets[cached_s_src];
+                if (base > 0x1000000) {
+                    uint64_t sf = Read<uint64_t>(base + cached_s_off, so2_task);
                     if (sf > 0x1000000) {
                         uint64_t pm = Read<uint64_t>(sf, so2_task);
                         if (pm > 0x1000000) playerManager = pm;
                     }
-                    if (!playerManager) cached_s_off = -1;
                 }
-                if (cached_s_off < 0) {
+            }
+
+            if (!playerManager && cached_s_off < 0) {
+                for (int src = 0; src < 2 && !playerManager; src++) {
+                    uint64_t base = targets[src];
+                    if (!base || base < 0x1000000 || (base & 7) != 0) continue;
                     for (int soff = 0x00; soff <= 0x150; soff += 8) {
-                        uint64_t sf = Read<uint64_t>(parentCls + soff, so2_task);
+                        uint64_t sf = Read<uint64_t>(base + soff, so2_task);
                         if (!sf || sf < 0x1000000 || (sf & 7) != 0) continue;
                         uint64_t pm = Read<uint64_t>(sf, so2_task);
                         if (!pm || pm < 0x1000000 || (pm & 7) != 0) continue;
@@ -455,22 +459,25 @@ struct ESPBoxData {
                         int cnt = Read<int>(dict + 0x20, so2_task);
                         if (cnt > 0 && cnt <= 32) {
                             cached_s_off = soff;
+                            cached_s_src = src;
                             playerManager = pm;
                             break;
                         }
                     }
                 }
             }
+
             if (!playerManager) {
-                NSMutableString *dbg = [NSMutableString stringWithFormat:@"noSF p=%llx", parentCls];
-                for (int soff = 0x80; soff <= 0x100; soff += 8) {
-                    uint64_t sf = Read<uint64_t>(parentCls + soff, so2_task);
-                    if (sf > 0x1000000 && (sf & 7) == 0) {
-                        uint64_t pm = Read<uint64_t>(sf, so2_task);
-                        [dbg appendFormat:@" %x=%llx>%llx", soff, sf, pm];
-                    }
+                if (cached_s_off >= 0) {
+                    uint64_t base = targets[cached_s_src];
+                    uint64_t sf = Read<uint64_t>(base + cached_s_off, so2_task);
+                    uint64_t pm = sf > 0x1000000 ? Read<uint64_t>(sf, so2_task) : 0;
+                    self.watermarkLabel.text = [NSString stringWithFormat:
+                        @"s%d:%x sf=%llx pm=%llx (wait)", cached_s_src, cached_s_off, sf, pm];
+                } else {
+                    self.watermarkLabel.text = [NSString stringWithFormat:
+                        @"noSF cls=%llx par=%llx", cls, parentCls];
                 }
-                self.watermarkLabel.text = dbg;
             }
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
