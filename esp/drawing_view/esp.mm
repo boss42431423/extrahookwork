@@ -347,10 +347,11 @@ struct ESPBoxData {
 
         [self clearAllBoxes];
 
-        self.playerCountLabel.text      = @(OBF("LAUNCHING..."));
+        self.playerCountLabel.text      = @"DBG: PID NOT FOUND (Standoff2)";
         self.playerCountLabel.textColor = [UIColor redColor];
+        self.playerCountLabel.hidden    = NO;
         self.noPlayersLabel.hidden      = YES;
-        self.watermarkLabel.text = @(OBF("t.me/projectios"));
+        self.watermarkLabel.text = @"DBG: game not detected";
         [self.watermarkLabel sizeToFit];
 
         if (!self.hasAttemptedLaunch) {
