@@ -830,12 +830,17 @@ struct ESPBoxData {
 
                 mach_vm_address_t moveCtrl = Read<mach_vm_address_t>(player + 0x98, so2_task);
                 if (moveCtrl < 0x1000000) continue;
-                
+
                 mach_vm_address_t moveData = Read<mach_vm_address_t>(moveCtrl + 0xB0, so2_task);
                 if (moveData < 0x1000000) continue;
 
                 Vector3 pos = Read<Vector3>(moveData + 0x44, so2_task);
                 if (pos.x == 0 && pos.y == 0 && pos.z == 0) continue;
+
+                if (i == 0 || (validPlayers == 0 && i < 3)) {
+                    self.watermarkLabel.text = [NSString stringWithFormat:
+                        @"p=%.1f,%.1f,%.1f mc=%llx md=%llx", pos.x, pos.y, pos.z, moveCtrl, moveData];
+                }
 
                 Vector3 screenFoot = WorldToScreen(pos, viewMatrix, w, h);
                 if (screenFoot.z <= 0.01f) continue;

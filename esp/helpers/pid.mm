@@ -266,31 +266,18 @@ static bool _check_name(task_t task, uint64_t cls_ptr, const char *target, int *
     return false;
 }
 
-uint64_t find_pm_typeinfo_offset(task_t task, mach_vm_address_t unity_base) {
-    const uint64_t SCAN_RADIUS = 300ULL * 1024 * 1024;
-    const uint64_t CHUNK_BYTES = 256 * 1024;
-
-    s_scan_phase = 1;
-    s_scan_progress = 0;
-    uint64_t scan_end = SCAN_RADIUS * 2;
-    s_scan_total = scan_end / CHUNK_BYTES;
-
-    for (uint64_t off = 0; off < scan_end; off += CHUNK_BYTES) {
-        s_scan_progress = off / CHUNK_BYTES;
-
+static uint64_t _scan_range(task_t task, mach_vm_address_t base, uint64_t start, uint64_t end, uint64_t chunk) {
+    for (uint64_t off = start; off < end; off += chunk) {
+        s_scan_progress++;
         vm_offset_t buf = 0;
         mach_msg_type_number_t cnt = 0;
-        if (vm_read(task, unity_base + off, CHUNK_BYTES, &buf, &cnt) != KERN_SUCCESS)
+        if (vm_read(task, base + off, chunk, &buf, &cnt) != KERN_SUCCESS)
             continue;
-
         uint32_t n_words = cnt / 8;
         uint64_t *words = (uint64_t *)buf;
-
         for (uint32_t i = 0; i < n_words; i++) {
             uint64_t ti = words[i];
-            if (!_is_vm_ptr(ti)) continue;
-            if ((ti & 7) != 0) continue;
-
+            if (!_is_vm_ptr(ti) || (ti & 7) != 0) continue;
             int name_off = 0;
             if (_check_name(task, ti, "PlayerManager", &name_off)) {
                 s_found_class_addr = ti;
@@ -300,9 +287,31 @@ uint64_t find_pm_typeinfo_offset(task_t task, mach_vm_address_t unity_base) {
                 return off + (uint64_t)i * 8;
             }
         }
-
         vm_deallocate(mach_task_self(), buf, cnt);
     }
+    return 0;
+}
+
+uint64_t find_pm_typeinfo_offset(task_t task, mach_vm_address_t unity_base) {
+    const uint64_t CHUNK = 256 * 1024;
+    const uint64_t HINT = 178356728ULL; // PM_TypeInfo from script.json
+    const uint64_t NEAR = 20ULL * 1024 * 1024; // ±20MB around hint
+
+    s_scan_phase = 1;
+    s_scan_progress = 0;
+
+    uint64_t near_start = HINT > NEAR ? HINT - NEAR : 0;
+    uint64_t near_end = HINT + NEAR;
+    s_scan_total = (near_end - near_start) / CHUNK + (300ULL * 1024 * 1024 * 2) / CHUNK;
+
+    // Фаза 1: ±20MB вокруг известного оффсета (быстро)
+    uint64_t r = _scan_range(task, unity_base, near_start, near_end, CHUNK);
+    if (r) return r;
+
+    // Фаза 2: полный скан 600MB
+    r = _scan_range(task, unity_base, 0, 300ULL * 1024 * 1024 * 2, CHUNK);
+    if (r) return r;
+
     s_scan_phase = -1;
     return 0;
 }
