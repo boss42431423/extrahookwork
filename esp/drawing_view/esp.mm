@@ -934,7 +934,9 @@ struct ESPBoxData {
             }
 
             // Автопоиск HP: SafeInt в sub-компонентах, валидация на 2 игроках
-            if (cached_hp_off1 < 0) {
+            static double hp_last_scan = 0;
+            if (cached_hp_off1 < 0 && CACurrentMediaTime() - hp_last_scan > 2.0) {
+                hp_last_scan = CACurrentMediaTime();
                 mach_vm_address_t scanP[3] = {0};
                 int scanN = 0;
                 for (int pi = 0; pi < capacity && scanN < 3; pi++) {
