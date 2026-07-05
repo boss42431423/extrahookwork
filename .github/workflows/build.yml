@@ -21,7 +21,7 @@ jobs:
         id: theos-cache
         with:
           path: ${{ github.workspace }}/theos
-          key: theos-${{ runner.os }}-v2
+          key: theos-${{ runner.os }}-v3
 
       - name: Install Theos
         if: steps.theos-cache.outputs.cache-hit != 'true'
@@ -30,32 +30,23 @@ jobs:
         run: |
           git clone --recursive https://github.com/theos/theos.git $THEOS
 
-      - name: Cache iOS SDK
-        uses: actions/cache@v4
-        id: sdk-cache
-        with:
-          path: ${{ github.workspace }}/theos/sdks/iPhoneOS16.5.sdk
-          key: sdk-iPhoneOS16.5-v1
-
-      - name: Download iOS 16.5 SDK
-        if: steps.sdk-cache.outputs.cache-hit != 'true'
+      - name: Link Xcode iOS SDK into Theos
         env:
           THEOS: ${{ github.workspace }}/theos
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p $THEOS/sdks
-          gh release download iOS16.5 \
-            --repo theos/sdks \
-            --pattern "iPhoneOS16.5.sdk.tar.xz" \
-            --output sdk.tar.xz
-          tar -xJf sdk.tar.xz -C $THEOS/sdks/
-          rm sdk.tar.xz
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          SDK_VER=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "Found SDK: iPhoneOS${SDK_VER}.sdk at $SDK_PATH"
+          ln -sfn "$SDK_PATH" "$THEOS/sdks/iPhoneOS${SDK_VER}.sdk"
+          echo "SDK_VER=${SDK_VER}" >> $GITHUB_ENV
 
       - name: Build package
         env:
           THEOS: ${{ github.workspace }}/theos
         run: |
-          make package FINALPACKAGE=1 DEBUG=0
+          make package FINALPACKAGE=1 DEBUG=0 \
+            TARGET="iphone:clang:${SDK_VER}:15.0"
 
       - name: Upload .deb
         uses: actions/upload-artifact@v4
