@@ -391,11 +391,17 @@ struct ESPBoxData {
     }
 
     task_t so2_task = cached_so2_task;
-    if (!so2_task) goto CLEAR_BOXES;
+    if (!so2_task) {
+        self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: no task (pid=%d)", so2_pid];
+        goto CLEAR_BOXES;
+    }
 
     {
         mach_vm_address_t unity_base = cached_unity_base;
-        if (!unity_base) goto CLEAR_BOXES;
+        if (!unity_base) {
+            self.watermarkLabel.text = @"DBG: no UnityFramework base";
+            goto CLEAR_BOXES;
+        }
 
         mach_vm_address_t playerManager  = 0, playersDict   = 0;
         mach_vm_address_t dict28         = 0;
@@ -404,7 +410,8 @@ struct ESPBoxData {
         // Resolve PlayerManager via IL2CPP type chain: unity_base + typeInfoOffset -> parentTypeInfo -> staticFields -> playerManager
         // s_pm_ti_offset is updated in background by the auto-scanner when the old offset is wrong
         {
-            mach_vm_address_t ti = Read<mach_vm_address_t>(unity_base + s_pm_ti_offset.load(), so2_task);
+            uint64_t dbg_off = s_pm_ti_offset.load();
+            mach_vm_address_t ti = Read<mach_vm_address_t>(unity_base + dbg_off, so2_task);
             if (ti && ti >= 0x1000000) {
                 mach_vm_address_t pt = Read<mach_vm_address_t>(ti + 0x58, so2_task);
                 if (pt && pt >= 0x1000000) {
@@ -415,8 +422,16 @@ struct ESPBoxData {
                         mach_vm_address_t pm = Read<mach_vm_address_t>(sf + 0x0, so2_task);
                         if (pm && pm >= 0x1000000)
                             playerManager = pm;
+                        else
+                            self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: pm=0x%llx", (uint64_t)pm];
+                    } else {
+                        self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: sf=0x%llx (B8=0x%llx B0=0x%llx)", (uint64_t)sf, (uint64_t)Read<mach_vm_address_t>(pt + 0xB8, so2_task), (uint64_t)Read<mach_vm_address_t>(pt + 0xB0, so2_task)];
                     }
+                } else {
+                    self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: pt=0x%llx (ti+0x58)", (uint64_t)pt];
                 }
+            } else {
+                self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: ti=0x%llx off=%llu base=0x%llx task=%u", (uint64_t)ti, dbg_off, (uint64_t)unity_base, so2_task];
             }
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
