@@ -552,6 +552,16 @@ struct ESPBoxData {
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
 
+        // Сброс кэшей камеры при смене PM (новый матч)
+        {
+            static mach_vm_address_t prev_pm = 0;
+            if (playerManager != prev_pm) {
+                cam_off_cache = -1;
+                cached_hp_off = -1;
+                prev_pm = playerManager;
+            }
+        }
+
         dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
         playersDict = dict28;
 
@@ -908,25 +918,28 @@ struct ESPBoxData {
                 players[i] = Read<mach_vm_address_t>(entries_arr + 0x20 + (i * 0x18) + 0x10, so2_task);
             }
 
-            // Поиск HP в sub-компонентах PlayerController
+            // Поиск HP: SafeInt в sub-компонентах PlayerController
             if (cached_hp_off < 0) {
                 for (int pi = 0; pi < capacity; pi++) {
                     mach_vm_address_t p = players[pi];
                     if (p < 0x1000000 || p == localPlayer) continue;
                     NSMutableString *d = [NSMutableString stringWithString:@"HP:"];
-                    // Пройти по всем указателям в PlayerController, в каждом sub-объекте искать 100
                     for (int off = 0x60; off <= 0x100; off += 8) {
                         uint64_t sub = Read<uint64_t>(p + off, so2_task);
                         if (sub < 0x1000000 || (sub & 3) != 0) continue;
-                        // Искать int=100 или SafeInt=100 в sub-объекте
-                        for (int soff = 0x10; soff <= 0x60; soff += 4) {
+                        for (int soff = 0x10; soff <= 0x80; soff += 4) {
+                            // SafeInt {bool,key,enc}: key at soff+4, enc at soff+8
+                            int key = Read<int>(sub + soff + 4, so2_task);
+                            int enc = Read<int>(sub + soff + 8, so2_task);
+                            if (key == 0) continue;
+                            int si = key ^ enc;
+                            if (si >= 50 && si <= 100) {
+                                [d appendFormat:@" %x+%x^%d", off, soff, si];
+                            }
+                            // plain
                             int v = Read<int>(sub + soff, so2_task);
                             if (v == 100) {
-                                [d appendFormat:@" %x+%x=100i", off, soff];
-                            }
-                            float f = Read<float>(sub + soff, so2_task);
-                            if (f == 100.0f) {
-                                [d appendFormat:@" %x+%x=100f", off, soff];
+                                [d appendFormat:@" %x+%x=%d", off, soff, v];
                             }
                         }
                     }
