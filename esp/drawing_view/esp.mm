@@ -408,88 +408,60 @@ struct ESPBoxData {
         mach_vm_address_t dict28         = 0;
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
-        // Dump Il2CppClass (TypeInfo) raw pointers to find parent & static_fields offsets
+        // Wait for background scanner to find PlayerManager Il2CppClass by name
         {
-            uint64_t dbg_off = s_pm_ti_offset.load();
-            mach_vm_address_t ti = Read<mach_vm_address_t>(unity_base + dbg_off, so2_task);
-            if (!ti || ti < 0x1000000) {
-                self.watermarkLabel.text = @"FAIL: ti=0";
-                goto CLEAR_BOXES;
-            }
-
-            // Brute-force: for EVERY pointer in ti[0x00..0x150], treat it as parent,
-            // then for EVERY pointer in parent[0x00..0x150], treat it as static_fields,
-            // then read *sf as pm, then scan pm for a dict with count 1-32
-            for (int poff = 0x20; poff <= 0x150; poff += 8) {
-                if (playerManager) break;
-                mach_vm_address_t pt = Read<mach_vm_address_t>(ti + poff, so2_task);
-                if (!pt || pt < 0x1000000 || (pt & 7) != 0) continue;
-                for (int soff = 0x60; soff <= 0x150; soff += 8) {
-                    if (playerManager) break;
-                    mach_vm_address_t sf = Read<mach_vm_address_t>(pt + soff, so2_task);
-                    if (!sf || sf < 0x1000000 || (sf & 3) != 0) continue;
-                    mach_vm_address_t pm = Read<mach_vm_address_t>(sf, so2_task);
-                    if (!pm || pm < 0x1000000) continue;
-                    for (int doff = 0x18; doff <= 0x58; doff += 8) {
-                        mach_vm_address_t dict = Read<mach_vm_address_t>(pm + doff, so2_task);
-                        if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
-                        int cnt = Read<int>(dict + 0x20, so2_task);
-                        if (cnt <= 0 || cnt > 32) cnt = Read<int>(dict + 0x28, so2_task);
-                        if (cnt <= 0 || cnt > 32) cnt = Read<int>(dict + 0x18, so2_task);
-                        if (cnt > 0 && cnt <= 32) {
-                            playerManager = pm;
-                            self.watermarkLabel.text = [NSString stringWithFormat:
-                                @"FOUND p+0x%x s+0x%x d+0x%x cnt=%d pm=0x%llx",
-                                poff, soff, doff, cnt, (uint64_t)pm];
-                            break;
+            int phase = get_scan_phase();
+            if (phase == 2) {
+                // Scanner found PlayerManager Il2CppClass! Dump its structure.
+                uint64_t cls = get_found_class();
+                int noff = get_found_name_off();
+                uint64_t tiOff = s_pm_ti_offset.load();
+                // Read key pointers from Il2CppClass to find parent & static_fields
+                NSMutableString *dump = [NSMutableString stringWithFormat:
+                    @"PM cls=0x%llx n=0x%x off=%llu ", cls, noff, tiOff];
+                // Dump every 8-byte field from 0x00 to 0x100 looking for:
+                // 1) parent (another Il2CppClass* - has name at same offset)
+                // 2) static_fields (pointer to data block)
+                for (int off = 0x00; off <= 0x100; off += 8) {
+                    uint64_t val = Read<uint64_t>(cls + off, so2_task);
+                    if (!val || val < 0x1000000 || (val & 7) != 0) continue;
+                    // Check if this pointer leads to another Il2CppClass (has a name)
+                    uint64_t namePtr = Read<uint64_t>(val + noff, so2_task);
+                    if (namePtr > 0x1000000) {
+                        char nb[20] = {0};
+                        mach_vm_size_t sz = 19;
+                        mach_vm_read_overwrite(so2_task, namePtr, 19, (mach_vm_address_t)nb, &sz);
+                        nb[19] = 0;
+                        if (nb[0] >= 'A' && nb[0] <= 'z' && strlen(nb) > 2) {
+                            [dump appendFormat:@"+0x%x->%.12s ", off, nb];
+                        }
+                    }
+                    // Check if this could be static_fields (dereference once, check for PM instance)
+                    uint64_t pm = Read<uint64_t>(val, so2_task);
+                    if (pm > 0x1000000 && (pm & 7) == 0) {
+                        uint64_t dict = Read<uint64_t>(pm + 0x28, so2_task);
+                        if (dict > 0x1000000 && (dict & 7) == 0) {
+                            int cnt = Read<int>(dict + 0x20, so2_task);
+                            if (cnt > 0 && cnt <= 32) {
+                                playerManager = pm;
+                                playersDict = dict;
+                                playersCount = cnt;
+                                [dump appendFormat:@"SF+0x%x! pm=0x%llx cnt=%d", off, pm, cnt];
+                                break;
+                            }
                         }
                     }
                 }
-            }
-
-            if (!playerManager) {
-                // Also try: ti itself has static_fields (skip parent step)
-                for (int soff = 0x60; soff <= 0x150 && !playerManager; soff += 8) {
-                    mach_vm_address_t sf = Read<mach_vm_address_t>(ti + soff, so2_task);
-                    if (!sf || sf < 0x1000000 || (sf & 7) != 0) continue;
-                    mach_vm_address_t pm = Read<mach_vm_address_t>(sf, so2_task);
-                    if (!pm || pm < 0x1000000) continue;
-                    for (int doff = 0x18; doff <= 0x58; doff += 8) {
-                        mach_vm_address_t dict = Read<mach_vm_address_t>(pm + doff, so2_task);
-                        if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
-                        int cnt = Read<int>(dict + 0x20, so2_task);
-                        if (cnt <= 0 || cnt > 32) cnt = Read<int>(dict + 0x28, so2_task);
-                        if (cnt <= 0 || cnt > 32) cnt = Read<int>(dict + 0x18, so2_task);
-                        if (cnt > 0 && cnt <= 32) {
-                            playerManager = pm;
-                            self.watermarkLabel.text = [NSString stringWithFormat:
-                                @"FOUND ti.s+0x%x d+0x%x cnt=%d pm=0x%llx",
-                                soff, doff, cnt, (uint64_t)pm];
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (!playerManager) {
-                int phase = get_scan_phase();
-                if (phase == 0) {
-                    self.watermarkLabel.text = @"SCAN: waiting for match...";
-                } else if (phase == 1) {
-                    uint64_t prog = get_scan_progress();
-                    uint64_t total = get_scan_total();
-                    self.watermarkLabel.text = [NSString stringWithFormat:
-                        @"SCANNING %llu/%llu (looking for PlayerManager class)", prog, total];
-                } else if (phase == 2) {
-                    uint64_t cls = get_found_class();
-                    int noff = get_found_name_off();
-                    uint64_t off = s_pm_ti_offset.load();
-                    self.watermarkLabel.text = [NSString stringWithFormat:
-                        @"FOUND! cls=0x%llx nameOff=0x%x tiOff=%llu", cls, noff, off];
-                } else {
-                    self.watermarkLabel.text = [NSString stringWithFormat:
-                        @"SCAN DONE: NOT FOUND in 600MB (ti=0x%llx)", (uint64_t)ti];
-                }
+                self.watermarkLabel.text = dump;
+            } else if (phase == 1) {
+                uint64_t prog = get_scan_progress();
+                uint64_t total = get_scan_total();
+                self.watermarkLabel.text = [NSString stringWithFormat:
+                    @"SCANNING %llu/%llu for PlayerManager...", prog, total];
+            } else if (phase == -1) {
+                self.watermarkLabel.text = @"NOT FOUND in 600MB scan";
+            } else {
+                self.watermarkLabel.text = @"Waiting for scanner...";
             }
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
