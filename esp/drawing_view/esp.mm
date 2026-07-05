@@ -899,6 +899,36 @@ struct ESPBoxData {
                 players[i] = Read<mach_vm_address_t>(entries_arr + 0x20 + (i * 0x18) + 0x10, so2_task);
             }
 
+            // Дебаг: SafeInt дамп первого врага для поиска HP
+            if (cached_hp_off < 0) {
+                for (int pi = 0; pi < capacity; pi++) {
+                    mach_vm_address_t p = players[pi];
+                    if (p < 0x1000000 || p == localPlayer) continue;
+                    NSMutableString *d = [NSMutableString stringWithString:@"SI:"];
+                    // SafeInt: {bool(+0), key(+4), enc(+8)} каждые 12 байт
+                    for (int off = 0x60; off <= 0x100; off += 0xC) {
+                        int key = Read<int>(p + off + 4, so2_task);
+                        int enc = Read<int>(p + off + 8, so2_task);
+                        int val = key ^ enc;
+                        if (val >= 1 && val <= 200) {
+                            [d appendFormat:@" %x=%d", off, val];
+                        }
+                    }
+                    // Также попробовать 8-байтовые SafeInt {key(+0), enc(+4)}
+                    [d appendString:@"|"];
+                    for (int off = 0x60; off <= 0x100; off += 8) {
+                        int key = Read<int>(p + off, so2_task);
+                        int enc = Read<int>(p + off + 4, so2_task);
+                        int val = key ^ enc;
+                        if (val >= 1 && val <= 200 && key != 0 && key != val) {
+                            [d appendFormat:@" %x=%d", off, val];
+                        }
+                    }
+                    self.watermarkLabel.text = d;
+                    break;
+                }
+            }
+
             for (int i = 0; i < capacity; i++) {
                 mach_vm_address_t player = players[i];
                 if (player < 0x1000000 || player == localPlayer) continue;
@@ -1438,12 +1468,18 @@ static int GetPlayerPlatform(mach_vm_address_t player, task_t task) {
     return 0;
 }
 
+static int cached_hp_off = -1;
+
 static int GetPlayerHealthAim(mach_vm_address_t player, task_t task) {
     if (!player || player < 0x1000000) return 0;
-    int hp = Read<int>(player + 0xCC, task);
-    if (hp < 0) hp = 0;
-    if (hp > 200) hp = 0;
-    return hp;
+    if (cached_hp_off >= 0) {
+        int key = Read<int>(player + cached_hp_off + 4, task);
+        int enc = Read<int>(player + cached_hp_off + 8, task);
+        int hp = key ^ enc;
+        if (hp >= 0 && hp <= 200) return hp;
+        return 0;
+    }
+    return 0;
 }
 
 static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
