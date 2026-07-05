@@ -933,79 +933,50 @@ struct ESPBoxData {
                 players[i] = Read<mach_vm_address_t>(entries_arr + 0x20 + (i * 0x18) + 0x10, so2_task);
             }
 
-            // Автопоиск HP: SafeInt в sub-компонентах, валидация на 2 игроках
+            // HP поиск: Photon custom properties через PhotonPlayer
             static double hp_last_scan = 0;
-            if (cached_hp_off1 < 0 && CACurrentMediaTime() - hp_last_scan > 2.0) {
+            if (cached_hp_off1 < 0 && CACurrentMediaTime() - hp_last_scan > 3.0) {
                 hp_last_scan = CACurrentMediaTime();
                 mach_vm_address_t scanP[3] = {0};
                 int scanN = 0;
                 for (int pi = 0; pi < capacity && scanN < 3; pi++) {
                     mach_vm_address_t p = players[pi];
                     if (p < 0x1000000 || p == localPlayer) continue;
+                    mach_vm_address_t mc = Read<mach_vm_address_t>(p + 0x98, so2_task);
+                    if (mc < 0x1000000) continue;
                     scanP[scanN++] = p;
                 }
                 if (scanN >= 2) {
-                    struct HpCandidate { int o1; int o2; int o3; int fmt; };
-                    HpCandidate cands[64];
-                    int nCands = 0;
-                    mach_vm_address_t p = scanP[0];
-                    for (int off1 = 0x60; off1 <= 0x120 && nCands < 60; off1 += 8) {
-                        uint64_t sub = Read<uint64_t>(p + off1, so2_task);
-                        if (sub < 0x1000000 || (sub & 3) != 0) continue;
-                        for (int soff = 0x10; soff <= 0x80; soff += 4) {
-                            int k = Read<int>(sub + soff + 4, so2_task);
-                            int e = Read<int>(sub + soff + 8, so2_task);
-                            if (k != 0) { int v = k ^ e; if (v >= 20 && v <= 100) cands[nCands++] = {off1, -1, soff, 0}; }
-                            if (nCands >= 60) break;
-                            k = Read<int>(sub + soff, so2_task);
-                            e = Read<int>(sub + soff + 4, so2_task);
-                            if (k != 0 && k != e) { int v = k ^ e; if (v >= 20 && v <= 100) cands[nCands++] = {off1, -1, soff, 1}; }
-                            if (nCands >= 60) break;
-                        }
-                        for (int off2 = 0x10; off2 <= 0x80 && nCands < 60; off2 += 8) {
-                            uint64_t sub2 = Read<uint64_t>(sub + off2, so2_task);
-                            if (sub2 < 0x1000000 || (sub2 & 3) != 0) continue;
-                            for (int soff = 0x10; soff <= 0x80 && nCands < 60; soff += 4) {
-                                int k = Read<int>(sub2 + soff + 4, so2_task);
-                                int e = Read<int>(sub2 + soff + 8, so2_task);
-                                if (k != 0) { int v = k ^ e; if (v >= 20 && v <= 100) cands[nCands++] = {off1, off2, soff, 0}; }
-                                if (nCands >= 60) break;
-                                k = Read<int>(sub2 + soff, so2_task);
-                                e = Read<int>(sub2 + soff + 4, so2_task);
-                                if (k != 0 && k != e) { int v = k ^ e; if (v >= 20 && v <= 100) cands[nCands++] = {off1, off2, soff, 1}; }
+                    NSMutableString *diag = [NSMutableString stringWithString:@"HP2:"];
+                    // Подход 1: PhotonPlayer+off → customProperties hashtable → entries
+                    mach_vm_address_t photon = Read<mach_vm_address_t>(scanP[0] + 0x160, so2_task);
+                    if (photon > 0x1000000) {
+                        // Сканируем PhotonPlayer на предмет Hashtable (объект с entries)
+                        for (int poff = 0x10; poff <= 0x50; poff += 8) {
+                            mach_vm_address_t ht = Read<mach_vm_address_t>(photon + poff, so2_task);
+                            if (ht < 0x1000000) continue;
+                            // Hashtable внутри: entries array, count, etc
+                            for (int eoff = 0x10; eoff <= 0x40; eoff += 8) {
+                                mach_vm_address_t entries = Read<mach_vm_address_t>(ht + eoff, so2_task);
+                                if (entries < 0x1000000) continue;
+                                int arrLen = Read<int>(entries + 0x18, so2_task);
+                                if (arrLen > 0 && arrLen < 50) {
+                                    [diag appendFormat:@" pp%x.%x.L%d", poff, eoff, arrLen];
+                                }
                             }
                         }
                     }
-                    // Диагностика: для каждого кандидата читаем значение на всех игроках
-                    NSMutableString *diag = [NSMutableString stringWithFormat:@"C%d:", nCands];
-                    int shown = 0;
-                    for (int ci = 0; ci < nCands && shown < 8; ci++) {
-                        int vals[3] = {-1, -1, -1};
-                        bool allValid = true;
+                    // Подход 2: прямые int поля на PlayerController (0x60-0x180)
+                    for (int off = 0x60; off <= 0x180; off += 4) {
+                        bool allOk = true;
+                        int vals[3] = {0};
                         for (int si = 0; si < scanN; si++) {
-                            uint64_t sub = Read<uint64_t>(scanP[si] + cands[ci].o1, so2_task);
-                            if (sub < 0x1000000) { allValid = false; break; }
-                            uint64_t obj = sub;
-                            if (cands[ci].o2 >= 0) {
-                                obj = Read<uint64_t>(sub + cands[ci].o2, so2_task);
-                                if (obj < 0x1000000) { allValid = false; break; }
-                            }
-                            if (cands[ci].fmt == 0) {
-                                int k = Read<int>(obj + cands[ci].o3 + 4, so2_task);
-                                int e = Read<int>(obj + cands[ci].o3 + 8, so2_task);
-                                vals[si] = k ^ e;
-                            } else {
-                                int k = Read<int>(obj + cands[ci].o3, so2_task);
-                                int e = Read<int>(obj + cands[ci].o3 + 4, so2_task);
-                                vals[si] = k ^ e;
-                            }
+                            vals[si] = Read<int>(scanP[si] + off, so2_task);
+                            if (vals[si] < 1 || vals[si] > 100) allOk = false;
                         }
-                        if (!allValid) continue;
-                        shown++;
-                        if (cands[ci].o2 >= 0)
-                            [diag appendFormat:@" %x.%x+%x.f%d=%d/%d/%d", cands[ci].o1, cands[ci].o2, cands[ci].o3, cands[ci].fmt, vals[0], vals[1], vals[2]];
-                        else
-                            [diag appendFormat:@" %x+%x.f%d=%d/%d/%d", cands[ci].o1, cands[ci].o3, cands[ci].fmt, vals[0], vals[1], vals[2]];
+                        if (allOk) {
+                            [diag appendFormat:@" d%x=%d/%d/%d", off, vals[0], vals[1], vals[2]];
+                        }
                     }
                     self.watermarkLabel.text = diag;
                 }
