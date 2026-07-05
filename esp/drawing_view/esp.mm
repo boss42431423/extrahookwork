@@ -437,6 +437,8 @@ struct ESPBoxData {
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
 
+        self.watermarkLabel.text = [NSString stringWithFormat:@"DBG OK: pm=0x%llx off=%llu", (uint64_t)playerManager, s_pm_ti_offset.load()];
+
         dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
         playersDict = dict28;
 
@@ -1148,7 +1150,6 @@ struct UnityString32 { uint16_t chars[32]; };
             [CATransaction commit];
             [CATransaction flush];
 
-            self.watermarkLabel.text = @(OBF("t.me/projectios"));
             [self.watermarkLabel sizeToFit];
             return;
         }
@@ -1156,8 +1157,6 @@ struct UnityString32 { uint16_t chars[32]; };
 
 CLEAR_BOXES:
     [self clearAllBoxes];
-    self.watermarkLabel.text = @"t.me/projectios";
-    [self.watermarkLabel sizeToFit];
 
     self.playerCountLabel.textColor = [[UIColor greenColor] colorWithAlphaComponent:0.5];
     self.playerCountLabel.text      = @"PLAYERS: 0";
