@@ -744,33 +744,82 @@ struct ESPBoxData {
 
             SO2_Matrix viewMatrix = {0};
             bool matrixFound = false;
-            if (localPlayer > 0x1000000) {
-                // Сканируем оффсет камеры в PlayerController (0xD0-0x120)
-                for (int camOff = 0xD0; camOff <= 0x120 && !matrixFound; camOff += 8) {
-                    mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + camOff, so2_task);
+            static int cam_off_cache = -1, cam_p1_cache = -1, cam_p2_cache = -1, cam_m_cache = -1;
+
+            if (localPlayer > 0x1000000 && cam_off_cache >= 0) {
+                mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + cam_off_cache, so2_task);
+                if (v1 > 0x1000000) {
+                    mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + cam_p1_cache, so2_task);
+                    if (v2 > 0x1000000) {
+                        mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + cam_p2_cache, so2_task);
+                        if (v3 > 0x1000000) {
+                            viewMatrix = Read<SO2_Matrix>(v3 + cam_m_cache, so2_task);
+                            float s = fabsf(viewMatrix.m11) + fabsf(viewMatrix.m22) + fabsf(viewMatrix.m33);
+                            if (s > 0.1f) matrixFound = true;
+                        }
+                    }
+                }
+            }
+
+            if (localPlayer > 0x1000000 && !matrixFound) {
+                CGFloat sw = self.bounds.size.width, sh = self.bounds.size.height;
+                // Найти позицию первого видимого врага для валидации
+                Vector3 testPos = {0,0,0};
+                {
+                    mach_vm_address_t tdict = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
+                    if (tdict > 0x1000000) {
+                        mach_vm_address_t tarr = Read<mach_vm_address_t>(tdict + 0x18, so2_task);
+                        if (tarr > 0x1000000) {
+                            for (int ti = 0; ti < 10; ti++) {
+                                mach_vm_address_t tp = Read<mach_vm_address_t>(tarr + 0x20 + ti * 0x18 + 0x10, so2_task);
+                                if (tp < 0x1000000 || tp == localPlayer) continue;
+                                mach_vm_address_t mc = Read<mach_vm_address_t>(tp + 0x98, so2_task);
+                                if (mc < 0x1000000) continue;
+                                mach_vm_address_t md = Read<mach_vm_address_t>(mc + 0xB0, so2_task);
+                                if (md < 0x1000000) continue;
+                                testPos = Read<Vector3>(md + 0x44, so2_task);
+                                if (testPos.x != 0 || testPos.y != 0 || testPos.z != 0) break;
+                            }
+                        }
+                    }
+                }
+
+                int camOffs[] = {0xE8, 0xE0, 0xF0, 0xD8, 0xD0, 0xF8, 0x100, 0x108, 0x110, 0x118, 0x120};
+                int p1s[] = {0x20, 0x18, 0x28, 0x10, 0x30};
+                int p2s[] = {0x10, 0x18, 0x08, 0x20};
+                int moffs[] = {0x100, 0xF0, 0xE0, 0xD0, 0xC0, 0x110, 0x120, 0xB0, 0xA0};
+
+                for (int ci = 0; ci < 11 && !matrixFound; ci++) {
+                    mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + camOffs[ci], so2_task);
                     if (v1 < 0x1000000) continue;
-                    // Unity Camera: пробуем несколько путей к матрице
-                    int paths[][2] = {{0x20,0x10}, {0x18,0x10}, {0x28,0x10}, {0x20,0x18}, {0x10,0x10}};
-                    for (int p = 0; p < 5 && !matrixFound; p++) {
-                        mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + paths[p][0], so2_task);
+                    for (int pi = 0; pi < 5 && !matrixFound; pi++) {
+                        mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + p1s[pi], so2_task);
                         if (v2 < 0x1000000) continue;
-                        mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + paths[p][1], so2_task);
-                        if (v3 < 0x1000000) continue;
-                        // Матрица на нескольких оффсетах
-                        for (int moff = 0xC0; moff <= 0x120; moff += 0x10) {
-                            SO2_Matrix m = Read<SO2_Matrix>(v3 + moff, so2_task);
-                            // Валидация: view matrix должна иметь нормальные значения
-                            float sum = fabsf(m.m11) + fabsf(m.m22) + fabsf(m.m33);
-                            if (sum > 0.5f && sum < 5.0f &&
-                                fabsf(m.m44) > 0.5f && fabsf(m.m44) < 2.0f) {
-                                viewMatrix = m;
-                                matrixFound = true;
-                                static bool logged = false;
-                                if (!logged) {
-                                    NSLog(@"ESP: cam chain: lp+%x -> +%x -> +%x -> +%x", camOff, paths[p][0], paths[p][1], moff);
-                                    logged = true;
+                        for (int qi = 0; qi < 4 && !matrixFound; qi++) {
+                            mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + p2s[qi], so2_task);
+                            if (v3 < 0x1000000) continue;
+                            for (int mi = 0; mi < 9 && !matrixFound; mi++) {
+                                SO2_Matrix m = Read<SO2_Matrix>(v3 + moffs[mi], so2_task);
+                                float diag = fabsf(m.m11) + fabsf(m.m22) + fabsf(m.m33);
+                                if (diag < 0.1f) continue;
+                                if (testPos.x != 0 || testPos.y != 0 || testPos.z != 0) {
+                                    Vector3 sc = WorldToScreen(testPos, m, sw, sh);
+                                    if (sc.z > 0.01f && sc.x > -sw && sc.x < sw*2 && sc.y > -sh && sc.y < sh*2) {
+                                        viewMatrix = m;
+                                        matrixFound = true;
+                                        cam_off_cache = camOffs[ci];
+                                        cam_p1_cache = p1s[pi];
+                                        cam_p2_cache = p2s[qi];
+                                        cam_m_cache = moffs[mi];
+                                    }
+                                } else {
+                                    viewMatrix = m;
+                                    matrixFound = true;
+                                    cam_off_cache = camOffs[ci];
+                                    cam_p1_cache = p1s[pi];
+                                    cam_p2_cache = p2s[qi];
+                                    cam_m_cache = moffs[mi];
                                 }
-                                break;
                             }
                         }
                     }
@@ -859,10 +908,16 @@ struct ESPBoxData {
                 if (pos.x == 0 && pos.y == 0 && pos.z == 0) continue;
 
                 if (validPlayers == 0 && i < 3) {
-                    self.watermarkLabel.text = [NSString stringWithFormat:
-                        @"p=%.1f,%.1f,%.1f m%d [%.2f %.2f %.2f %.2f]",
-                        (double)pos.x, (double)pos.y, (double)pos.z, (int)(matrixFound?1:0),
-                        (double)viewMatrix.m11, (double)viewMatrix.m22, (double)viewMatrix.m33, (double)viewMatrix.m44];
+                    if (matrixFound && cam_off_cache >= 0) {
+                        self.watermarkLabel.text = [NSString stringWithFormat:
+                            @"CAM %x>%x>%x>%x d=%.1f,%.1f,%.1f",
+                            cam_off_cache, cam_p1_cache, cam_p2_cache, cam_m_cache,
+                            (double)viewMatrix.m11, (double)viewMatrix.m22, (double)viewMatrix.m33];
+                    } else {
+                        self.watermarkLabel.text = [NSString stringWithFormat:
+                            @"noCAM p=%.1f,%.1f,%.1f",
+                            (double)pos.x, (double)pos.y, (double)pos.z];
+                    }
                 }
 
                 Vector3 screenFoot = WorldToScreen(pos, viewMatrix, w, h);
