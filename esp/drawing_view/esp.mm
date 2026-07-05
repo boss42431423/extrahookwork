@@ -933,50 +933,46 @@ struct ESPBoxData {
                 players[i] = Read<mach_vm_address_t>(entries_arr + 0x20 + (i * 0x18) + 0x10, so2_task);
             }
 
-            // HP поиск: Photon custom properties через PhotonPlayer
+            // HP поиск: Photon custom properties Dictionary
             static double hp_last_scan = 0;
             if (cached_hp_off1 < 0 && CACurrentMediaTime() - hp_last_scan > 3.0) {
                 hp_last_scan = CACurrentMediaTime();
-                mach_vm_address_t scanP[3] = {0};
-                int scanN = 0;
-                for (int pi = 0; pi < capacity && scanN < 3; pi++) {
-                    mach_vm_address_t p = players[pi];
-                    if (p < 0x1000000 || p == localPlayer) continue;
-                    mach_vm_address_t mc = Read<mach_vm_address_t>(p + 0x98, so2_task);
-                    if (mc < 0x1000000) continue;
-                    scanP[scanN++] = p;
+                mach_vm_address_t p = 0;
+                for (int pi = 0; pi < capacity; pi++) {
+                    mach_vm_address_t tp = players[pi];
+                    if (tp < 0x1000000 || tp == localPlayer) continue;
+                    mach_vm_address_t mc = Read<mach_vm_address_t>(tp + 0x98, so2_task);
+                    if (mc > 0x1000000) { p = tp; break; }
                 }
-                if (scanN >= 2) {
-                    NSMutableString *diag = [NSMutableString stringWithString:@"HP2:"];
-                    // Подход 1: PhotonPlayer+off → customProperties hashtable → entries
-                    mach_vm_address_t photon = Read<mach_vm_address_t>(scanP[0] + 0x160, so2_task);
+                if (p) {
+                    NSMutableString *diag = [NSMutableString stringWithString:@"PP:"];
+                    mach_vm_address_t photon = Read<mach_vm_address_t>(p + 0x160, so2_task);
                     if (photon > 0x1000000) {
-                        // Сканируем PhotonPlayer на предмет Hashtable (объект с entries)
-                        for (int poff = 0x10; poff <= 0x50; poff += 8) {
-                            mach_vm_address_t ht = Read<mach_vm_address_t>(photon + poff, so2_task);
-                            if (ht < 0x1000000) continue;
-                            // Hashtable внутри: entries array, count, etc
-                            for (int eoff = 0x10; eoff <= 0x40; eoff += 8) {
-                                mach_vm_address_t entries = Read<mach_vm_address_t>(ht + eoff, so2_task);
-                                if (entries < 0x1000000) continue;
-                                int arrLen = Read<int>(entries + 0x18, so2_task);
-                                if (arrLen > 0 && arrLen < 50) {
-                                    [diag appendFormat:@" pp%x.%x.L%d", poff, eoff, arrLen];
+                        // Дамп PhotonPlayer: ищем Dict-подобные объекты (ptr с count 1-30)
+                        for (int poff = 0x10; poff <= 0x60; poff += 8) {
+                            mach_vm_address_t obj = Read<mach_vm_address_t>(photon + poff, so2_task);
+                            if (obj < 0x1000000) continue;
+                            // Проверяем как Dictionary: entries=obj+0x18, count=obj+0x20
+                            mach_vm_address_t ent = Read<mach_vm_address_t>(obj + 0x18, so2_task);
+                            int cnt = Read<int>(obj + 0x20, so2_task);
+                            if (ent > 0x1000000 && cnt > 0 && cnt < 30) {
+                                int arrLen = Read<int>(ent + 0x18, so2_task);
+                                [diag appendFormat:@" %x:c%d/L%d", poff, cnt, arrLen];
+                                // Читаем entries: каждый 24 байта (hash4,next4,key8,val8)
+                                // Boxed int value: val_ptr+0x10 = int value
+                                for (int ei = 0; ei < cnt && ei < 10; ei++) {
+                                    mach_vm_address_t val = Read<mach_vm_address_t>(ent + 0x20 + ei * 24 + 16, so2_task);
+                                    if (val > 0x1000000) {
+                                        int v = Read<int>(val + 0x10, so2_task);
+                                        if (v >= 0 && v <= 200) {
+                                            [diag appendFormat:@" e%d=%d", ei, v];
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                    // Подход 2: прямые int поля на PlayerController (0x60-0x180)
-                    for (int off = 0x60; off <= 0x180; off += 4) {
-                        bool allOk = true;
-                        int vals[3] = {0};
-                        for (int si = 0; si < scanN; si++) {
-                            vals[si] = Read<int>(scanP[si] + off, so2_task);
-                            if (vals[si] < 1 || vals[si] > 100) allOk = false;
-                        }
-                        if (allOk) {
-                            [diag appendFormat:@" d%x=%d/%d/%d", off, vals[0], vals[1], vals[2]];
-                        }
+                    } else {
+                        [diag appendFormat:@" no_pp"];
                     }
                     self.watermarkLabel.text = diag;
                 }
