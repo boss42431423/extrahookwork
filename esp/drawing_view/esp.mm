@@ -557,7 +557,9 @@ struct ESPBoxData {
             static mach_vm_address_t prev_pm = 0;
             if (playerManager != prev_pm) {
                 cam_off_cache = -1;
-                cached_hp_off = -1;
+                cached_hp_off1 = -1;
+                cached_hp_off2 = -1;
+                cached_hp_off3 = -1;
                 prev_pm = playerManager;
             }
         }
@@ -768,7 +770,9 @@ struct ESPBoxData {
 
             SO2_Matrix viewMatrix = {0};
             bool matrixFound = false;
+            static int cam_bad_frames = 0;
 
+            // Быстрый путь: кэшированная цепочка + валидация
             if (localPlayer > 0x1000000 && cam_off_cache >= 0) {
                 mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + cam_off_cache, so2_task);
                 if (v1 > 0x1000000) {
@@ -776,10 +780,21 @@ struct ESPBoxData {
                     if (v2 > 0x1000000) {
                         mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + cam_p2_cache, so2_task);
                         if (v3 > 0x1000000) {
-                            viewMatrix = Read<SO2_Matrix>(v3 + cam_m_cache, so2_task);
-                            float s = fabsf(viewMatrix.m11) + fabsf(viewMatrix.m22) + fabsf(viewMatrix.m33);
-                            if (s > 0.1f) matrixFound = true;
+                            SO2_Matrix m = Read<SO2_Matrix>(v3 + cam_m_cache, so2_task);
+                            if (fabsf(m.m11) > 0.01f && fabsf(m.m22) > 0.01f && fabsf(m.m33) > 0.01f &&
+                                fabsf(m.m11) < 10.0f && fabsf(m.m22) < 10.0f && fabsf(m.m33) < 10.0f) {
+                                viewMatrix = m;
+                                matrixFound = true;
+                                cam_bad_frames = 0;
+                            }
                         }
+                    }
+                }
+                if (!matrixFound) {
+                    cam_bad_frames++;
+                    if (cam_bad_frames > 5) {
+                        cam_off_cache = -1;
+                        cam_bad_frames = 0;
                     }
                 }
             }
@@ -918,33 +933,52 @@ struct ESPBoxData {
                 players[i] = Read<mach_vm_address_t>(entries_arr + 0x20 + (i * 0x18) + 0x10, so2_task);
             }
 
-            // Поиск HP: SafeInt в sub-компонентах PlayerController
-            if (cached_hp_off < 0) {
-                for (int pi = 0; pi < capacity; pi++) {
+            // Поиск HP: SafeInt в sub/sub-sub компонентах PlayerController
+            if (cached_hp_off1 < 0) {
+                static int hp_scan_idx = 0;
+                mach_vm_address_t scanP[2] = {0, 0};
+                int scanN = 0;
+                for (int pi = 0; pi < capacity && scanN < 2; pi++) {
                     mach_vm_address_t p = players[pi];
                     if (p < 0x1000000 || p == localPlayer) continue;
+                    scanP[scanN++] = p;
+                }
+                if (scanN >= 1) {
                     NSMutableString *d = [NSMutableString stringWithString:@"HP:"];
-                    for (int off = 0x60; off <= 0x100; off += 8) {
-                        uint64_t sub = Read<uint64_t>(p + off, so2_task);
+                    mach_vm_address_t p = scanP[0];
+                    for (int off1 = 0x60; off1 <= 0x120; off1 += 8) {
+                        uint64_t sub = Read<uint64_t>(p + off1, so2_task);
                         if (sub < 0x1000000 || (sub & 3) != 0) continue;
+                        // Уровень 1: прямо в sub
                         for (int soff = 0x10; soff <= 0x80; soff += 4) {
-                            // SafeInt {bool,key,enc}: key at soff+4, enc at soff+8
-                            int key = Read<int>(sub + soff + 4, so2_task);
-                            int enc = Read<int>(sub + soff + 8, so2_task);
-                            if (key == 0) continue;
-                            int si = key ^ enc;
-                            if (si >= 50 && si <= 100) {
-                                [d appendFormat:@" %x+%x^%d", off, soff, si];
-                            }
-                            // plain
-                            int v = Read<int>(sub + soff, so2_task);
-                            if (v == 100) {
-                                [d appendFormat:@" %x+%x=%d", off, soff, v];
+                            int k = Read<int>(sub + soff + 4, so2_task);
+                            int e = Read<int>(sub + soff + 8, so2_task);
+                            if (k != 0) { int v = k ^ e; if (v >= 50 && v <= 100) [d appendFormat:@" %x+%x^%d", off1, soff, v]; }
+                            k = Read<int>(sub + soff, so2_task);
+                            e = Read<int>(sub + soff + 4, so2_task);
+                            if (k != 0 && k != e) { int v = k ^ e; if (v >= 50 && v <= 100) [d appendFormat:@" %x+%xn%d", off1, soff, v]; }
+                        }
+                        // Уровень 2: sub → sub2
+                        for (int off2 = 0x10; off2 <= 0x80; off2 += 8) {
+                            uint64_t sub2 = Read<uint64_t>(sub + off2, so2_task);
+                            if (sub2 < 0x1000000 || (sub2 & 3) != 0) continue;
+                            for (int soff = 0x10; soff <= 0x80; soff += 4) {
+                                int k = Read<int>(sub2 + soff + 4, so2_task);
+                                int e = Read<int>(sub2 + soff + 8, so2_task);
+                                if (k != 0) { int v = k ^ e; if (v >= 50 && v <= 100) [d appendFormat:@" %x.%x+%x^%d", off1, off2, soff, v]; }
+                                k = Read<int>(sub2 + soff, so2_task);
+                                e = Read<int>(sub2 + soff + 4, so2_task);
+                                if (k != 0 && k != e) { int v = k ^ e; if (v >= 50 && v <= 100) [d appendFormat:@" %x.%x+%xn%d", off1, off2, soff, v]; }
                             }
                         }
                     }
+                    // Валидация: проверить на 2 игроках (должно быть 50-100 у обоих)
+                    if (d.length > 3 && scanN >= 2) {
+                        [d appendFormat:@" v2:"];
+                        mach_vm_address_t p2 = scanP[1];
+                        // Перечитываем найденные кандидаты на 2-м игроке
+                    }
                     self.watermarkLabel.text = d;
-                    break;
                 }
             }
 
@@ -1487,16 +1521,34 @@ static int GetPlayerPlatform(mach_vm_address_t player, task_t task) {
     return 0;
 }
 
-static int cached_hp_off = -1;
+static int cached_hp_off1 = -1;
+static int cached_hp_off2 = -1;
+static int cached_hp_off3 = -1;
+static int cached_hp_fmt = 0; // 0=SafeInt{bool,key,enc}, 1=SafeInt{key,enc}, 2=plain int
 
 static int GetPlayerHealthAim(mach_vm_address_t player, task_t task) {
     if (!player || player < 0x1000000) return 0;
-    if (cached_hp_off >= 0) {
-        int key = Read<int>(player + cached_hp_off + 4, task);
-        int enc = Read<int>(player + cached_hp_off + 8, task);
+    if (cached_hp_off1 < 0) return 0;
+    mach_vm_address_t sub = Read<mach_vm_address_t>(player + cached_hp_off1, task);
+    if (sub < 0x1000000) return 0;
+    mach_vm_address_t obj = sub;
+    if (cached_hp_off2 >= 0) {
+        obj = Read<mach_vm_address_t>(sub + cached_hp_off2, task);
+        if (obj < 0x1000000) return 0;
+    }
+    if (cached_hp_fmt == 0) {
+        int key = Read<int>(obj + cached_hp_off3 + 4, task);
+        int enc = Read<int>(obj + cached_hp_off3 + 8, task);
         int hp = key ^ enc;
         if (hp >= 0 && hp <= 200) return hp;
-        return 0;
+    } else if (cached_hp_fmt == 1) {
+        int key = Read<int>(obj + cached_hp_off3, task);
+        int enc = Read<int>(obj + cached_hp_off3 + 4, task);
+        int hp = key ^ enc;
+        if (hp >= 0 && hp <= 200) return hp;
+    } else {
+        int hp = Read<int>(obj + cached_hp_off3, task);
+        if (hp >= 0 && hp <= 200) return hp;
     }
     return 0;
 }
