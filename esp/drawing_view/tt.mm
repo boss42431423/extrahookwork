@@ -1,1842 +1,1468 @@
 #import "esp.h"
-#import "tt.h"
-#import <UIKit/UIGestureRecognizerSubclass.h>
-#import <AVFoundation/AVFoundation.h>
-#import <objc/runtime.h>
-#import <sys/sysctl.h>
+#import "cfg.h"
 #include "obfusheader.h"
+#import "tt.h"
+#include <string>
+#include <vector>
+#include <map>
 #import "../../sources/UIView+SecureView.h"
-#include <atomic>
-// Rifles
-#import "assets/rifles/akr.h"
-#import "assets/rifles/akr12.h"
-#import "assets/rifles/famas.h"
-#import "assets/rifles/fnfal.h"
-#import "assets/rifles/m16.h"
-#import "assets/rifles/m4.h"
-#import "assets/rifles/val.h"
-// Pistols
-#import "assets/pistols/berettas.h"
-#import "assets/pistols/desert_eagle.h"
-#import "assets/pistols/five_seven.h"
-#import "assets/pistols/g22.h"
-#import "assets/pistols/p350.h"
-#import "assets/pistols/tec9.h"
-#import "assets/pistols/usp.h"
-// SMGs
-#import "assets/smgs/mac10.h"
-#import "assets/smgs/mp5.h"
-#import "assets/smgs/mp7.h"
-#import "assets/smgs/p90.h"
-#import "assets/smgs/ump45.h"
-#import "assets/smgs/uzi.h"
-// Heavy
-#import "assets/heavy/fabm.h"
-#import "assets/heavy/m60.h"
-#import "assets/heavy/sm1014.h"
-#import "assets/heavy/spas.h"
-// Snipers
-#import "assets/snipers/awm.h"
-#import "assets/snipers/m110.h"
-#import "assets/snipers/m40.h"
-#import "assets/snipers/mallard.h"
-// Knives
-#import "assets/knives/butterfly.h"
-#import "assets/knives/dual_daggers.h"
-#import "assets/knives/fang.h"
-#import "assets/knives/flipknife.h"
-#import "assets/knives/jkommando.h"
-#import "assets/knives/kabar.h"
-#import "assets/knives/karambit.h"
-#import "assets/knives/kukri.h"
-#import "assets/knives/kunai.h"
-#import "assets/knives/m9bayonet.h"
-#import "assets/knives/mantis.h"
-#import "assets/knives/scorpion.h"
-#import "assets/knives/stiletto.h"
-#import "assets/knives/sting.h"
-#import "assets/knives/tanto.h"
-// Grenades
-#import "assets/grenades/flash.h"
-#import "assets/grenades/he.h"
-#import "assets/grenades/molotov.h"
-#import "assets/grenades/smoke.h"
-#import "assets/grenades/thermite.h"
-// Other
-#import "assets/other/bomb.h"
 
-volatile bool esp_box_enabled = true;
-volatile bool esp_box_outline = false;
-volatile bool esp_box_fill = false;
-volatile bool esp_box_corner = false;
-volatile bool esp_box_3d = false;
-volatile bool esp_line_enabled = false;
-volatile bool esp_line_outline = false;
-volatile bool esp_invisible = false;
-volatile bool esp_addscore = false;
-volatile bool esp_inf_ammo = false;
-volatile bool esp_no_spread = false;
-volatile bool esp_air_jump = false;
-volatile bool esp_fast_knife = false;
-volatile bool esp_bunny_hop = false;
-volatile bool esp_wallshot = false;
-volatile bool esp_fire_rate = false;
-volatile bool esp_team_check = true;
-volatile bool esp_screenshot_safe = false;
+extern volatile bool esp_screenshot_safe;
 
-volatile bool aimbot_enabled        = false;
-volatile bool aimbot_visible_check  = false;
-volatile bool aimbot_shooting_check = false;
-volatile bool aimbot_knife_bot      = false;
-volatile float aimbot_smooth        = 5.0f;
-volatile float aimbot_trigger_delay = 0.1f;
-volatile int   aimbot_bone_index    = 0;   
+@interface CustomSliderView : UIView
+@property (nonatomic, assign) float value;
+@property (nonatomic, assign) float minValue;
+@property (nonatomic, assign) float maxValue;
+@property (nonatomic, copy) void (^valueChanged)(float newValue);
 
-volatile bool  esp_rcs_enabled   = false;
-volatile float esp_rcs_h         = 0.0f;
-volatile float esp_rcs_v         = 0.0f;
-
-volatile int   esp_bhop_setting  = 5;
-volatile bool aimbot_triggerbot   = false;
-volatile bool aimbot_fov_visible  = true;
-volatile float aimbot_fov         = 120.0f;
-volatile bool aimbot_team_check   = true;
-volatile bool esp_name_enabled = false;
-volatile bool esp_name_outline = false;
-volatile bool esp_health_enabled = false;
-volatile bool esp_health_bar_enabled = false;
-volatile bool esp_health_bar_outline = false;
-volatile bool esp_weapon_enabled     = false;
-volatile bool esp_weapon_icon_enabled = false;
-volatile bool esp_platform_enabled = false;
-volatile bool esp_avatar_enabled   = false;
-
-volatile bool  viewmodel_enabled  = false;
-volatile float viewmodel_x        = 0.0f;
-volatile float viewmodel_y        = 0.0f;
-volatile float viewmodel_z        = 0.0f;
-
-volatile bool esp_auto_load = false;
-NSString *esp_selected_config = nil;
-
-@interface UIWindow (Private)
-- (void)_setSecure:(BOOL)secure;
-- (unsigned int)_contextId;
+- (instancetype)initWithFrame:(CGRect)frame min:(float)min max:(float)max current:(float)current;
 @end
 
-@interface LSApplicationWorkspace : NSObject
-+ (instancetype)defaultWorkspace;
-- (BOOL)openApplicationWithBundleID:(NSString *)bundleID;
-@end
+@implementation CustomSliderView {
+    UIView *_track;
+    UIView *_thumb;
+    UILabel *_label;
+}
 
-@interface SBSAccessibilityWindowHostingController : NSObject
-- (void)registerWindowWithContextID:(unsigned int)contextID atLevel:(double)level;
-@end
-
-struct ESPBoxData {
-    CGRect rect;
-};
-
-@interface ESP_View ()
-@property (nonatomic, strong) CADisplayLink     *displayLinkData;
-@property (nonatomic, strong) UILabel           *playerCountLabel;
-@property (nonatomic, strong) UILabel           *noPlayersLabel;
-@property (nonatomic, strong) AVPlayer          *backgroundPlayer;
-@property (nonatomic, assign) BOOL              hasAttemptedLaunch;
-@property (nonatomic, strong) CAShapeLayer      *espBoxLayer;
-@property (nonatomic, strong) CAShapeLayer      *espBoxFillLayer;
-@property (nonatomic, strong) NSMutableArray<UILabel *> *nameLabelPool;
-@property (nonatomic, strong) NSMutableArray<UILabel *> *healthLabelPool;
-@property (nonatomic, strong) NSMutableArray<UILabel *> *weaponLabelPool;
-@property (nonatomic, strong) NSMutableArray<UIImageView *> *weaponIconPool;
-@property (nonatomic, strong) NSMutableArray<UILabel *> *platformLabelPool;
-@property (nonatomic, strong) NSMutableArray<UIImageView *> *avatarPool;
-@property (nonatomic, strong) CAShapeLayer      *espLineLayer;
-@property (nonatomic, strong) CAShapeLayer      *espBoxOutlineLayer;
-@property (nonatomic, strong) CAShapeLayer      *espHealthBarLayer;
-@property (nonatomic, strong) CAShapeLayer      *espHealthBarOutlineLayer;
-@property (nonatomic, strong) CAShapeLayer      *espLineOutlineLayer;
-@property (nonatomic, strong) UILabel           *watermarkLabel;
-@property (nonatomic, strong) CAShapeLayer      *fovCircleLayer;
-@property (nonatomic, strong) CAShapeLayer      *fovCircleOutlineLayer;
-@property (nonatomic, assign) uint64_t          aimbotCurrentTarget;
-@property (nonatomic, assign) double            aimbotLastWriteTime;
-@property (nonatomic, assign) BOOL              triggerbotShooting;
-@property (nonatomic, assign) double            triggerbotLastShotTime;
-@property (nonatomic, assign) BOOL              isESPCountEnabled;
-@end
-
-@implementation ESP_View
-
-- (instancetype)initWithFrame:(CGRect)frame {
+- (instancetype)initWithFrame:(CGRect)frame min:(float)min max:(float)max current:(float)current {
     self = [super initWithFrame:frame];
-    if (!self) return nil;
+    if (self) {
+        _minValue = min;
+        _maxValue = max;
+        _value = current;
 
-    self.backgroundColor        = [UIColor clearColor];
-    self.hasAttemptedLaunch     = NO;
-    self.isESPCountEnabled      = NO;
-    self.userInteractionEnabled = YES;
+        _track = [[UIView alloc] initWithFrame:CGRectMake(0, frame.size.height/2 - 1, frame.size.width, 2)];
+        _track.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.3];
+        _track.userInteractionEnabled = NO;
+        [self addSubview:_track];
 
-    self.espBoxFillLayer = [CAShapeLayer layer];
-    self.espBoxFillLayer.fillColor = [UIColor colorWithWhite:1 alpha:0.3].CGColor;
-    self.espBoxFillLayer.strokeColor = [UIColor clearColor].CGColor;
-    [self.layer addSublayer:self.espBoxFillLayer];
+        _thumb = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 12, 12)];
+        _thumb.backgroundColor = [UIColor whiteColor];
+        _thumb.layer.cornerRadius = 6;
+        _thumb.userInteractionEnabled = NO;
+        [self addSubview:_thumb];
 
-    self.espBoxOutlineLayer = [CAShapeLayer layer];
-    self.espBoxOutlineLayer.strokeColor = [UIColor blackColor].CGColor;
-    self.espBoxOutlineLayer.fillColor   = [UIColor clearColor].CGColor;
-    self.espBoxOutlineLayer.lineWidth   = 3.0;
-    [self.layer addSublayer:self.espBoxOutlineLayer];
+        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+        [self addGestureRecognizer:pan];
 
-    self.espBoxLayer = [CAShapeLayer layer];
-    self.espBoxLayer.strokeColor = [UIColor whiteColor].CGColor;
-    self.espBoxLayer.fillColor   = [UIColor clearColor].CGColor;
-    self.espBoxLayer.lineWidth   = 1.5;
-    [self.layer addSublayer:self.espBoxLayer];
+        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
+        [self addGestureRecognizer:tap];
 
-    self.espHealthBarOutlineLayer = [CAShapeLayer layer];
-    self.espHealthBarOutlineLayer.strokeColor = [UIColor blackColor].CGColor;
-    self.espHealthBarOutlineLayer.fillColor   = [UIColor clearColor].CGColor;
-    self.espHealthBarOutlineLayer.lineWidth   = 3.0;
-    [self.layer addSublayer:self.espHealthBarOutlineLayer];
-
-    self.espHealthBarLayer = [CAShapeLayer layer];
-    self.espHealthBarLayer.strokeColor = [UIColor colorWithRed:0.0 green:1.0 blue:0.0 alpha:0.8].CGColor;
-    self.espHealthBarLayer.fillColor   = [UIColor clearColor].CGColor;
-    self.espHealthBarLayer.lineWidth   = 2.0;
-    [self.layer addSublayer:self.espHealthBarLayer];
-
-    self.espLineOutlineLayer = [CAShapeLayer layer];
-    self.espLineOutlineLayer.strokeColor = [UIColor blackColor].CGColor;
-    self.espLineOutlineLayer.fillColor   = [UIColor clearColor].CGColor;
-    self.espLineOutlineLayer.lineWidth   = 3.0;
-    [self.layer addSublayer:self.espLineOutlineLayer];
-
-    self.espLineLayer = [CAShapeLayer layer];
-    self.espLineLayer.strokeColor = [UIColor whiteColor].CGColor;
-    self.espLineLayer.fillColor   = [UIColor clearColor].CGColor;
-    self.espLineLayer.lineWidth   = 1.0;
-    [self.layer addSublayer:self.espLineLayer];
-
-    self.fovCircleOutlineLayer = [CAShapeLayer layer];
-    self.fovCircleOutlineLayer.fillColor   = [UIColor clearColor].CGColor;
-    self.fovCircleOutlineLayer.strokeColor = [UIColor colorWithWhite:0 alpha:0.6].CGColor;
-    self.fovCircleOutlineLayer.lineWidth   = 3.0;
-    self.fovCircleOutlineLayer.hidden      = YES;
-    [self.layer addSublayer:self.fovCircleOutlineLayer];
-
-    self.fovCircleLayer = [CAShapeLayer layer];
-    self.fovCircleLayer.fillColor   = [UIColor clearColor].CGColor;
-    self.fovCircleLayer.strokeColor = [UIColor whiteColor].CGColor;
-    self.fovCircleLayer.lineWidth   = 1.5;
-    self.fovCircleLayer.hidden      = YES;
-    [self.layer addSublayer:self.fovCircleLayer];
-
-    UILabel *wm = [[UILabel alloc] init];
-    wm.text = @(OBF("t.me/projectios"));
-    wm.textColor = [UIColor whiteColor];
-    wm.font = [UIFont boldSystemFontOfSize:16.0f];
-    wm.userInteractionEnabled = NO;
-    [self addSubview:wm];
-    self.watermarkLabel = wm;
-
-    UILabel *playerCountLabel = [UILabel new];
-    playerCountLabel.hidden = YES;
-    self.playerCountLabel = playerCountLabel;
-
-    UILabel *noPlayersLabel = [UILabel new];
-    noPlayersLabel.hidden = YES;
-    self.noPlayersLabel = noPlayersLabel;
-
-    self.nameLabelPool = [NSMutableArray new];
-    self.healthLabelPool = [NSMutableArray new];
-    self.weaponLabelPool = [NSMutableArray new];
-    self.weaponIconPool = [NSMutableArray new];
-    self.platformLabelPool = [NSMutableArray new];
-    self.avatarPool = [NSMutableArray new];
-    self.aimbotCurrentTarget = 0;
-    self.aimbotLastWriteTime = 0;
-    self.triggerbotShooting = NO;
-    self.triggerbotLastShotTime = 0;
-
-    self.menuView = [[MenuView alloc] initWithFrame:CGRectMake(0, 0, 270, 280)];
-    self.menuView.center = CGPointMake(frame.size.width / 2, frame.size.height / 2);
-    [self addSubview:self.menuView];
-
-    [[NSNotificationCenter defaultCenter]
-        addObserver:self
-           selector:@selector(clearAllBoxes)
-               name:@"ESPClearBoxes"
-             object:nil];
-
-    [self startBackgroundKeeper];
-
-    self.displayLinkData = [CADisplayLink displayLinkWithTarget:self selector:@selector(update_data)];
-    self.displayLinkData.preferredFramesPerSecond = 120;
-    [self.displayLinkData addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
-    [self showViewForCapture];
-
+        [self updateThumbPosition];
+    }
     return self;
 }
 
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    if (self.superview) self.frame = self.superview.bounds;
-    CGSize s = [self.watermarkLabel sizeThatFits:CGSizeMake(300, 30)];
-    self.watermarkLabel.frame = CGRectMake(10, 8, s.width + 4, s.height);
+- (void)handlePan:(UIPanGestureRecognizer *)g {
+    CGPoint pt = [g locationInView:self];
+    [self updateValueWithX:pt.x];
 }
 
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    if (self.menuView) {
-        CGPoint pointInMenu = [self convertPoint:point toView:self.menuView];
-        if ([self.menuView pointInside:pointInMenu withEvent:event]) {
-            return [self.menuView hitTest:pointInMenu withEvent:event];
+- (void)handleTap:(UITapGestureRecognizer *)g {
+    CGPoint pt = [g locationInView:self];
+    [self updateValueWithX:pt.x];
+}
+
+- (void)updateValueWithX:(CGFloat)x {
+    float percent = x / self.frame.size.width;
+    if (percent < 0) percent = 0;
+    if (percent > 1) percent = 1;
+
+    _value = _minValue + (_maxValue - _minValue) * percent;
+    [self updateThumbPosition];
+    if (self.valueChanged) self.valueChanged(_value);
+}
+
+- (void)updateThumbPosition {
+    float percent = (_value - _minValue) / (_maxValue - _minValue);
+    _thumb.center = CGPointMake(self.frame.size.width * percent, self.frame.size.height/2);
+}
+
+- (void)setValue:(float)value {
+    _value = value;
+    [self updateThumbPosition];
+}
+@end
+
+@interface CustomSegmentedControl : UIView
+@property (nonatomic, assign) NSInteger selectedIndex;
+@property (nonatomic, copy) void (^valueChanged)(NSInteger newIndex);
+- (instancetype)initWithFrame:(CGRect)frame items:(NSArray *)items current:(NSInteger)current;
+- (void)reloadUI:(NSInteger)idx;
+@end
+
+@implementation CustomSegmentedControl {
+    NSArray *_items;
+    NSMutableArray *_labels;
+}
+- (instancetype)initWithFrame:(CGRect)frame items:(NSArray *)items current:(NSInteger)current {
+    self = [super initWithFrame:frame];
+    if (self) {
+        _items = items;
+        _selectedIndex = current;
+        _labels = [NSMutableArray new];
+        self.backgroundColor = [UIColor colorWithWhite:0.2 alpha:1];
+        self.layer.cornerRadius = 6;
+        self.clipsToBounds = YES;
+        
+        CGFloat bw = frame.size.width / items.count;
+        for (int i = 0; i < items.count; i++) {
+            UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(i * bw, 0, bw, frame.size.height)];
+            l.text = items[i];
+            l.textAlignment = NSTextAlignmentCenter;
+            l.font = [UIFont systemFontOfSize:10 weight:(i == current ? UIFontWeightBold : UIFontWeightRegular)];
+            l.textColor = (i == current ? [UIColor blackColor] : [UIColor colorWithWhite:0.7 alpha:1]);
+            l.backgroundColor = (i == current ? [UIColor whiteColor] : [UIColor clearColor]);
+            [self addSubview:l];
+            [_labels addObject:l];
+        }
+        
+        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
+        [self addGestureRecognizer:tap];
+    }
+    return self;
+}
+- (void)reloadUI:(NSInteger)idx {
+    if (idx < 0) idx = 0;
+    if (idx >= _items.count) idx = _items.count - 1;
+    _selectedIndex = idx;
+    for (int i = 0; i < _labels.count; i++) {
+        UILabel *l = _labels[i];
+        BOOL sel = (i == idx);
+        l.textColor = sel ? [UIColor blackColor] : [UIColor colorWithWhite:0.7 alpha:1];
+        l.backgroundColor = sel ? [UIColor whiteColor] : [UIColor clearColor];
+        l.font = [UIFont systemFontOfSize:10 weight:(sel ? UIFontWeightBold : UIFontWeightRegular)];
+    }
+}
+- (void)handleTap:(UITapGestureRecognizer *)g {
+    CGPoint p = [g locationInView:self];
+    NSInteger idx = p.x / (self.frame.size.width / _items.count);
+    if (idx < 0) idx = 0;
+    if (idx >= _items.count) idx = _items.count - 1;
+    
+    _selectedIndex = idx;
+    for (int i = 0; i < _labels.count; i++) {
+        UILabel *l = _labels[i];
+        BOOL sel = (i == idx);
+        l.textColor = sel ? [UIColor blackColor] : [UIColor colorWithWhite:0.7 alpha:1];
+        l.backgroundColor = sel ? [UIColor whiteColor] : [UIColor clearColor];
+        l.font = [UIFont systemFontOfSize:10 weight:(sel ? UIFontWeightBold : UIFontWeightRegular)];
+    }
+    if (self.valueChanged) self.valueChanged(idx);
+}
+@end
+
+@interface VerticalOnlyPanGestureRecognizer : UIPanGestureRecognizer
+@end
+@implementation VerticalOnlyPanGestureRecognizer
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    UITouch *touch = touches.anyObject;
+    UIView *v = touch.view;
+    while (v) {
+        if ([v isKindOfClass:[CustomSegmentedControl class]] || 
+            [v isKindOfClass:[CustomSliderView class]]) {
+            self.state = UIGestureRecognizerStateFailed;
+            return;
+        }
+        v = v.superview;
+    }
+    [super touchesBegan:touches withEvent:event];
+}
+
+
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [super touchesMoved:touches withEvent:event];
+    if (self.state == UIGestureRecognizerStateBegan) {
+        CGPoint vel = [self velocityInView:self.view];
+        if (fabs(vel.x) > fabs(vel.y)) {
+            self.state = UIGestureRecognizerStateFailed;
         }
     }
-    return nil;
+}
+@end
+
+@interface MenuView () <UIGestureRecognizerDelegate>
+@end
+
+@implementation MenuView {
+    UIVisualEffectView *_blurView;
+    UIView *_headerView;
+    UILabel *_headerLabel;
+
+    UIView *_contentView;
+    UIView *_leftBarView;
+    UIView *_aimContainer;
+    UIView *_visualContainer;
+    UIView *_playerContainer;
+    UIView *_configContainer;
+    UIView *_skinContainer;
+    UIView *_otherContainer;
+    UIView *_innerContent;
+    NSMutableArray<UILabel *> *_tabLabels;
+
+    CGPoint _initialTouchPoint;
+    BOOL _collapsed;
+    CAShapeLayer *_arrowLayer;
+
+    CAShapeLayer *_boxCheckmark;
+    CAShapeLayer *_boxOutlineCheckmark;
+    CAShapeLayer *_boxFillCheckmark;
+    CAShapeLayer *_boxCornerCheckmark;
+    CAShapeLayer *_box3DCheckmark;
+    CAShapeLayer *_lineCheckmark;
+    CAShapeLayer *_lineOutlineCheckmark;
+    CAShapeLayer *_teamCheckmark;
+    CAShapeLayer *_nameCheckmark;
+    CAShapeLayer *_nameOutlineCheckmark;
+    CAShapeLayer *_invisibleCheckmark;
+    CAShapeLayer *_addscoreCheckmark;
+    CAShapeLayer *_infAmmoCheckmark;
+    CAShapeLayer *_noSpreadCheckmark;
+    CAShapeLayer *_airJumpCheckmark;
+    CAShapeLayer *_fastKnifeCheckmark;
+    CAShapeLayer *_bunnyHopCheckmark;
+    CAShapeLayer *_wallshotCheckmark;
+    CAShapeLayer *_fireRateCheckmark;
+    CAShapeLayer *_healthCheckmark;
+    CAShapeLayer *_healthBarCheckmark;
+    CAShapeLayer *_healthBarOutlineCheckmark;
+    CAShapeLayer *_weaponCheckmark;
+    CAShapeLayer *_weaponIconCheckmark;
+    CAShapeLayer *_platformCheckmark;
+    CAShapeLayer *_avatarCheckmark;
+    CAShapeLayer *_skeletonCheckmark;
+    CAShapeLayer *_screenshotSafeCheckmark;
+
+    UIView *_aimContent;
+    UIView *_visualContent;
+    UIView *_playerContent;
+    UIView *_configContent;
+    UIView *_skinContent;
+    UIView *_otherContent;
+
+    CAShapeLayer *_aimbotCheckmark;
+    CAShapeLayer *_triggerbotCheckmark;
+    CAShapeLayer *_aimbotFovVisibleCheckmark;
+    CAShapeLayer *_visibleCheckCheckmark;
+    CAShapeLayer *_shootingCheckCheckmark;
+    CAShapeLayer *_knifeBotCheckmark;
+    CAShapeLayer *_aimbotTeamCheckmark;
+    CAShapeLayer *_rcsCheckmark;
+    CustomSegmentedControl *_boneSelector;
+    UILabel *_fovValueLabel;
+    UILabel *_smoothValueLabel;
+    UILabel *_rcsHValueLabel;
+    UILabel *_rcsVValueLabel;
+    UILabel *_bhopValueLabel;
+    UILabel *_triggerDelayValueLabel;
+
+    CustomSliderView *_fovSlider;
+    CustomSliderView *_smoothSlider;
+    CustomSliderView *_rcsHSlider;
+    CustomSliderView *_rcsVSlider;
+    CustomSliderView *_bhopSlider;
+    CustomSliderView *_triggerDelaySlider;
+    
+    CAShapeLayer *_viewmodelCheckmark;
+    CustomSliderView *_viewmodelXSlider;
+    UILabel *_viewmodelXValueLabel;
+    CustomSliderView *_viewmodelYSlider;
+    UILabel *_viewmodelYValueLabel;
+    CustomSliderView *_viewmodelZSlider;
+    UILabel *_viewmodelZValueLabel;
+    UIScrollView *_configListScrollView;
+    CGFloat _configListStartY;
+    CGFloat _skinListStartY;
+    NSTimer *_skinTimer;
+    NSArray *_cachedSkins;
+    std::map<int, std::string> _allSkinsMap;
+    std::vector<std::pair<int, uintptr_t>> _ownedSkinsInfo;
+    int _selectedOwnedIdx;
+    int _selectedReplaceIdx;
+    std::vector<std::pair<int, std::string>> _allSkinsList;
+}
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.backgroundColor = [UIColor clearColor];
+        self.layer.cornerRadius = 12.0;
+        self.clipsToBounds = YES;
+        self.userInteractionEnabled = YES;
+
+        UIBlurEffect *blur = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
+        _blurView = [[UIVisualEffectView alloc] initWithEffect:blur];
+        _blurView.frame = self.bounds;
+        _blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        _blurView.userInteractionEnabled = NO;
+        [self addSubview:_blurView];
+
+        CGFloat headerHeight = 35.0;
+        _headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, frame.size.width, headerHeight)];
+        _headerView.backgroundColor = [UIColor colorWithRed:0.00 green:0.00 blue:0.00 alpha:0.40];
+        _headerView.userInteractionEnabled = YES;
+        [self addSubview:_headerView];
+
+        _headerLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 0, frame.size.width - 50, headerHeight)];
+        _headerLabel.text = @(OBF("t.me/projectios"));
+        _headerLabel.textAlignment = NSTextAlignmentLeft;
+        _headerLabel.textColor = [UIColor whiteColor];
+        _headerLabel.font = [UIFont boldSystemFontOfSize:14];
+        [_headerView addSubview:_headerLabel];
+
+        UIView *arrowContainer = [[UIView alloc] initWithFrame:CGRectMake(frame.size.width - 45, 0, 45, 35)];
+        arrowContainer.userInteractionEnabled = YES;
+        [_headerView addSubview:arrowContainer];
+
+        _arrowLayer = [CAShapeLayer layer];
+        _arrowLayer.strokeColor = [UIColor whiteColor].CGColor;
+        _arrowLayer.fillColor = [UIColor clearColor].CGColor;
+        _arrowLayer.lineWidth = 2.0f;
+        _arrowLayer.lineCap = kCALineCapRound;
+        _arrowLayer.lineJoin = kCALineJoinRound;
+        UIBezierPath *arrowPath = [UIBezierPath bezierPath];
+        [arrowPath moveToPoint:CGPointMake(12, 13)];
+        [arrowPath addLineToPoint:CGPointMake(19, 21)];
+        [arrowPath addLineToPoint:CGPointMake(26, 13)];
+        _arrowLayer.path = arrowPath.CGPath;
+        _arrowLayer.frame = arrowContainer.bounds;
+        [arrowContainer.layer addSublayer:_arrowLayer];
+
+        UITapGestureRecognizer *tapCollapse = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(toggleCollapse)];
+        [arrowContainer addGestureRecognizer:tapCollapse];
+
+        UIPanGestureRecognizer *panGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+        panGesture.cancelsTouchesInView = NO;
+        [_headerView addGestureRecognizer:panGesture];
+
+        CGFloat leftBarWidth = 70.0;
+        
+        _leftBarView = [[UIView alloc] initWithFrame:CGRectMake(0, headerHeight, leftBarWidth, frame.size.height - headerHeight)];
+        _leftBarView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.15];
+        _leftBarView.userInteractionEnabled = YES;
+        [self addSubview:_leftBarView];
+        
+        NSArray *tabs = @[@(OBF("AIM")), @(OBF("VISUAL")), @(OBF("PLAYER")), @(OBF("CONFIG")), @(OBF("SKINS")), @(OBF("OTHER"))];
+        _tabLabels = [NSMutableArray new];
+        for (int i=0; i<6; i++) {
+            UILabel *tl = [[UILabel alloc] initWithFrame:CGRectMake(0, i * 40, leftBarWidth, 40)];
+            tl.text = tabs[i];
+            tl.textAlignment = NSTextAlignmentCenter;
+            tl.font = [UIFont systemFontOfSize:11 weight:(i==0 ? UIFontWeightBold : UIFontWeightRegular)];
+            tl.textColor = (i==0 ? [UIColor whiteColor] : [UIColor colorWithWhite:0.7 alpha:1]);
+            tl.userInteractionEnabled = YES;
+            [_leftBarView addSubview:tl];
+            [_tabLabels addObject:tl];
+            
+            tl.tag = i;
+            UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tabTapped:)];
+            [tl addGestureRecognizer:tap];
+        }
+
+        _contentView = [[UIView alloc] initWithFrame:CGRectMake(leftBarWidth, headerHeight, frame.size.width - leftBarWidth, frame.size.height - headerHeight)];
+        _contentView.clipsToBounds = YES;
+        _contentView.userInteractionEnabled = YES;
+        [self addSubview:_contentView];
+
+        _aimContainer = [[UIView alloc] initWithFrame:_contentView.bounds];
+        _visualContainer = [[UIView alloc] initWithFrame:_contentView.bounds];
+        _playerContainer = [[UIView alloc] initWithFrame:_contentView.bounds];
+        _configContainer = [[UIView alloc] initWithFrame:_contentView.bounds];
+        _skinContainer = [[UIView alloc] initWithFrame:_contentView.bounds];
+        _otherContainer = [[UIView alloc] initWithFrame:_contentView.bounds];
+        
+        _visualContainer.hidden = YES;
+        _playerContainer.hidden = YES;
+        _configContainer.hidden = YES;
+        _skinContainer.hidden = YES;
+        _otherContainer.hidden = YES;
+
+        _aimContent = [[UIView alloc] initWithFrame:CGRectMake(0, 0, _contentView.bounds.size.width, 480)];
+        _aimContent.userInteractionEnabled = YES;
+        [_aimContainer addSubview:_aimContent];
+
+        _visualContent = [[UIView alloc] initWithFrame:CGRectMake(0, 0, _contentView.bounds.size.width, 600)];
+        _visualContent.userInteractionEnabled = YES;
+        [_visualContainer addSubview:_visualContent];
+
+        _playerContent = [[UIView alloc] initWithFrame:CGRectMake(0, 0, _contentView.bounds.size.width, 450)];
+        _playerContent.userInteractionEnabled = YES;
+        [_playerContainer addSubview:_playerContent];
+
+        _configContent = [[UIView alloc] initWithFrame:CGRectMake(0, 0, _contentView.bounds.size.width, 400)];
+        _configContent.userInteractionEnabled = YES;
+        [_configContainer addSubview:_configContent];
+
+        _skinContent = [[UIView alloc] initWithFrame:CGRectMake(0,0,_contentView.bounds.size.width, 2000)];
+        _skinContent.userInteractionEnabled = YES;
+        [_skinContainer addSubview:_skinContent];
+
+        _otherContent = [[UIView alloc] initWithFrame:CGRectMake(0, 0, _contentView.bounds.size.width, 300)];
+        _otherContent.userInteractionEnabled = YES;
+        [_otherContainer addSubview:_otherContent];
+        
+        _selectedOwnedIdx = -1;
+        _selectedReplaceIdx = -1;
+        
+        _innerContent = _skinContent;
+        CGFloat yOffSkin = 4;
+        [self addSectionHeader:@"SKINS" atY:yOffSkin];
+        yOffSkin += 26;
+        _skinListStartY = yOffSkin;
+        
+        _skinTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(refreshSkinList) userInfo:nil repeats:YES];
+        [[NSRunLoop currentRunLoop] addTimer:_skinTimer forMode:NSRunLoopCommonModes];
+        [self refreshSkinList];
+
+
+
+
+
+        [_contentView addSubview:_aimContainer];
+        [_contentView addSubview:_visualContainer];
+        [_contentView addSubview:_playerContainer];
+        [_contentView addSubview:_configContainer];
+        [_contentView addSubview:_skinContainer];
+        [_contentView addSubview:_otherContainer];
+
+        VerticalOnlyPanGestureRecognizer *scrollPan = [[VerticalOnlyPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleScrollPan:)];
+        scrollPan.cancelsTouchesInView = YES;
+        scrollPan.delaysTouchesBegan = NO;   
+        scrollPan.delaysTouchesEnded = NO;   
+        scrollPan.delegate = self;
+        [_contentView addGestureRecognizer:scrollPan];
+
+        _innerContent = _aimContent; 
+
+        CGFloat yOffset = 4;
+
+        [self addSectionHeader:@(OBF("AIMBOT")) atY:yOffset];
+        yOffset += 26;
+        _aimbotCheckmark = [self addToggle:@(OBF("Aimbot")) atY:yOffset action:@selector(aimbotTapped) enabled:aimbot_enabled];
+        yOffset += 32;
+        _triggerbotCheckmark = [self addToggle:@(OBF("Triggerbot")) atY:yOffset action:@selector(triggerbotTapped) enabled:aimbot_triggerbot];
+        yOffset += 32;
+        _aimbotFovVisibleCheckmark = [self addToggle:@(OBF("FOV Circle")) atY:yOffset action:@selector(aimbotFovTapped) enabled:aimbot_fov_visible];
+        yOffset += 32;
+        _visibleCheckCheckmark  = [self addToggle:@(OBF("Visible Check"))  atY:yOffset action:@selector(visibleCheckTapped)  enabled:aimbot_visible_check];  
+        yOffset += 32;
+        _shootingCheckCheckmark = [self addToggle:@(OBF("Fire Check"))     atY:yOffset action:@selector(shootingCheckTapped) enabled:aimbot_shooting_check]; 
+        yOffset += 32;
+        _knifeBotCheckmark      = [self addToggle:@(OBF("Knife Bot"))      atY:yOffset action:@selector(knifeBotTapped)      enabled:aimbot_knife_bot];       
+        yOffset += 32;
+        _aimbotTeamCheckmark = [self addToggle:@(OBF("Team Check")) atY:yOffset action:@selector(aimbotTeamTapped) enabled:aimbot_team_check];
+        yOffset += 32;
+
+        [self addSectionHeader:@(OBF("Smooth")) atY:yOffset]; yOffset += 26;
+        [self addSmoothSliderAtY:yOffset]; yOffset += 45;
+
+
+
+        [self addSectionHeader:@(OBF("FOV")) atY:yOffset]; yOffset += 26;
+        [self addFovSliderAtY:yOffset]; yOffset += 45;
+
+        [self addSectionHeader:@(OBF("Trigger Delay")) atY:yOffset]; yOffset += 26;
+        [self addTriggerDelaySliderAtY:yOffset]; yOffset += 45;
+
+        [self addSectionHeader:@(OBF("Bone")) atY:yOffset]; yOffset += 26;
+        [self addBoneSelectorAtY:yOffset]; yOffset += 36;
+
+        CGRect aimContentFrame = _aimContent.frame;
+        aimContentFrame.size.height = yOffset + 10;
+        _aimContent.frame = aimContentFrame;
+
+
+        _innerContent = _visualContent; // VISUALS
+        yOffset = 4;
+        [self addSectionHeader:@(OBF("ESP")) atY:yOffset];
+        yOffset += 26;
+        _boxCheckmark  = [self addToggle:@(OBF("Box 2D"))  atY:yOffset action:@selector(boxTapped)  enabled:esp_box_enabled];
+        yOffset += 32;
+        _boxOutlineCheckmark = [self addToggle:@(OBF("Box Outline")) atY:yOffset action:@selector(boxOutlineTapped) enabled:esp_box_outline];
+        yOffset += 32;
+        _boxFillCheckmark = [self addToggle:@(OBF("Box Fill")) atY:yOffset action:@selector(boxFillTapped) enabled:esp_box_fill];
+        yOffset += 32;
+        _boxCornerCheckmark = [self addToggle:@(OBF("Box Corner")) atY:yOffset action:@selector(boxCornerTapped) enabled:esp_box_corner];
+        yOffset += 32;
+        _box3DCheckmark = [self addToggle:@(OBF("Box 3D")) atY:yOffset action:@selector(box3DTapped) enabled:esp_box_3d];
+        yOffset += 32;
+        _lineCheckmark = [self addToggle:@(OBF("Line")) atY:yOffset action:@selector(lineTapped) enabled:esp_line_enabled];
+        yOffset += 32;
+        _lineOutlineCheckmark = [self addToggle:@(OBF("Line Outline")) atY:yOffset action:@selector(lineOutlineTapped) enabled:esp_line_outline];
+        yOffset += 32;
+        _teamCheckmark = [self addToggle:@(OBF("Team Check")) atY:yOffset action:@selector(teamTapped) enabled:esp_team_check];
+        yOffset += 32;
+
+        _nameCheckmark = [self addToggle:@(OBF("Name")) atY:yOffset action:@selector(nameTapped) enabled:esp_name_enabled];
+        yOffset += 32;
+        _healthCheckmark = [self addToggle:@(OBF("HP")) atY:yOffset action:@selector(healthTapped) enabled:esp_health_enabled];
+        yOffset += 32;
+        _healthBarCheckmark = [self addToggle:@(OBF("Health Bar")) atY:yOffset action:@selector(healthBarTapped) enabled:esp_health_bar_enabled];
+        yOffset += 32;
+        _healthBarOutlineCheckmark = [self addToggle:@(OBF("Bar Outline")) atY:yOffset action:@selector(healthBarOutlineTapped) enabled:esp_health_bar_outline];
+        yOffset += 32;
+        _weaponCheckmark = [self addToggle:@(OBF("Weapon")) atY:yOffset action:@selector(weaponTapped) enabled:esp_weapon_enabled];
+        yOffset += 32;
+        _weaponIconCheckmark = [self addToggle:@(OBF("Weapon Icon")) atY:yOffset action:@selector(weaponIconTapped) enabled:esp_weapon_icon_enabled];
+        yOffset += 32;
+        _platformCheckmark = [self addToggle:@(OBF("Platform")) atY:yOffset action:@selector(platformTapped) enabled:esp_platform_enabled];
+        yOffset += 32;
+        _avatarCheckmark = [self addToggle:@(OBF("Avatars")) atY:yOffset action:@selector(avatarTapped) enabled:esp_avatar_enabled];
+        yOffset += 32;
+
+        [self addSectionHeader:@(OBF("VIEWMODEL")) atY:yOffset];
+        yOffset += 26;
+        _viewmodelCheckmark = [self addToggle:@(OBF("Viewmodel")) atY:yOffset action:@selector(viewmodelTapped) enabled:viewmodel_enabled];
+        yOffset += 37;
+        [self addSectionHeader:@(OBF("View X")) atY:yOffset]; yOffset += 26;
+        [self addViewmodelXSliderAtY:yOffset]; yOffset += 45;
+        [self addSectionHeader:@(OBF("View Y")) atY:yOffset]; yOffset += 26;
+        [self addViewmodelYSliderAtY:yOffset]; yOffset += 45;
+        [self addSectionHeader:@(OBF("View Z")) atY:yOffset]; yOffset += 26;
+        [self addViewmodelZSliderAtY:yOffset]; yOffset += 45;
+
+        CGRect visualContentFrame = _visualContent.frame;
+        visualContentFrame.size.height = yOffset + 10;
+        _visualContent.frame = visualContentFrame;
+
+
+        _innerContent = _playerContent; // PLAYER
+        yOffset = 4;
+        [self addSectionHeader:@(OBF("PLAYER")) atY:yOffset];
+        yOffset += 26;
+        _invisibleCheckmark = [self addToggle:@(OBF("Invisible")) atY:yOffset action:@selector(invisibleTapped) enabled:esp_invisible];
+        yOffset += 32;
+        _addscoreCheckmark = [self addToggle:@(OBF("Add Score")) atY:yOffset action:@selector(addskoreTapped) enabled:esp_addscore];
+        yOffset += 32;
+        _infAmmoCheckmark   = [self addToggle:@(OBF("Inf Ammo"))   atY:yOffset action:@selector(infAmmoTapped)   enabled:esp_inf_ammo];
+        yOffset += 32;
+        _noSpreadCheckmark  = [self addToggle:@(OBF("No Spread"))  atY:yOffset action:@selector(noSpreadTapped)  enabled:esp_no_spread];
+        yOffset += 32;
+        _airJumpCheckmark   = [self addToggle:@(OBF("Air Jump"))   atY:yOffset action:@selector(airJumpTapped)   enabled:esp_air_jump];
+        yOffset += 32;
+        _fastKnifeCheckmark = [self addToggle:@(OBF("Fast Knife")) atY:yOffset action:@selector(fastKnifeTapped) enabled:esp_fast_knife];
+        yOffset += 32;
+        _bunnyHopCheckmark  = [self addToggle:@(OBF("Bunny Hop"))  atY:yOffset action:@selector(bunnyHopTapped)  enabled:esp_bunny_hop];
+        yOffset += 32;
+        
+        [self addSectionHeader:@(OBF("Bunny Hop Speed")) atY:yOffset]; yOffset += 26;
+        [self addBhopSliderAtY:yOffset]; yOffset += 45;
+        
+        _rcsCheckmark = [self addToggle:@(OBF("RCS")) atY:yOffset action:@selector(rcsTapped) enabled:esp_rcs_enabled];
+        yOffset += 37;
+        
+        [self addSectionHeader:@(OBF("RCS Horizontal")) atY:yOffset]; yOffset += 26;
+        [self addRCSHSliderAtY:yOffset]; yOffset += 45;
+        
+        [self addSectionHeader:@(OBF("RCS Vertical")) atY:yOffset]; yOffset += 26;
+        [self addRCSVSliderAtY:yOffset]; yOffset += 45;
+        
+        _wallshotCheckmark  = [self addToggle:@(OBF("Wallshot"))   atY:yOffset action:@selector(wallshotTapped)  enabled:esp_wallshot];
+        yOffset += 32;
+        _fireRateCheckmark  = [self addToggle:@(OBF("Fire Rate"))  atY:yOffset action:@selector(fireRateTapped)  enabled:esp_fire_rate];
+        yOffset += 32;
+        CGRect playerFrame = _playerContent.frame;
+        playerFrame.size.height = yOffset + 10;
+        _playerContent.frame = playerFrame;
+
+        _innerContent = _configContent;
+        yOffset = 4;
+        [self addSectionHeader:@(OBF("CONFIGS")) atY:yOffset];
+        yOffset += 26;
+
+        CGFloat btnW = (_configContent.bounds.size.width - 30) / 3.0;
+
+        UILabel *createLbl = [[UILabel alloc] initWithFrame:CGRectMake(10, yOffset, btnW, 30)];
+        createLbl.text = @(OBF("Create"));
+        createLbl.textAlignment = NSTextAlignmentCenter;
+        createLbl.font = [UIFont boldSystemFontOfSize:12];
+        createLbl.textColor = [UIColor blackColor];
+        createLbl.backgroundColor = [UIColor whiteColor];
+        createLbl.layer.cornerRadius = 4;
+        createLbl.layer.masksToBounds = YES;
+        createLbl.userInteractionEnabled = YES;
+        [createLbl addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(createConfigFlow)]];
+        [_configContent addSubview:createLbl];
+
+        UILabel *deleteLbl = [[UILabel alloc] initWithFrame:CGRectMake(10 + btnW + 5, yOffset, btnW, 30)];
+        deleteLbl.text = @(OBF("Delete"));
+        deleteLbl.textAlignment = NSTextAlignmentCenter;
+        deleteLbl.font = [UIFont boldSystemFontOfSize:12];
+        deleteLbl.textColor = [UIColor blackColor];
+        deleteLbl.backgroundColor = [UIColor whiteColor];
+        deleteLbl.layer.cornerRadius = 4;
+        deleteLbl.layer.masksToBounds = YES;
+        deleteLbl.userInteractionEnabled = YES;
+        [deleteLbl addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(deleteConfigFlow)]];
+        [_configContent addSubview:deleteLbl];
+
+        UILabel *loadLbl = [[UILabel alloc] initWithFrame:CGRectMake(10 + (btnW + 5) * 2, yOffset, btnW, 30)];
+        loadLbl.text = @(OBF("Load"));
+        loadLbl.textAlignment = NSTextAlignmentCenter;
+        loadLbl.font = [UIFont boldSystemFontOfSize:12];
+        loadLbl.textColor = [UIColor blackColor];
+        loadLbl.backgroundColor = [UIColor whiteColor];
+        loadLbl.layer.cornerRadius = 4;
+        loadLbl.layer.masksToBounds = YES;
+        loadLbl.userInteractionEnabled = YES;
+        [loadLbl addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(loadConfigFlow)]];
+        [_configContent addSubview:loadLbl];
+
+        yOffset += 40;
+
+        _configListStartY = yOffset;
+        [self refreshConfigList];
+
+        _innerContent = _otherContent;
+        yOffset = 4;
+        [self addSectionHeader:@(OBF("OTHER")) atY:yOffset];
+        yOffset += 26;
+        _screenshotSafeCheckmark = [self addToggle:@(OBF("Overlay")) atY:yOffset action:@selector(screenshotSafeTapped) enabled:esp_screenshot_safe];
+        yOffset += 32;
+
+        CGRect otherFrame = _otherContent.frame;
+        otherFrame.size.height = yOffset + 10;
+        _otherContent.frame = otherFrame;
+
+        _innerContent = nil;
+
+        [self showViewForCapture];
+    }
+    return self;
+}
+
+- (void)addSectionHeader:(NSString *)title atY:(CGFloat)y {
+    UILabel *h = [[UILabel alloc] initWithFrame:CGRectMake(12, y, _innerContent.bounds.size.width - 24, 22)];
+    h.text = title;
+    h.textColor = [UIColor colorWithWhite:1.0f alpha:0.45f];
+    h.font = [UIFont boldSystemFontOfSize:11];
+    h.userInteractionEnabled = NO;
+    [_innerContent addSubview:h];
+}
+
+- (CAShapeLayer *)addToggle:(NSString *)name atY:(CGFloat)y action:(SEL)action enabled:(BOOL)enabled {
+    UIView *row = [[UIView alloc] initWithFrame:CGRectMake(0, y, _innerContent.bounds.size.width, 30)];
+    row.userInteractionEnabled = YES;
+    [_innerContent addSubview:row];
+
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(15, 0, 100, 30)];
+    label.text = name;
+    label.textColor = [UIColor whiteColor];
+    label.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+    label.userInteractionEnabled = NO;
+    [row addSubview:label];
+
+    UIView *checkbox = [[UIView alloc] initWithFrame:CGRectMake(_innerContent.bounds.size.width - 37, 4, 22, 22)];
+    checkbox.layer.borderWidth = 2.0;
+    checkbox.layer.borderColor = [UIColor whiteColor].CGColor;
+    checkbox.layer.cornerRadius = 4.0;
+    checkbox.userInteractionEnabled = NO;
+    [row addSubview:checkbox];
+
+    CAShapeLayer *checkmark = [self createCheckmarkLayer:checkbox.bounds];
+    checkmark.opacity = enabled ? 1.0 : 0.0;
+    [checkbox.layer addSublayer:checkmark];
+
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:action];
+    tap.cancelsTouchesInView = NO;
+    [row addGestureRecognizer:tap];
+
+    return checkmark;
+}
+
+- (CAShapeLayer *)createCheckmarkLayer:(CGRect)rect {
+    UIBezierPath *path = [UIBezierPath bezierPath];
+    [path moveToPoint:CGPointMake(rect.size.width * 0.20, rect.size.height * 0.50)];
+    [path addLineToPoint:CGPointMake(rect.size.width * 0.42, rect.size.height * 0.72)];
+    [path addLineToPoint:CGPointMake(rect.size.width * 0.80, rect.size.height * 0.28)];
+
+    CAShapeLayer *layer = [CAShapeLayer layer];
+    layer.path = path.CGPath;
+    layer.strokeColor = [UIColor whiteColor].CGColor;
+    layer.fillColor = [UIColor clearColor].CGColor;
+    layer.lineWidth = 2.5;
+    layer.lineCap = kCALineCapRound;
+    layer.lineJoin = kCALineJoinRound;
+    return layer;
+}
+
+- (void)animateCheckmark:(CAShapeLayer *)checkmark show:(BOOL)show {
+    if (show) {
+        checkmark.opacity = 1.0;
+        CABasicAnimation *anim = [CABasicAnimation animationWithKeyPath:@"strokeEnd"];
+        anim.fromValue = @0.0;
+        anim.toValue = @1.0;
+        anim.duration = 0.25;
+        anim.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+        checkmark.strokeEnd = 1.0;
+        [checkmark addAnimation:anim forKey:@"drawCheckmark"];
+    } else {
+        CABasicAnimation *anim = [CABasicAnimation animationWithKeyPath:@"opacity"];
+        anim.fromValue = @1.0;
+        anim.toValue = @0.0;
+        anim.duration = 0.15;
+        anim.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseIn];
+        checkmark.opacity = 0.0;
+        [checkmark addAnimation:anim forKey:@"hideCheckmark"];
+    }
+}
+
+- (void)boxTapped {
+    esp_box_enabled = !esp_box_enabled;
+    [self animateCheckmark:_boxCheckmark show:esp_box_enabled];
+    if (!esp_box_enabled) {
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"ESPClearBoxes" object:nil];
+    }
+}
+
+- (void)lineTapped {
+    esp_line_enabled = !esp_line_enabled;
+    [self animateCheckmark:_lineCheckmark show:esp_line_enabled];
+}
+
+- (void)infAmmoTapped   { esp_inf_ammo   = !esp_inf_ammo;   [self animateCheckmark:_infAmmoCheckmark   show:esp_inf_ammo];   }
+- (void)noSpreadTapped  { esp_no_spread  = !esp_no_spread;  [self animateCheckmark:_noSpreadCheckmark  show:esp_no_spread];  }
+- (void)airJumpTapped   { esp_air_jump   = !esp_air_jump;   [self animateCheckmark:_airJumpCheckmark   show:esp_air_jump];   }
+- (void)fastKnifeTapped { esp_fast_knife = !esp_fast_knife; [self animateCheckmark:_fastKnifeCheckmark show:esp_fast_knife]; }
+- (void)bunnyHopTapped  { esp_bunny_hop  = !esp_bunny_hop;  [self animateCheckmark:_bunnyHopCheckmark  show:esp_bunny_hop];  }
+- (void)wallshotTapped  { esp_wallshot   = !esp_wallshot;   [self animateCheckmark:_wallshotCheckmark  show:esp_wallshot];   }
+- (void)fireRateTapped  { esp_fire_rate  = !esp_fire_rate;  [self animateCheckmark:_fireRateCheckmark  show:esp_fire_rate];  }
+
+- (void)addskoreTapped {
+    esp_addscore = !esp_addscore;
+    [self animateCheckmark:_addscoreCheckmark show:esp_addscore];
+}
+
+- (void)invisibleTapped {
+    esp_invisible = !esp_invisible;
+    [self animateCheckmark:_invisibleCheckmark show:esp_invisible];
+}
+
+- (void)boxOutlineTapped {
+    esp_box_outline = !esp_box_outline;
+    [self animateCheckmark:_boxOutlineCheckmark show:esp_box_outline];
+}
+
+- (void)boxFillTapped {
+    esp_box_fill = !esp_box_fill;
+    [self animateCheckmark:_boxFillCheckmark show:esp_box_fill];
+}
+
+- (void)boxCornerTapped {
+    esp_box_corner = !esp_box_corner;
+    [self animateCheckmark:_boxCornerCheckmark show:esp_box_corner];
+}
+
+- (void)box3DTapped {
+    esp_box_3d = !esp_box_3d;
+    [self animateCheckmark:_box3DCheckmark show:esp_box_3d];
 }
 
 
+- (void)lineOutlineTapped {
+    esp_line_outline = !esp_line_outline;
+    [self animateCheckmark:_lineOutlineCheckmark show:esp_line_outline];
+}
+
+- (void)nameTapped {
+    esp_name_enabled = !esp_name_enabled;
+    [self animateCheckmark:_nameCheckmark show:esp_name_enabled];
+}
+
+- (void)nameOutlineTapped {
+    esp_name_outline = !esp_name_outline;
+    [self animateCheckmark:_nameOutlineCheckmark show:esp_name_outline];
+}
+
+- (void)addBoneSelectorAtY:(CGFloat)y {
+    CGFloat w = _innerContent.bounds.size.width;
+    NSArray *items = @[@"Head", @"Neck", @"Spine", @"Hip"];
+    _boneSelector = [[CustomSegmentedControl alloc] initWithFrame:CGRectMake(10, y, w - 20, 28) items:items current:aimbot_bone_index];
+    _boneSelector.valueChanged = ^(NSInteger newIndex) {
+        aimbot_bone_index = (int)newIndex;
+    };
+    [_innerContent addSubview:_boneSelector];
+}
+
+- (void)addFovSliderAtY:(CGFloat)y {
+    CGFloat w = _innerContent.bounds.size.width;
+
+    _fovValueLabel = [[UILabel alloc] initWithFrame:CGRectMake(w - 60, y - 24, 50, 20)];
+    _fovValueLabel.textColor = [UIColor whiteColor];
+    _fovValueLabel.font = [UIFont systemFontOfSize:11];
+    _fovValueLabel.textAlignment = NSTextAlignmentRight;
+    _fovValueLabel.text = [NSString stringWithFormat:@"%.0f", aimbot_fov];
+    [_innerContent addSubview:_fovValueLabel];
+
+    _fovSlider = [[CustomSliderView alloc] initWithFrame:CGRectMake(15, y, w - 30, 30) min:10.0f max:180.0f current:aimbot_fov];
+    __weak MenuView *weakSelf = self;
+    _fovSlider.valueChanged = ^(float newValue) {
+        __strong MenuView *strongSelf = weakSelf;
+        if (strongSelf) {
+            aimbot_fov = newValue;
+            strongSelf->_fovValueLabel.text = [NSString stringWithFormat:@"%.0f", aimbot_fov];
+        }
+    };
+    [_innerContent addSubview:_fovSlider];
+}
+
+- (void)addSmoothSliderAtY:(CGFloat)y {
+    CGFloat w = _innerContent.bounds.size.width;
+
+    _smoothValueLabel = [[UILabel alloc] initWithFrame:CGRectMake(w - 60, y - 24, 50, 20)];
+    _smoothValueLabel.textColor = [UIColor whiteColor];
+    _smoothValueLabel.font = [UIFont systemFontOfSize:11];
+    _smoothValueLabel.textAlignment = NSTextAlignmentRight;
+    _smoothValueLabel.text = [NSString stringWithFormat:@"%.1f", aimbot_smooth];
+    [_innerContent addSubview:_smoothValueLabel];
+
+    _smoothSlider = [[CustomSliderView alloc] initWithFrame:CGRectMake(15, y, w - 30, 30) min:0.0f max:20.0f current:aimbot_smooth];
+    __weak MenuView *weakSelf = self;
+    _smoothSlider.valueChanged = ^(float newValue) {
+        __strong MenuView *strongSelf = weakSelf;
+        if (strongSelf) {
+            aimbot_smooth = newValue;
+            strongSelf->_smoothValueLabel.text = [NSString stringWithFormat:@"%.1f", aimbot_smooth];
+        }
+    };
+    [_innerContent addSubview:_smoothSlider];
+}
+
+- (void)addTriggerDelaySliderAtY:(CGFloat)y {
+    CGFloat w = _innerContent.bounds.size.width;
+
+    _triggerDelayValueLabel = [[UILabel alloc] initWithFrame:CGRectMake(w - 60, y - 24, 50, 20)];
+    _triggerDelayValueLabel.textColor = [UIColor whiteColor];
+    _triggerDelayValueLabel.font = [UIFont systemFontOfSize:11];
+    _triggerDelayValueLabel.textAlignment = NSTextAlignmentRight;
+    _triggerDelayValueLabel.text = [NSString stringWithFormat:@"%.2f", aimbot_trigger_delay];
+    [_innerContent addSubview:_triggerDelayValueLabel];
+
+    _triggerDelaySlider = [[CustomSliderView alloc] initWithFrame:CGRectMake(15, y, w - 30, 30) min:0.01f max:1.0f current:aimbot_trigger_delay];
+    __weak MenuView *weakSelf = self;
+    _triggerDelaySlider.valueChanged = ^(float newValue) {
+        __strong MenuView *strongSelf = weakSelf;
+        if (strongSelf) {
+            aimbot_trigger_delay = newValue;
+            strongSelf->_triggerDelayValueLabel.text = [NSString stringWithFormat:@"%.2f", aimbot_trigger_delay];
+        }
+    };
+    [_innerContent addSubview:_triggerDelaySlider];
+}
+
+- (void)addRCSHSliderAtY:(CGFloat)y {
+    CGFloat w = _innerContent.bounds.size.width;
+
+    _rcsHValueLabel = [[UILabel alloc] initWithFrame:CGRectMake(w - 60, y - 24, 50, 20)];
+    _rcsHValueLabel.textColor = [UIColor whiteColor];
+    _rcsHValueLabel.font = [UIFont systemFontOfSize:11];
+    _rcsHValueLabel.textAlignment = NSTextAlignmentRight;
+    _rcsHValueLabel.text = [NSString stringWithFormat:@"%.1f", esp_rcs_h];
+    [_innerContent addSubview:_rcsHValueLabel];
+
+    _rcsHSlider = [[CustomSliderView alloc] initWithFrame:CGRectMake(15, y, w - 30, 30) min:0.0f max:10.0f current:esp_rcs_h];
+    __weak MenuView *weakSelf = self;
+    _rcsHSlider.valueChanged = ^(float newValue) {
+        __strong MenuView *strongSelf = weakSelf;
+        if (strongSelf) {
+            esp_rcs_h = newValue;
+            strongSelf->_rcsHValueLabel.text = [NSString stringWithFormat:@"%.1f", esp_rcs_h];
+        }
+    };
+    [_innerContent addSubview:_rcsHSlider];
+}
+
+- (void)addRCSVSliderAtY:(CGFloat)y {
+    CGFloat w = _innerContent.bounds.size.width;
+
+    _rcsVValueLabel = [[UILabel alloc] initWithFrame:CGRectMake(w - 60, y - 24, 50, 20)];
+    _rcsVValueLabel.textColor = [UIColor whiteColor];
+    _rcsVValueLabel.font = [UIFont systemFontOfSize:11];
+    _rcsVValueLabel.textAlignment = NSTextAlignmentRight;
+    _rcsVValueLabel.text = [NSString stringWithFormat:@"%.1f", esp_rcs_v];
+    [_innerContent addSubview:_rcsVValueLabel];
+
+    _rcsVSlider = [[CustomSliderView alloc] initWithFrame:CGRectMake(15, y, w - 30, 30) min:0.0f max:10.0f current:esp_rcs_v];
+    __weak MenuView *weakSelf = self;
+    _rcsVSlider.valueChanged = ^(float newValue) {
+        __strong MenuView *strongSelf = weakSelf;
+        if (strongSelf) {
+            esp_rcs_v = newValue;
+            strongSelf->_rcsVValueLabel.text = [NSString stringWithFormat:@"%.1f", esp_rcs_v];
+        }
+    };
+    [_innerContent addSubview:_rcsVSlider];
+}
+
+- (void)addBhopSliderAtY:(CGFloat)y {
+    CGFloat w = _innerContent.bounds.size.width;
+
+    _bhopValueLabel = [[UILabel alloc] initWithFrame:CGRectMake(w - 60, y - 24, 50, 20)];
+    _bhopValueLabel.textColor = [UIColor whiteColor];
+    _bhopValueLabel.font = [UIFont systemFontOfSize:11];
+    _bhopValueLabel.textAlignment = NSTextAlignmentRight;
+    _bhopValueLabel.text = [NSString stringWithFormat:@"%d", esp_bhop_setting];
+    [_innerContent addSubview:_bhopValueLabel];
+
+    _bhopSlider = [[CustomSliderView alloc] initWithFrame:CGRectMake(15, y, w - 30, 30) min:1.0f max:10.0f current:(float)esp_bhop_setting];
+    __weak MenuView *weakSelf = self;
+    _bhopSlider.valueChanged = ^(float newValue) {
+        __strong MenuView *strongSelf = weakSelf;
+        if (strongSelf) {
+            esp_bhop_setting = (int)newValue;
+            strongSelf->_bhopValueLabel.text = [NSString stringWithFormat:@"%d", esp_bhop_setting];
+        }
+    };
+    [_innerContent addSubview:_bhopSlider];
+}
+
+
+- (void)addViewmodelXSliderAtY:(CGFloat)y {
+    CGFloat w = _innerContent.bounds.size.width;
+    _viewmodelXValueLabel = [[UILabel alloc] initWithFrame:CGRectMake(w - 60, y - 24, 50, 20)];
+    _viewmodelXValueLabel.textColor = [UIColor whiteColor];
+    _viewmodelXValueLabel.font = [UIFont systemFontOfSize:11];
+    _viewmodelXValueLabel.textAlignment = NSTextAlignmentRight;
+    _viewmodelXValueLabel.text = [NSString stringWithFormat:@"%.1f", viewmodel_x];
+    [_innerContent addSubview:_viewmodelXValueLabel];
+
+    _viewmodelXSlider = [[CustomSliderView alloc] initWithFrame:CGRectMake(15, y, w - 30, 30) min:-10.0f max:10.0f current:viewmodel_x];
+    __weak MenuView *weakSelf = self;
+    _viewmodelXSlider.valueChanged = ^(float newValue) {
+        __strong MenuView *strongSelf = weakSelf;
+        if (strongSelf) {
+            viewmodel_x = newValue;
+            strongSelf->_viewmodelXValueLabel.text = [NSString stringWithFormat:@"%.1f", newValue];
+        }
+    };
+    [_innerContent addSubview:_viewmodelXSlider];
+}
+
+- (void)addViewmodelYSliderAtY:(CGFloat)y {
+    CGFloat w = _innerContent.bounds.size.width;
+    _viewmodelYValueLabel = [[UILabel alloc] initWithFrame:CGRectMake(w - 60, y - 24, 50, 20)];
+    _viewmodelYValueLabel.textColor = [UIColor whiteColor];
+    _viewmodelYValueLabel.font = [UIFont systemFontOfSize:11];
+    _viewmodelYValueLabel.textAlignment = NSTextAlignmentRight;
+    _viewmodelYValueLabel.text = [NSString stringWithFormat:@"%.1f", viewmodel_y];
+    [_innerContent addSubview:_viewmodelYValueLabel];
+
+    _viewmodelYSlider = [[CustomSliderView alloc] initWithFrame:CGRectMake(15, y, w - 30, 30) min:-10.0f max:10.0f current:viewmodel_y];
+    __weak MenuView *weakSelf = self;
+    _viewmodelYSlider.valueChanged = ^(float newValue) {
+        __strong MenuView *strongSelf = weakSelf;
+        if (strongSelf) {
+            viewmodel_y = newValue;
+            strongSelf->_viewmodelYValueLabel.text = [NSString stringWithFormat:@"%.1f", newValue];
+        }
+    };
+    [_innerContent addSubview:_viewmodelYSlider];
+}
+
+- (void)addViewmodelZSliderAtY:(CGFloat)y {
+    CGFloat w = _innerContent.bounds.size.width;
+    _viewmodelZValueLabel = [[UILabel alloc] initWithFrame:CGRectMake(w - 60, y - 24, 50, 20)];
+    _viewmodelZValueLabel.textColor = [UIColor whiteColor];
+    _viewmodelZValueLabel.font = [UIFont systemFontOfSize:11];
+    _viewmodelZValueLabel.textAlignment = NSTextAlignmentRight;
+    _viewmodelZValueLabel.text = [NSString stringWithFormat:@"%.1f", viewmodel_z];
+    [_innerContent addSubview:_viewmodelZValueLabel];
+
+    _viewmodelZSlider = [[CustomSliderView alloc] initWithFrame:CGRectMake(15, y, w - 30, 30) min:-10.0f max:10.0f current:viewmodel_z];
+    __weak MenuView *weakSelf = self;
+    _viewmodelZSlider.valueChanged = ^(float newValue) {
+        __strong MenuView *strongSelf = weakSelf;
+        if (strongSelf) {
+            viewmodel_z = newValue;
+            strongSelf->_viewmodelZValueLabel.text = [NSString stringWithFormat:@"%.1f", newValue];
+        }
+    };
+    [_innerContent addSubview:_viewmodelZSlider];
+}
+
+- (void)refreshConfigList {
+    for (UIView *v in [_configContent subviews]) {
+        if (v.frame.origin.y >= _configListStartY) {
+            [v removeFromSuperview];
+        }
+    }
+    
+    NSArray *configs = cfg_get_list();
+    CGFloat y = _configListStartY;
+    for (NSString *name in configs) {
+        UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(10, y, _configContent.bounds.size.width - 20, 30)];
+        lbl.text = [NSString stringWithFormat:@"  %@", name];
+        lbl.font = [UIFont systemFontOfSize:14];
+        lbl.textColor = [UIColor whiteColor];
+        lbl.backgroundColor = [name isEqualToString:esp_selected_config] ? [UIColor colorWithWhite:1 alpha:0.3] : [UIColor colorWithWhite:1 alpha:0.1];
+        lbl.layer.cornerRadius = 4;
+        lbl.layer.masksToBounds = YES;
+        lbl.userInteractionEnabled = YES;
+        
+        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(selectConfigLbl:)];
+        [lbl addGestureRecognizer:tap];
+        
+        [_configContent addSubview:lbl];
+        y += 35;
+    }
+    
+    CGRect cf = _configContent.frame;
+    cf.size.height = y + 10;
+    _configContent.frame = cf;
+}
+
+- (void)selectConfigLbl:(UITapGestureRecognizer *)sender {
+    UILabel *lbl = (UILabel *)sender.view;
+    NSString *name = [lbl.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    esp_selected_config = name;
+    [self refreshConfigList];
+}
+
+static __attribute__((unused)) std::string readUnityString(uintptr_t str_ptr, task_t task) {
+    if (!str_ptr) return "";
+    int length = Read<int>(str_ptr + 0x10, task);
+    if (length <= 0 || length > 256) return "";
+    std::string result;
+    result.reserve(length);
+    for (int i = 0; i < length; i++) {
+        char16_t c = Read<char16_t>(str_ptr + 0x14 + i * 2, task);
+        if (c < 128) result += (char)c;
+        else result += '?';
+    }
+    return result;
+}
+
+- (void)refreshSkinList {
+    static pid_t c_pid = 0;
+    static task_t c_task = 0;
+    static mach_vm_address_t c_base = 0;
+
+    pid_t pid = get_pid_by_name("Standoff2");
+    if (pid <= 0) {
+        c_pid = 0; c_task = 0; c_base = 0;
+        return;
+    }
+
+    if (pid != c_pid || !c_task || !c_base) {
+        c_task = get_task_by_pid(pid);
+        if (c_task) c_base = get_image_base_address(c_task, "UnityFramework");
+        c_pid = pid;
+    }
+
+    if (!c_task || !c_base) return;
+
+    uintptr_t typeInfo = Read<uintptr_t>(c_base + 164164080, c_task);
+    if (!typeInfo) return;
+    
+    uintptr_t parentTypeInfo = Read<uintptr_t>(typeInfo + 0x58, c_task);
+    if (!parentTypeInfo) return;
+    
+    uintptr_t staticFields = Read<uintptr_t>(parentTypeInfo + 0xB8, c_task);
+    if (!staticFields || staticFields < 0x1000000)
+        staticFields = Read<uintptr_t>(parentTypeInfo + 0xB0, c_task);
+        
+    if (!staticFields) return;
+    
+    uintptr_t inventoryManager = Read<uintptr_t>(staticFields, c_task); 
+    if (!inventoryManager) return;
+    
+    if (_skinContainer.hidden) return;
+
+    _ownedSkinsInfo.clear();
+    NSMutableArray *ownedLabels = [NSMutableArray array];
+
+    for (UIView *v in [_skinContent subviews]) {
+        [v removeFromSuperview];
+    }
+
+    CGFloat y = 4;
+
+    [self addSectionHeader:@"YOUR INVENTORY" atY:y]; y += 26;
+    
+    if (_ownedSkinsInfo.empty()) {
+        UILabel *empty = [[UILabel alloc] initWithFrame:CGRectMake(10, y, _skinContent.bounds.size.width-20, 30)];
+        empty.text = @"Inventory empty";
+        empty.textColor = [UIColor grayColor];
+        empty.font = [UIFont italicSystemFontOfSize:12];
+        [_skinContent addSubview:empty];
+        y += 40;
+    } else {
+        for (int i = 0; i < _ownedSkinsInfo.size(); i++) {
+            UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(10, y, _skinContent.bounds.size.width - 20, 30)];
+            lbl.text = [NSString stringWithFormat:@"  %@", ownedLabels[i]];
+            lbl.font = [UIFont systemFontOfSize:13];
+            lbl.textColor = [UIColor whiteColor];
+            lbl.backgroundColor = (i == _selectedOwnedIdx) ? [UIColor colorWithWhite:1 alpha:0.3] : [UIColor colorWithWhite:1 alpha:0.1];
+            lbl.layer.cornerRadius = 4;
+            lbl.layer.masksToBounds = YES;
+            lbl.userInteractionEnabled = YES;
+            lbl.tag = 1000 + i;
+            [lbl addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(ownedSkinTapped:)]];
+            [_skinContent addSubview:lbl];
+            y += 35;
+        }
+    }
+    
+    y += 10;
+    [self addSectionHeader:@"SELECT REPLACEMENT" atY:y]; y += 26;
+    
+    if (_allSkinsList.empty()) {
+        UILabel *empty = [[UILabel alloc] initWithFrame:CGRectMake(10, y, _skinContent.bounds.size.width-20, 30)];
+        empty.text = @"No replacement skins found";
+        empty.textColor = [UIColor grayColor];
+        [_skinContent addSubview:empty];
+        y += 40;
+    } else {
+        for (int i = 0; i < _allSkinsList.size(); i++) {
+            UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(10, y, _skinContent.bounds.size.width - 20, 30)];
+            lbl.text = [NSString stringWithFormat:@"  %@", [NSString stringWithUTF8String:_allSkinsList[i].second.c_str()]];
+            lbl.font = [UIFont systemFontOfSize:13];
+            lbl.textColor = [UIColor whiteColor];
+            lbl.backgroundColor = (i == _selectedReplaceIdx) ? [UIColor colorWithWhite:1 alpha:0.3] : [UIColor colorWithWhite:1 alpha:0.1];
+            lbl.layer.cornerRadius = 4;
+            lbl.layer.masksToBounds = YES;
+            lbl.userInteractionEnabled = YES;
+            lbl.tag = 2000 + i;
+            [lbl addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(replaceSkinTapped:)]];
+            [_skinContent addSubview:lbl];
+            y += 35;
+        }
+    }
+
+    CGRect cf = _skinContent.frame;
+    cf.size.height = y + 10;
+    _skinContent.frame = cf;
+}
+
+- (void)ownedSkinTapped:(UITapGestureRecognizer *)g {
+    _selectedOwnedIdx = (int)g.view.tag - 1000;
+    [self refreshSkinList];
+    [self tryApplySkinPair];
+}
+
+- (void)replaceSkinTapped:(UITapGestureRecognizer *)g {
+    _selectedReplaceIdx = (int)g.view.tag - 2000;
+    [self refreshSkinList];
+    [self tryApplySkinPair];
+}
+
+- (void)tryApplySkinPair {
+    if (_selectedOwnedIdx >= 0 && _selectedOwnedIdx < _ownedSkinsInfo.size() && 
+        _selectedReplaceIdx >= 0 && _selectedReplaceIdx < _allSkinsList.size()) {
+        
+        uintptr_t skinPtr = _ownedSkinsInfo[_selectedOwnedIdx].second;
+        int newId = _allSkinsList[_selectedReplaceIdx].first;
+        
+        pid_t pid = get_pid_by_name("Standoff2");
+        if (pid > 0) {
+            task_t task = get_task_by_pid(pid);
+            if (task) {
+                Write<int>(skinPtr + 0x10, newId, task);
+            }
+        }
+    }
+}
+
+
+
+- (void)createConfigFlow {
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    [formatter setDateFormat:@"yyyyMMdd_HHmmss"];
+    NSString *dateStr = [formatter stringFromDate:[NSDate date]];
+    NSString *name = [NSString stringWithFormat:@"pastaware_%@", dateStr];
+    
+    cfg_create(name);
+    esp_selected_config = name;
+    [self refreshConfigList];
+}
+
+- (void)deleteConfigFlow {
+    if (esp_selected_config.length > 0) {
+        cfg_delete(esp_selected_config);
+        esp_selected_config = nil;
+        [self refreshConfigList];
+    }
+}
+
+- (void)loadConfigFlow {
+    if (esp_selected_config.length > 0) {
+        cfg_load(esp_selected_config);
+        
+        [self animateCheckmark:_boxCheckmark show:esp_box_enabled];
+        [self animateCheckmark:_boxOutlineCheckmark show:esp_box_outline];
+        [self animateCheckmark:_boxFillCheckmark show:esp_box_fill];
+        [self animateCheckmark:_boxCornerCheckmark show:esp_box_corner];
+        [self animateCheckmark:_box3DCheckmark show:esp_box_3d];
+        [self animateCheckmark:_lineCheckmark show:esp_line_enabled];
+        [self animateCheckmark:_lineOutlineCheckmark show:esp_line_outline];
+        [self animateCheckmark:_invisibleCheckmark show:esp_invisible];
+        [self animateCheckmark:_addscoreCheckmark show:esp_addscore];
+        [self animateCheckmark:_infAmmoCheckmark show:esp_inf_ammo];
+        [self animateCheckmark:_noSpreadCheckmark show:esp_no_spread];
+        [self animateCheckmark:_airJumpCheckmark show:esp_air_jump];
+        [self animateCheckmark:_fastKnifeCheckmark show:esp_fast_knife];
+        [self animateCheckmark:_bunnyHopCheckmark show:esp_bunny_hop];
+        [self animateCheckmark:_wallshotCheckmark show:esp_wallshot];
+        [self animateCheckmark:_fireRateCheckmark show:esp_fire_rate];
+        [self animateCheckmark:_teamCheckmark show:esp_team_check];
+        [self animateCheckmark:_nameCheckmark show:esp_name_enabled];
+        [self animateCheckmark:_nameOutlineCheckmark show:esp_name_outline];
+        [self animateCheckmark:_healthCheckmark show:esp_health_enabled];
+        [self animateCheckmark:_healthBarCheckmark show:esp_health_bar_enabled];
+        [self animateCheckmark:_healthBarOutlineCheckmark show:esp_health_bar_outline];
+        [self animateCheckmark:_weaponCheckmark show:esp_weapon_enabled];
+        [self animateCheckmark:_weaponIconCheckmark show:esp_weapon_icon_enabled];
+        [self animateCheckmark:_platformCheckmark show:esp_platform_enabled];
+        [self animateCheckmark:_avatarCheckmark show:esp_avatar_enabled];
+        [self animateCheckmark:_aimbotCheckmark show:aimbot_enabled];
+        [self animateCheckmark:_visibleCheckCheckmark show:aimbot_visible_check];
+        [self animateCheckmark:_shootingCheckCheckmark show:aimbot_shooting_check];
+        [self animateCheckmark:_knifeBotCheckmark show:aimbot_knife_bot];
+        [self animateCheckmark:_rcsCheckmark show:esp_rcs_enabled];
+        [self animateCheckmark:_triggerbotCheckmark show:aimbot_triggerbot];
+        [self animateCheckmark:_aimbotFovVisibleCheckmark show:aimbot_fov_visible];
+        [self animateCheckmark:_aimbotTeamCheckmark show:aimbot_team_check];
+        [self animateCheckmark:_viewmodelCheckmark show:viewmodel_enabled];
+        [self animateCheckmark:_screenshotSafeCheckmark show:esp_screenshot_safe];
+        
+        if (self.superview) [self.superview hideViewFromCapture:esp_screenshot_safe];
+        else [self hideViewFromCapture:esp_screenshot_safe];
+
+        _fovValueLabel.text = [NSString stringWithFormat:@"%.1f", aimbot_fov];
+        _fovSlider.value = aimbot_fov;
+        
+        _smoothValueLabel.text = [NSString stringWithFormat:@"%.1f", aimbot_smooth];
+        _smoothSlider.value = aimbot_smooth;
+
+        _triggerDelayValueLabel.text = [NSString stringWithFormat:@"%.1f", aimbot_trigger_delay];
+        _triggerDelaySlider.value = aimbot_trigger_delay;
+
+        _rcsHValueLabel.text = [NSString stringWithFormat:@"%.1f", esp_rcs_h];
+        _rcsHSlider.value = esp_rcs_h;
+
+        _rcsVValueLabel.text = [NSString stringWithFormat:@"%.1f", esp_rcs_v];
+        _rcsVSlider.value = esp_rcs_v;
+        
+        _bhopValueLabel.text = [NSString stringWithFormat:@"%d", esp_bhop_setting];
+        _bhopSlider.value = esp_bhop_setting;
+        
+        _viewmodelXValueLabel.text = [NSString stringWithFormat:@"%.1f", viewmodel_x];
+        _viewmodelXSlider.value = viewmodel_x;
+        _viewmodelYValueLabel.text = [NSString stringWithFormat:@"%.1f", viewmodel_y];
+        _viewmodelYSlider.value = viewmodel_y;
+        _viewmodelZValueLabel.text = [NSString stringWithFormat:@"%.1f", viewmodel_z];
+        _viewmodelZSlider.value = viewmodel_z;
+        
+        if (_boneSelector) {
+            [_boneSelector reloadUI:aimbot_bone_index];
+        }
+    }
+}
+
+
+
+
+- (void)visibleCheckTapped  { aimbot_visible_check  = !aimbot_visible_check;  [self animateCheckmark:_visibleCheckCheckmark  show:aimbot_visible_check];  }
+- (void)shootingCheckTapped { aimbot_shooting_check = !aimbot_shooting_check; [self animateCheckmark:_shootingCheckCheckmark show:aimbot_shooting_check]; }
+- (void)knifeBotTapped      { aimbot_knife_bot      = !aimbot_knife_bot;      [self animateCheckmark:_knifeBotCheckmark      show:aimbot_knife_bot];      }
+- (void)rcsTapped           { esp_rcs_enabled       = !esp_rcs_enabled;       [self animateCheckmark:_rcsCheckmark           show:esp_rcs_enabled];       }
+
+
+- (void)viewmodelTapped {
+    viewmodel_enabled = !viewmodel_enabled;
+    [self animateCheckmark:_viewmodelCheckmark show:viewmodel_enabled];
+}
+
+
+- (void)aimbotTapped {
+    aimbot_enabled = !aimbot_enabled;
+    [self animateCheckmark:_aimbotCheckmark show:aimbot_enabled];
+}
+
+- (void)triggerbotTapped {
+    aimbot_triggerbot = !aimbot_triggerbot;
+    [self animateCheckmark:_triggerbotCheckmark show:aimbot_triggerbot];
+}
+
+- (void)aimbotFovTapped {
+    aimbot_fov_visible = !aimbot_fov_visible;
+    [self animateCheckmark:_aimbotFovVisibleCheckmark show:aimbot_fov_visible];
+}
+
+- (void)teamTapped {
+    esp_team_check = !esp_team_check;
+    [self animateCheckmark:_teamCheckmark show:esp_team_check];
+}
+
+- (void)healthTapped {
+    esp_health_enabled = !esp_health_enabled;
+    [self animateCheckmark:_healthCheckmark show:esp_health_enabled];
+}
+
+
+- (void)healthBarTapped {
+    esp_health_bar_enabled = !esp_health_bar_enabled;
+    [self animateCheckmark:_healthBarCheckmark show:esp_health_bar_enabled];
+}
+
+- (void)healthBarOutlineTapped {
+    esp_health_bar_outline = !esp_health_bar_outline;
+    [self animateCheckmark:_healthBarOutlineCheckmark show:esp_health_bar_outline];
+}
+
+- (void)weaponTapped {
+    esp_weapon_enabled = !esp_weapon_enabled;
+    [self animateCheckmark:_weaponCheckmark show:esp_weapon_enabled];
+}
+
+- (void)weaponIconTapped {
+    esp_weapon_icon_enabled = !esp_weapon_icon_enabled;
+    [self animateCheckmark:_weaponIconCheckmark show:esp_weapon_icon_enabled];
+}
+
+- (void)platformTapped {
+    esp_platform_enabled = !esp_platform_enabled;
+    [self animateCheckmark:_platformCheckmark show:esp_platform_enabled];
+}
+
+- (void)avatarTapped {
+    esp_avatar_enabled = !esp_avatar_enabled;
+    [self animateCheckmark:_avatarCheckmark show:esp_avatar_enabled];
+}
+
+- (void)screenshotSafeTapped {
+    esp_screenshot_safe = !esp_screenshot_safe;
+    [self animateCheckmark:_screenshotSafeCheckmark show:esp_screenshot_safe];
+    
+    if (self.superview) {
+        [self.superview hideViewFromCapture:esp_screenshot_safe];
+    } else {
+        [self hideViewFromCapture:esp_screenshot_safe];
+    }
+}
+
+- (void)aimbotTeamTapped {
+    aimbot_team_check = !aimbot_team_check;
+    [self animateCheckmark:_aimbotTeamCheckmark show:aimbot_team_check];
+}
+
+- (void)tabTapped:(UITapGestureRecognizer *)gesture {
+    NSInteger tag = gesture.view.tag;
+    for (int i=0; i<_tabLabels.count; i++) {
+        UILabel *l = _tabLabels[i];
+        if (i == tag) {
+            l.font = [UIFont systemFontOfSize:11 weight:UIFontWeightBold];
+            l.textColor = [UIColor whiteColor];
+        } else {
+            l.font = [UIFont systemFontOfSize:11 weight:UIFontWeightRegular];
+            l.textColor = [UIColor colorWithWhite:0.7 alpha:1];
+        }
+    }
+    _aimContainer.hidden = (tag != 0);
+    _visualContainer.hidden = (tag != 1);
+    _playerContainer.hidden = (tag != 2);
+    _configContainer.hidden = (tag != 3);
+    _skinContainer.hidden   = (tag != 4);
+    _otherContainer.hidden  = (tag != 5);
+    
+    if (tag == 4) {
+        [self refreshSkinList];
+    }
+}
+
+- (void)toggleCollapse {
+    _collapsed = !_collapsed;
+
+    CGAffineTransform rot = _collapsed
+        ? CGAffineTransformMakeRotation(M_PI)
+        : CGAffineTransformIdentity;
+
+    [UIView animateWithDuration:0.2 animations:^{
+        _arrowLayer.affineTransform = rot;
+        _contentView.alpha = _collapsed ? 0.0f : 1.0f;
+    }];
+
+    CGFloat headerH = 35.0f;
+    CGRect f = self.frame;
+    f.size.height = _collapsed ? headerH : (headerH + _contentView.frame.size.height);
+    [UIView animateWithDuration:0.2 animations:^{
+        self.frame = f;
+    }];
+}
+
+- (void)handleScrollPan:(UIPanGestureRecognizer *)g {
+    UIView *target = nil;
+    if (!_aimContainer.hidden) target = _aimContent;
+    else if (!_visualContainer.hidden) target = _visualContent;
+    else if (!_playerContainer.hidden) target = _playerContent;
+    else if (!_configContainer.hidden) target = _configContent;
+    else if (!_skinContainer.hidden) target = _skinContent;
+    else if (!_otherContainer.hidden) target = _otherContent;
+
+    if (!target) return;
+
+    if (g.state == UIGestureRecognizerStateBegan || g.state == UIGestureRecognizerStateChanged) {
+        CGPoint translation = [g translationInView:_contentView];
+        CGRect f = target.frame;
+        f.origin.y += translation.y;
+        if (f.origin.y > 0) f.origin.y = 0;
+        CGFloat minY = _contentView.frame.size.height - f.size.height;
+        if (minY > 0) minY = 0;
+        if (f.origin.y < minY) f.origin.y = minY;
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        target.frame = f;
+        [CATransaction commit];
+        [g setTranslation:CGPointZero inView:_contentView];
+    }
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    UIView *v = touch.view;
+    while (v) {
+        if ([v isKindOfClass:[CustomSegmentedControl class]] || 
+            [v isKindOfClass:[CustomSliderView class]]) {
+            return NO;
+        }
+        v = v.superview;
+    }
+    return YES;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)g shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
+    return YES;
+}
+
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)g {
+    return YES;
+}
+
+- (void)handlePan:(UIPanGestureRecognizer *)gesture {
+    CGPoint touchPoint = [gesture locationInView:self.superview];
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        _initialTouchPoint = touchPoint;
+    } else if (gesture.state == UIGestureRecognizerStateChanged) {
+        CGFloat deltaX = touchPoint.x - _initialTouchPoint.x;
+        CGFloat deltaY = touchPoint.y - _initialTouchPoint.y;
+        self.center = CGPointMake(self.center.x + deltaX, self.center.y + deltaY);
+        _initialTouchPoint = touchPoint;
+    }
+}
+
+- (void)didMoveToSuperview {
+    [super didMoveToSuperview];
+    [self centerMenu];
+}
+
+- (void)centerMenu {
+    if (self.superview) {
+        self.center = CGPointMake(self.superview.bounds.size.width / 2,
+                                  self.superview.bounds.size.height / 2);
+    }
+}
 
 - (void)dealloc {
-    [self.displayLinkData invalidate];
-    self.displayLinkData = nil;
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
-- (void)clearAllBoxes {
-    self.espBoxLayer.path        = nil;
-    self.espBoxFillLayer.path    = nil;
-    self.espLineLayer.path       = nil;
-    self.espBoxOutlineLayer.path = nil;
-    self.espLineOutlineLayer.path = nil;
-    self.espHealthBarLayer.path  = nil;
-    self.espHealthBarOutlineLayer.path = nil;
-    self.fovCircleLayer.hidden        = YES;
-    self.fovCircleOutlineLayer.hidden = YES;
-    for (UILabel *lbl in self.nameLabelPool) lbl.hidden = YES;
-    for (UILabel *lbl in self.healthLabelPool) lbl.hidden = YES;
-    for (UILabel *lbl in self.weaponLabelPool) lbl.hidden = YES;
-    for (UIImageView *img in self.weaponIconPool) img.hidden = YES;
-    for (UILabel *lbl in self.platformLabelPool) lbl.hidden = YES;
-    for (UIImageView *img in self.avatarPool) img.hidden = YES;
-}
-
-- (void)update_data {
-    if (!esp_box_enabled && !esp_box_3d && !esp_box_corner && !esp_line_enabled && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled) {
-        [self clearAllBoxes];
-        self.watermarkLabel.text = @(OBF("t.me/projectios"));
-        [self.watermarkLabel sizeToFit];
-        return;
-    }
-
-    static pid_t cached_so2_pid = 0;
-    static task_t cached_so2_task = 0;
-    static mach_vm_address_t cached_unity_base = 0;
-    // Atomic offset: starts with last-known value, updated by background scanner
-    static std::atomic<uint64_t> s_pm_ti_offset{178356728ULL};
-    static std::atomic<bool>     s_pm_scanning{false};
-    static std::atomic<pid_t>    s_pm_scanned_pid{0};
-
-    pid_t so2_pid = get_pid_by_name("Standoff2");
-
-    if (so2_pid <= 0) {
-        cached_so2_pid = 0;
-        cached_so2_task = 0;
-        cached_unity_base = 0;
-
-        [self clearAllBoxes];
-
-        self.playerCountLabel.text      = @"DBG: PID NOT FOUND (Standoff2)";
-        self.playerCountLabel.textColor = [UIColor redColor];
-        self.playerCountLabel.hidden    = NO;
-        self.noPlayersLabel.hidden      = YES;
-        self.watermarkLabel.text = @"DBG: game not detected";
-        [self.watermarkLabel sizeToFit];
-
-        if (!self.hasAttemptedLaunch) {
-            [self launchGame];
-            self.hasAttemptedLaunch = YES;
-        }
-        return;
-    }
-
-    if (so2_pid != cached_so2_pid || !cached_so2_task || !cached_unity_base) {
-        // Try processor_set_tasks first, fall back to task_for_pid
-        cached_so2_task = get_task_by_pid(so2_pid);
-        if (!cached_so2_task || cached_so2_task == MACH_PORT_NULL)
-            cached_so2_task = get_task_for_PID(so2_pid);
-
-        if (cached_so2_task && cached_so2_task != MACH_PORT_NULL)
-            cached_unity_base = get_image_base_address(cached_so2_task, "UnityFramework");
-
-        cached_so2_pid = so2_pid;
-        // Reset scanner for new process
-        s_pm_scanned_pid = 0;
-    }
-
-    // Launch background scanner — retry every 5 sec if failed
-    static double s_last_scan_time = 0;
-    bool shouldScan = false;
-    if (cached_unity_base && cached_so2_task && !s_pm_scanning) {
-        if (s_pm_scanned_pid != so2_pid) {
-            shouldScan = true;
-        } else if (get_scan_phase() == -1) {
-            double now = CACurrentMediaTime();
-            if (now - s_last_scan_time > 5.0) shouldScan = true;
-        }
-    }
-    if (shouldScan) {
-        s_pm_scanning    = true;
-        s_pm_scanned_pid = so2_pid;
-        s_last_scan_time = CACurrentMediaTime();
-        task_t           scan_task = cached_so2_task;
-        mach_vm_address_t scan_base = cached_unity_base;
-
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-            uint64_t found = find_pm_typeinfo_offset(scan_task, scan_base);
-            if (found != 0) s_pm_ti_offset = found;
-            s_pm_scanning = false;
-        });
-    }
-
-    task_t so2_task = cached_so2_task;
-    if (!so2_task) {
-        self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: no task (pid=%d)", so2_pid];
-        goto CLEAR_BOXES;
-    }
-
-    {
-        mach_vm_address_t unity_base = cached_unity_base;
-        if (!unity_base) {
-            self.watermarkLabel.text = @"DBG: no UnityFramework base";
-            goto CLEAR_BOXES;
-        }
-
-        mach_vm_address_t playerManager  = 0, playersDict   = 0;
-        mach_vm_address_t dict28         = 0;
-        int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
-
-        static int cached_s_off = -1;
-        static int cached_s_src = -1;
-        static int cached_s_deref = 0;
-        static pid_t cached_chain_pid = 0;
-        static int dbg_frame = 0;
-        static int cam_off_cache = -1, cam_p1_cache = -1, cam_p2_cache = -1, cam_m_cache = -1;
-        if (cached_chain_pid != so2_pid) {
-            cached_s_off = -1;
-            cached_s_src = -1;
-            cached_s_deref = 0;
-            cached_chain_pid = so2_pid;
-            dbg_frame = 0;
-            cam_off_cache = -1;
-            cam_p1_cache = -1;
-            cam_p2_cache = -1;
-            cam_m_cache = -1;
-        }
-        {
-            int phase = get_scan_phase();
-            if (phase != 2) {
-                if (phase == 1) {
-                    self.watermarkLabel.text = [NSString stringWithFormat:
-                        @"SCANNING %llu/%llu...", get_scan_progress(), get_scan_total()];
-                } else if (phase == -1) {
-                    self.watermarkLabel.text = @"NOT FOUND";
-                } else {
-                    self.watermarkLabel.text = @"Waiting...";
-                }
-                goto CLEAR_BOXES;
-            }
-
-            uint64_t cls = get_found_class();
-            uint64_t parentCls = Read<uint64_t>(cls + 0x58, so2_task);
-            uint64_t targets[2] = { parentCls, cls };
-
-            // Быстрый путь: используем кэшированный оффсет
-            if (cached_s_off >= 0 && cached_s_src >= 0) {
-                uint64_t base = targets[cached_s_src];
-                if (base > 0x1000000) {
-                    uint64_t sf = Read<uint64_t>(base + cached_s_off, so2_task);
-                    if (sf > 0x1000000) {
-                        uint64_t pm = 0;
-                        if (cached_s_deref == 0) {
-                            pm = Read<uint64_t>(sf, so2_task);
-                        } else {
-                            uint64_t mbref = Read<uint64_t>(sf, so2_task);
-                            if (mbref > 0x1000000)
-                                pm = Read<uint64_t>(mbref + 0x10, so2_task);
-                        }
-                        if (pm > 0x1000000) playerManager = pm;
-                    }
-                }
-            }
-
-            // Полный скан: ищем static_fields в parent и cls
-            if (!playerManager && cached_s_off < 0) {
-                for (int src = 0; src < 2 && !playerManager; src++) {
-                    uint64_t base = targets[src];
-                    if (!base || base < 0x1000000 || (base & 7) != 0) continue;
-                    for (int soff = 0x00; soff <= 0x200; soff += 8) {
-                        uint64_t sf = Read<uint64_t>(base + soff, so2_task);
-                        if (!sf || sf < 0x1000000 || (sf & 7) != 0) continue;
-
-                        // Путь A: *sf = PM напрямую
-                        uint64_t pm = Read<uint64_t>(sf, so2_task);
-                        if (pm > 0x1000000 && (pm & 7) == 0) {
-                            uint64_t dict = Read<uint64_t>(pm + 0x28, so2_task);
-                            if (dict > 0x1000000 && (dict & 7) == 0) {
-                                int cnt = Read<int>(dict + 0x20, so2_task);
-                                if (cnt >= 0 && cnt <= 32) {
-                                    cached_s_off = soff;
-                                    cached_s_src = src;
-                                    cached_s_deref = 0;
-                                    playerManager = pm;
-                                    break;
-                                }
-                            }
-                        }
-
-                        // Путь B: *sf = MonoBehaviourRef, *(mbref+0x10) = PM
-                        if (pm > 0x1000000 && (pm & 7) == 0) {
-                            for (int moff = 0x08; moff <= 0x18; moff += 8) {
-                                uint64_t pm2 = Read<uint64_t>(pm + moff, so2_task);
-                                if (!pm2 || pm2 < 0x1000000 || (pm2 & 7) != 0) continue;
-                                uint64_t dict = Read<uint64_t>(pm2 + 0x28, so2_task);
-                                if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
-                                int cnt = Read<int>(dict + 0x20, so2_task);
-                                if (cnt >= 0 && cnt <= 32) {
-                                    cached_s_off = soff;
-                                    cached_s_src = src;
-                                    cached_s_deref = 1;
-                                    playerManager = pm2;
-                                    break;
-                                }
-                            }
-                            if (playerManager) break;
-                        }
-                    }
-                }
-            }
-
-            dbg_frame++;
-            if (!playerManager) {
-                if (cached_s_off >= 0) {
-                    self.watermarkLabel.text = [NSString stringWithFormat:
-                        @"s%d:%x d%d (wait)", cached_s_src, cached_s_off, cached_s_deref];
-                } else if (dbg_frame <= 3) {
-                    // Первые 3 кадра — дамп parent для диагностики
-                    NSMutableString *dbg = [NSMutableString stringWithFormat:@"PAR=%llx:", parentCls];
-                    if (parentCls > 0x1000000 && (parentCls & 7) == 0) {
-                        for (int soff = 0xB0; soff <= 0x100; soff += 8) {
-                            uint64_t v = Read<uint64_t>(parentCls + soff, so2_task);
-                            if (v > 0x1000000) {
-                                uint64_t v2 = Read<uint64_t>(v, so2_task);
-                                [dbg appendFormat:@" %x>%llx>%llx", soff, v, v2];
-                            }
-                        }
-                    }
-                    [dbg appendFormat:@" CLS:"];
-                    for (int soff = 0xB0; soff <= 0x100; soff += 8) {
-                        uint64_t v = Read<uint64_t>(cls + soff, so2_task);
-                        if (v > 0x1000000) {
-                            uint64_t v2 = Read<uint64_t>(v, so2_task);
-                            [dbg appendFormat:@" %x>%llx>%llx", soff, v, v2];
-                        }
-                    }
-                    self.watermarkLabel.text = dbg;
-                } else {
-                    self.watermarkLabel.text = @"noSF (scan every frame)";
-                    cached_s_off = -1; // keep trying
-                }
-            }
-        }
-        if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
-
-        // Сброс кэшей камеры при смене PM (новый матч)
-        {
-            static mach_vm_address_t prev_pm = 0;
-            if (playerManager != prev_pm) {
-                cam_off_cache = -1;
-                cached_hp_off1 = -1;
-                cached_hp_off2 = -1;
-                cached_hp_off3 = -1;
-                prev_pm = playerManager;
-            }
-        }
-
-        dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
-        playersDict = dict28;
-
-        c20 = Read<int>(playersDict + 0x20, so2_task);
-        c40 = Read<int>(playersDict + 0x40, so2_task);
-        c18 = Read<int>(playersDict + 0x18, so2_task);
-
-        if      (c20 > 0 && c20 <= 32) playersCount = c20;
-        else if (c40 > 0 && c40 <= 32) playersCount = c40;
-        else if (c18 > 0 && c18 <= 32) playersCount = c18;
-
-        if (playersCount > 0 && playersCount <= 32) {
-            mach_vm_address_t localPlayer = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
-            if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0)
-                localPlayer = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
-
-
-            if (esp_invisible && localPlayer > 0x1000000) {
-                mach_vm_address_t weaponryController = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-                if (weaponryController > 0x1000000)
-                    Write<uint8_t>(weaponryController + 0x88, 10, so2_task);
-            }
-
-            if (esp_addscore && localPlayer > 0x1000000) {
-                mach_vm_address_t photonPlayer = Read<mach_vm_address_t>(localPlayer + 0x160, so2_task);
-                if (photonPlayer > 0x1000000) {
-                    mach_vm_address_t props = Read<mach_vm_address_t>(photonPlayer + 0x38, so2_task);
-                    if (props > 0x1000000) {
-                        int size = Read<int>(props + 0x20, so2_task);
-                        mach_vm_address_t entries = Read<mach_vm_address_t>(props + 0x18, so2_task);
-                        if (entries > 0x1000000 && size > 0 && size <= 64) {
-                            for (int i = 0; i < size; i++) {
-                                mach_vm_address_t propkey = Read<mach_vm_address_t>(entries + 0x20 + 0x18 * i + 0x8, so2_task);
-                                mach_vm_address_t propval = Read<mach_vm_address_t>(entries + 0x20 + 0x18 * i + 0x10, so2_task);
-                                if (!propkey || !propval) continue;
-                                int strLen = Read<int>(propkey + 0x10, so2_task);
-                                if (strLen == 5) {
-                                    uint64_t part1 = Read<uint64_t>(propkey + 0x14, so2_task);
-                                    if (part1 == 0x0072006F00630073ULL) { // "scor"
-                                        uint16_t part2 = Read<uint16_t>(propkey + 0x1C, so2_task);
-                                        if (part2 == 0x0065) { // "e"
-                                            Write<int>(propval + 0x10, 333, so2_task);
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (esp_rcs_enabled && localPlayer > 0x1000000) {
-                mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-                if (wc > 0x1000000) {
-                    mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-                    if (ctrl > 0x1000000) {
-                        mach_vm_address_t gun = Read<mach_vm_address_t>(ctrl + 0x168, so2_task);
-                        if (gun > 0x1000000) {
-                            mach_vm_address_t rcp = Read<mach_vm_address_t>(gun + 0x158, so2_task);
-                            if (rcp > 0x1000000) {
-                                float rcs_h_val = esp_rcs_h;
-                                float rcs_v_val = esp_rcs_v;
-
-                                Write<float>(rcp + 0x10, rcs_h_val, so2_task);
-                                Write<float>(rcp + 0x14, rcs_v_val, so2_task);
-
-                                bool hasHValue = Read<bool>(rcp + 0x70, so2_task);
-                                if (hasHValue) {
-                                    int key_h = Read<int>(rcp + 0x74, so2_task);
-                                    int valueAsInt_h = *reinterpret_cast<int*>(&rcs_h_val);
-                                    int encoded_h = key_h ^ valueAsInt_h;
-                                    Write<int>(rcp + 0x78, encoded_h, so2_task);
-                                }
-                                
-                                bool hasVValue = Read<bool>(rcp + 0x64, so2_task);
-                                if (hasVValue) {
-                                    int key_v = Read<int>(rcp + 0x68, so2_task);
-                                    int valueAsInt_v = *reinterpret_cast<int*>(&rcs_v_val);
-                                    int encoded_v = key_v ^ valueAsInt_v;
-                                    Write<int>(rcp + 0x6C, encoded_v, so2_task);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (esp_inf_ammo && localPlayer > 0x1000000) {
-                mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-                if (wc > 0x1000000) {
-                    mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-                    if (ctrl > 0x1000000) {
-                        // v0.39.1: AmmoInMagazine=+0xA0, AmmoReserve=+0xA4 (plain int)
-                        Write<int32_t>(ctrl + 0xA0, 999, so2_task);
-                        Write<int32_t>(ctrl + 0xA4, 999, so2_task);
-                    }
-                }
-            }
-
-            if (esp_no_spread && localPlayer > 0x1000000) {
-                mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-                if (wc > 0x1000000) {
-                    mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-                    if (ctrl > 0x1000000) {
-                        mach_vm_address_t accData = Read<mach_vm_address_t>(ctrl + 0x228, so2_task);
-                        if (accData > 0x1000000) {
-                            Write<float>(accData + 0x10, 0.0f, so2_task);
-                            Write<float>(accData + 0x14, 0.0f, so2_task);
-                        }
-                        // Current spread
-                        Write<int32_t>(ctrl + 0x1F4, 0, so2_task);
-                        Write<int32_t>(ctrl + 0x1F8, 0, so2_task);
-                        Write<int32_t>(ctrl + 0x1FC, 0, so2_task);
-                        Write<int32_t>(ctrl + 0x200, 0, so2_task);
-                    }
-                }
-            }
-
-            if (esp_air_jump && localPlayer > 0x1000000) {
-                mach_vm_address_t character = Read<mach_vm_address_t>(localPlayer + 0x118, so2_task);
-                if (character > 0x1000000) {
-                    mach_vm_address_t ptr = Read<mach_vm_address_t>(character + 0x10, so2_task);
-                    if (ptr > 0x1000000)
-                        Write<uint8_t>(ptr + 0xCC, 4, so2_task);
-                }
-            }
-
-            if (esp_fast_knife && localPlayer > 0x1000000) {
-                mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-                if (wc > 0x1000000) {
-                    mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-                    if (ctrl > 0x1000000) {
-                        // v0.39.1: detect melee via SlotIndex byte at WeaponController+0x94 (slot 2 = melee)
-                        uint8_t weaponSlot = Read<uint8_t>(ctrl + 0x94, so2_task);
-                        if (weaponSlot == 2) {
-                            mach_vm_address_t knifeParams = Read<mach_vm_address_t>(ctrl + 0x18, so2_task);
-                            if (knifeParams > 0x1000000) {
-                                Write<float>(knifeParams + 0x110, 0.01f, so2_task);
-                            }
-                            // Nullable<SafeFloat> in KnifeController
-                            bool hasVal = Read<bool>(ctrl + 0x100, so2_task);
-                            if (hasVal) {
-                                int key = Read<int>(ctrl + 0x104, so2_task);
-                                float val = 0.01f;
-                                int valInt = *reinterpret_cast<int*>(&val);
-                                Write<int>(ctrl + 0x108, key ^ valInt, so2_task);
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (esp_bunny_hop && localPlayer > 0x1000000) {
-                mach_vm_address_t mv = Read<mach_vm_address_t>(localPlayer + 0x98, so2_task);
-                if (mv > 0x1000000) {
-                    mach_vm_address_t tp = Read<mach_vm_address_t>(mv + 0xA8, so2_task);
-                    if (tp > 0x1000000) {
-                        mach_vm_address_t jp = Read<mach_vm_address_t>(tp + 0x50, so2_task);
-                        if (jp > 0x1000000) {
-                            Write<float>(jp + 0x10, (float)esp_bhop_setting, so2_task);
-                            Write<float>(jp + 0x60, (float)esp_bhop_setting, so2_task);
-                        }
-                    }
-                    mach_vm_address_t td = Read<mach_vm_address_t>(mv + 0xB0, so2_task);
-                    if (td > 0x1000000) {
-                        Vector3 zero = {0,0,0};
-                        Write<Vector3>(td + 0x68, zero, so2_task);
-                    }
-                }
-            }
-
-            if (esp_wallshot && localPlayer > 0x1000000) {
-                mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-                if (wc > 0x1000000) {
-                    mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-                    if (ctrl > 0x1000000) {
-                        mach_vm_address_t gp = Read<mach_vm_address_t>(ctrl + 0xA8, so2_task);
-                        if (gp > 0x1000000) {
-                            Write<float>(gp + 0x148, 99999.0f, so2_task);
-                            Write<float>(gp + 0x1A0, 1.0f,     so2_task);
-                            Write<int32_t>(gp + 0x1A4, 9999,   so2_task);
-                            Write<int32_t>(gp + 0x258, 1,      so2_task);
-                            Write<float>(gp + 0x268, 1.0f,     so2_task);
-                            Write<int32_t>(gp + 0x264, 1,      so2_task);
-                            Write<int32_t>(gp + 0x274, 9999,   so2_task);
-                            Write<int32_t>(gp + 0x2DC, 1,      so2_task);
-                            Write<float>(gp + 0x2EC, 99999.0f, so2_task);
-                        }
-                    }
-                }
-            }
-
-            if (esp_fire_rate && localPlayer > 0x1000000) {
-                mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-                if (wc > 0x1000000) {
-                    mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-                    if (ctrl > 0x1000000) {
-                        // v0.39.1: FireRate field at +0x80 (float)
-                        Write<float>(ctrl + 0x80, 0.001f, so2_task);
-                    }
-                }
-            }
-
-            SO2_Matrix viewMatrix = {0};
-            bool matrixFound = false;
-            static int cam_bad_frames = 0;
-
-            // Быстрый путь: кэшированная цепочка + валидация
-            if (localPlayer > 0x1000000 && cam_off_cache >= 0) {
-                mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + cam_off_cache, so2_task);
-                if (v1 > 0x1000000) {
-                    mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + cam_p1_cache, so2_task);
-                    if (v2 > 0x1000000) {
-                        mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + cam_p2_cache, so2_task);
-                        if (v3 > 0x1000000) {
-                            SO2_Matrix m = Read<SO2_Matrix>(v3 + cam_m_cache, so2_task);
-                            if (fabsf(m.m11) > 0.01f && fabsf(m.m22) > 0.01f && fabsf(m.m33) > 0.01f &&
-                                fabsf(m.m11) < 10.0f && fabsf(m.m22) < 10.0f && fabsf(m.m33) < 10.0f) {
-                                viewMatrix = m;
-                                matrixFound = true;
-                                cam_bad_frames = 0;
-                            }
-                        }
-                    }
-                }
-                if (!matrixFound) {
-                    cam_bad_frames++;
-                    if (cam_bad_frames > 5) {
-                        cam_off_cache = -1;
-                        cam_bad_frames = 0;
-                    }
-                }
-            }
-
-            if (localPlayer > 0x1000000 && !matrixFound) {
-                CGFloat sw = self.bounds.size.width, sh = self.bounds.size.height;
-                // Найти позицию первого видимого врага для валидации
-                Vector3 testPos = {0,0,0};
-                {
-                    mach_vm_address_t tdict = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
-                    if (tdict > 0x1000000) {
-                        mach_vm_address_t tarr = Read<mach_vm_address_t>(tdict + 0x18, so2_task);
-                        if (tarr > 0x1000000) {
-                            for (int ti = 0; ti < 10; ti++) {
-                                mach_vm_address_t tp = Read<mach_vm_address_t>(tarr + 0x20 + ti * 0x18 + 0x10, so2_task);
-                                if (tp < 0x1000000 || tp == localPlayer) continue;
-                                mach_vm_address_t mc = Read<mach_vm_address_t>(tp + 0x98, so2_task);
-                                if (mc < 0x1000000) continue;
-                                mach_vm_address_t md = Read<mach_vm_address_t>(mc + 0xB0, so2_task);
-                                if (md < 0x1000000) continue;
-                                testPos = Read<Vector3>(md + 0x44, so2_task);
-                                if (testPos.x != 0 || testPos.y != 0 || testPos.z != 0) break;
-                            }
-                        }
-                    }
-                }
-
-                int camOffs[] = {0xE8, 0xE0, 0xF0, 0xD8, 0xD0, 0xF8, 0x100, 0x108, 0x110, 0x118, 0x120};
-                int p1s[] = {0x20, 0x18, 0x28, 0x10, 0x30};
-                int p2s[] = {0x10, 0x18, 0x08, 0x20};
-                int moffs[] = {0x100, 0xF0, 0xE0, 0xD0, 0xC0, 0x110, 0x120, 0xB0, 0xA0};
-
-                for (int ci = 0; ci < 11 && !matrixFound; ci++) {
-                    mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + camOffs[ci], so2_task);
-                    if (v1 < 0x1000000) continue;
-                    for (int pi = 0; pi < 5 && !matrixFound; pi++) {
-                        mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + p1s[pi], so2_task);
-                        if (v2 < 0x1000000) continue;
-                        for (int qi = 0; qi < 4 && !matrixFound; qi++) {
-                            mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + p2s[qi], so2_task);
-                            if (v3 < 0x1000000) continue;
-                            for (int mi = 0; mi < 9 && !matrixFound; mi++) {
-                                SO2_Matrix m = Read<SO2_Matrix>(v3 + moffs[mi], so2_task);
-                                // Все 3 диагональных элемента должны быть ненулевыми
-                                if (fabsf(m.m11) < 0.01f || fabsf(m.m22) < 0.01f || fabsf(m.m33) < 0.01f) continue;
-                                // Диагональ не должна быть слишком большой
-                                if (fabsf(m.m11) > 10.0f || fabsf(m.m22) > 10.0f || fabsf(m.m33) > 10.0f) continue;
-                                if (testPos.x != 0 || testPos.y != 0 || testPos.z != 0) {
-                                    Vector3 sc = WorldToScreen(testPos, m, sw, sh);
-                                    if (sc.z > 0.01f && sc.x > 0 && sc.x < sw && sc.y > 0 && sc.y < sh) {
-                                        viewMatrix = m;
-                                        matrixFound = true;
-                                        cam_off_cache = camOffs[ci];
-                                        cam_p1_cache = p1s[pi];
-                                        cam_p2_cache = p2s[qi];
-                                        cam_m_cache = moffs[mi];
-                                    }
-                                } else {
-                                    float s = fabsf(m.m11) + fabsf(m.m22) + fabsf(m.m33);
-                                    if (s > 1.0f && s < 10.0f) {
-                                        viewMatrix = m;
-                                        matrixFound = true;
-                                        cam_off_cache = camOffs[ci];
-                                        cam_p1_cache = p1s[pi];
-                                        cam_p2_cache = p2s[qi];
-                                        cam_m_cache = moffs[mi];
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            {
-                int localTeamAim = GetPlayerTeamAim(localPlayer, so2_task);
-                CGFloat w2 = self.bounds.size.width;
-                CGFloat h2 = self.bounds.size.height;
-                [self runAimbot:localPlayer
-                        players:playersDict
-                          count:playersCount
-                      localTeam:localTeamAim
-                           task:so2_task
-                          width:w2
-                         height:h2
-                     viewMatrix:viewMatrix];
-            }
-
-            mach_vm_address_t entries_arr = Read<mach_vm_address_t>(playersDict + 0x18, so2_task);
-            int capacity = Read<int>(entries_arr + 0x18, so2_task);
-            if (capacity > 100) capacity = 100;
-
-            BOOL drawBoxes = esp_box_enabled || esp_box_3d || esp_box_fill || esp_box_corner;
-            BOOL drawLines = esp_line_enabled;
-
-            if (!drawBoxes && !drawLines && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled && !esp_weapon_icon_enabled && !esp_platform_enabled) {
-                [self clearAllBoxes];
-                self.watermarkLabel.text = @"t.me/projectios";
-                [self.watermarkLabel sizeToFit];
-                return;
-            }
-
-            int validPlayers = 0;
-            CGFloat w = self.bounds.size.width;
-            CGFloat h = self.bounds.size.height;
-
-
-            for (UILabel *lbl in self.nameLabelPool) lbl.hidden = YES;
-            NSUInteger nameLabelIdx = 0;
-            for (UILabel *lbl in self.healthLabelPool) lbl.hidden = YES;
-            NSUInteger hpLabelIdx = 0;
-            for (UILabel *lbl in self.weaponLabelPool) lbl.hidden = YES;
-            NSUInteger weaponLabelIdx = 0;
-            for (UIImageView *img in self.weaponIconPool) img.hidden = YES;
-            NSUInteger weaponIconIdx = 0;
-            for (UILabel *lbl in self.platformLabelPool) lbl.hidden = YES;
-            NSUInteger platformLabelIdx = 0;
-            for (UIImageView *img in self.avatarPool) img.hidden = YES;
-            NSUInteger avatarIdx = 0;
-
-            UIBezierPath *boxPath         = [UIBezierPath bezierPath];
-            UIBezierPath *boxFillPath     = [UIBezierPath bezierPath];
-            UIBezierPath *boxOutlinePath  = [UIBezierPath bezierPath];
-            UIBezierPath *linesPath       = [UIBezierPath bezierPath];
-            UIBezierPath *lineOutlinePath = [UIBezierPath bezierPath];
-            UIBezierPath *healthBarPath   = [UIBezierPath bezierPath];
-            UIBezierPath *healthBarOutlinePath = [UIBezierPath bezierPath];
-
-            // Direct read: PlayerController+0x79 → team byte (новые офсеты)
-            int localTeam = 0;
-            if (esp_team_check) {
-                localTeam = (int)Read<uint8_t>(localPlayer + 0x79, so2_task);
-            }
-            mach_vm_address_t *players = (mach_vm_address_t *)malloc(capacity * sizeof(mach_vm_address_t));
-            for (int i = 0; i < capacity; i++) {
-                players[i] = Read<mach_vm_address_t>(entries_arr + 0x20 + (i * 0x18) + 0x10, so2_task);
-            }
-
-            // Поиск HP: SafeInt в sub/sub-sub компонентах PlayerController
-            if (cached_hp_off1 < 0) {
-                static int hp_scan_idx = 0;
-                mach_vm_address_t scanP[2] = {0, 0};
-                int scanN = 0;
-                for (int pi = 0; pi < capacity && scanN < 2; pi++) {
-                    mach_vm_address_t p = players[pi];
-                    if (p < 0x1000000 || p == localPlayer) continue;
-                    scanP[scanN++] = p;
-                }
-                if (scanN >= 1) {
-                    NSMutableString *d = [NSMutableString stringWithString:@"HP:"];
-                    mach_vm_address_t p = scanP[0];
-                    for (int off1 = 0x60; off1 <= 0x120; off1 += 8) {
-                        uint64_t sub = Read<uint64_t>(p + off1, so2_task);
-                        if (sub < 0x1000000 || (sub & 3) != 0) continue;
-                        // Уровень 1: прямо в sub
-                        for (int soff = 0x10; soff <= 0x80; soff += 4) {
-                            int k = Read<int>(sub + soff + 4, so2_task);
-                            int e = Read<int>(sub + soff + 8, so2_task);
-                            if (k != 0) { int v = k ^ e; if (v >= 50 && v <= 100) [d appendFormat:@" %x+%x^%d", off1, soff, v]; }
-                            k = Read<int>(sub + soff, so2_task);
-                            e = Read<int>(sub + soff + 4, so2_task);
-                            if (k != 0 && k != e) { int v = k ^ e; if (v >= 50 && v <= 100) [d appendFormat:@" %x+%xn%d", off1, soff, v]; }
-                        }
-                        // Уровень 2: sub → sub2
-                        for (int off2 = 0x10; off2 <= 0x80; off2 += 8) {
-                            uint64_t sub2 = Read<uint64_t>(sub + off2, so2_task);
-                            if (sub2 < 0x1000000 || (sub2 & 3) != 0) continue;
-                            for (int soff = 0x10; soff <= 0x80; soff += 4) {
-                                int k = Read<int>(sub2 + soff + 4, so2_task);
-                                int e = Read<int>(sub2 + soff + 8, so2_task);
-                                if (k != 0) { int v = k ^ e; if (v >= 50 && v <= 100) [d appendFormat:@" %x.%x+%x^%d", off1, off2, soff, v]; }
-                                k = Read<int>(sub2 + soff, so2_task);
-                                e = Read<int>(sub2 + soff + 4, so2_task);
-                                if (k != 0 && k != e) { int v = k ^ e; if (v >= 50 && v <= 100) [d appendFormat:@" %x.%x+%xn%d", off1, off2, soff, v]; }
-                            }
-                        }
-                    }
-                    // Валидация: проверить на 2 игроках (должно быть 50-100 у обоих)
-                    if (d.length > 3 && scanN >= 2) {
-                        [d appendFormat:@" v2:"];
-                        mach_vm_address_t p2 = scanP[1];
-                        // Перечитываем найденные кандидаты на 2-м игроке
-                    }
-                    self.watermarkLabel.text = d;
-                }
-            }
-
-            for (int i = 0; i < capacity; i++) {
-                mach_vm_address_t player = players[i];
-                if (player < 0x1000000 || player == localPlayer) continue;
-
-                if (esp_team_check) {
-                    if (GetPlayerTeamAim(player, so2_task) == localTeam) continue;
-                }
-
-                mach_vm_address_t moveCtrl = Read<mach_vm_address_t>(player + 0x98, so2_task);
-                if (moveCtrl < 0x1000000) continue;
-
-                mach_vm_address_t moveData = Read<mach_vm_address_t>(moveCtrl + 0xB0, so2_task);
-                if (moveData < 0x1000000) continue;
-
-                Vector3 pos = Read<Vector3>(moveData + 0x44, so2_task);
-                if (pos.x == 0 && pos.y == 0 && pos.z == 0) continue;
-
-
-                Vector3 screenFoot = WorldToScreen(pos, viewMatrix, w, h);
-                if (screenFoot.z <= 0.01f) continue;
-
-                Vector3 headPos = pos;
-                headPos.y += 1.67f;
-                Vector3 screenHead = WorldToScreen(headPos, viewMatrix, w, h);
-
-                if (screenHead.z > 0.01f && screenFoot.y > screenHead.y) {
-                    validPlayers++;
-                    float bh = screenFoot.y - screenHead.y;
-                    float bw = bh / 2.0f;
-                    
-                    if (drawBoxes) {
-                        CGRect rect = CGRectMake(screenHead.x - bw / 2.0f, screenHead.y, bw, bh);
-                        
-                        if (esp_box_fill) {
-                            [boxFillPath appendPath:[UIBezierPath bezierPathWithRect:rect]];
-                        }
-                        
-                        if (esp_box_3d) {
-                            float bw3d = 0.35f;
-                            Vector3 p[8];
-                            p[0] = {pos.x - bw3d, pos.y, pos.z - bw3d};
-                            p[1] = {pos.x + bw3d, pos.y, pos.z - bw3d};
-                            p[2] = {pos.x + bw3d, pos.y, pos.z + bw3d};
-                            p[3] = {pos.x - bw3d, pos.y, pos.z + bw3d};
-
-                            p[4] = {headPos.x - bw3d, headPos.y, headPos.z - bw3d};
-                            p[5] = {headPos.x + bw3d, headPos.y, headPos.z - bw3d};
-                            p[6] = {headPos.x + bw3d, headPos.y, headPos.z + bw3d};
-                            p[7] = {headPos.x - bw3d, headPos.y, headPos.z + bw3d};
-
-                            Vector3 sp[8];
-                            bool allValid = true;
-                            for (int i=0; i<8; i++) {
-                                sp[i] = WorldToScreen(p[i], viewMatrix, w, h);
-                                if (sp[i].z <= 0) allValid = false;
-                            }
-
-                            if (allValid) {
-                                auto drawCube = [&](UIBezierPath *pth) {
-                                    [pth moveToPoint:CGPointMake(sp[0].x, sp[0].y)]; [pth addLineToPoint:CGPointMake(sp[1].x, sp[1].y)];
-                                    [pth addLineToPoint:CGPointMake(sp[2].x, sp[2].y)]; [pth addLineToPoint:CGPointMake(sp[3].x, sp[3].y)];
-                                    [pth addLineToPoint:CGPointMake(sp[0].x, sp[0].y)];
-                                    [pth moveToPoint:CGPointMake(sp[4].x, sp[4].y)]; [pth addLineToPoint:CGPointMake(sp[5].x, sp[5].y)];
-                                    [pth addLineToPoint:CGPointMake(sp[6].x, sp[6].y)]; [pth addLineToPoint:CGPointMake(sp[7].x, sp[7].y)];
-                                    [pth addLineToPoint:CGPointMake(sp[4].x, sp[4].y)];
-                                    [pth moveToPoint:CGPointMake(sp[0].x, sp[0].y)]; [pth addLineToPoint:CGPointMake(sp[4].x, sp[4].y)];
-                                    [pth moveToPoint:CGPointMake(sp[1].x, sp[1].y)]; [pth addLineToPoint:CGPointMake(sp[5].x, sp[5].y)];
-                                    [pth moveToPoint:CGPointMake(sp[2].x, sp[2].y)]; [pth addLineToPoint:CGPointMake(sp[6].x, sp[6].y)];
-                                    [pth moveToPoint:CGPointMake(sp[3].x, sp[3].y)]; [pth addLineToPoint:CGPointMake(sp[7].x, sp[7].y)];
-                                };
-                                drawCube(boxPath);
-                                if (esp_box_outline) drawCube(boxOutlinePath);
-                            } else {
-
-                                [boxPath appendPath:[UIBezierPath bezierPathWithRect:rect]];
-                                if (esp_box_outline) [boxOutlinePath appendPath:[UIBezierPath bezierPathWithRect:rect]];
-                            }
-                        } else if (esp_box_corner) {
-                            float cw = bw / 4.0f;
-                            float ch = bh / 4.0f;
-                            
-                            [boxPath moveToPoint:CGPointMake(rect.origin.x, rect.origin.y + ch)];
-                            [boxPath addLineToPoint:CGPointMake(rect.origin.x, rect.origin.y)];
-                            [boxPath addLineToPoint:CGPointMake(rect.origin.x + cw, rect.origin.y)];
-                            [boxPath moveToPoint:CGPointMake(rect.origin.x + bw - cw, rect.origin.y)];
-                            [boxPath addLineToPoint:CGPointMake(rect.origin.x + bw, rect.origin.y)];
-                            [boxPath addLineToPoint:CGPointMake(rect.origin.x + bw, rect.origin.y + ch)];
-                            [boxPath moveToPoint:CGPointMake(rect.origin.x + bw, rect.origin.y + bh - ch)];
-                            [boxPath addLineToPoint:CGPointMake(rect.origin.x + bw, rect.origin.y + bh)];
-                            [boxPath addLineToPoint:CGPointMake(rect.origin.x + bw - cw, rect.origin.y + bh)];
-                            [boxPath moveToPoint:CGPointMake(rect.origin.x + cw, rect.origin.y + bh)];
-                            [boxPath addLineToPoint:CGPointMake(rect.origin.x, rect.origin.y + bh)];
-                            [boxPath addLineToPoint:CGPointMake(rect.origin.x, rect.origin.y + bh - ch)];
-                            
-                            if (esp_box_outline) {
-                                [boxOutlinePath appendPath:boxPath];
-                            }
-                        } else {
-                            [boxPath appendPath:[UIBezierPath bezierPathWithRect:rect]];
-                            if (esp_box_outline) [boxOutlinePath appendPath:[UIBezierPath bezierPathWithRect:rect]];
-                        }
-                    }
-                    
-                    if (drawLines) {
-                        [linesPath moveToPoint:CGPointMake(w / 2.0f, 0)];
-                        [linesPath addLineToPoint:CGPointMake(screenHead.x, screenHead.y)];
-                        if (esp_line_outline) {
-                            [lineOutlinePath moveToPoint:CGPointMake(w / 2.0f, 0)];
-                            [lineOutlinePath addLineToPoint:CGPointMake(screenHead.x, screenHead.y)];
-                        }
-                    }
-
-                    if (esp_name_enabled) {
-                        UILabel *nameLbl = nil;
-                        if (nameLabelIdx < self.nameLabelPool.count) {
-                            nameLbl = self.nameLabelPool[nameLabelIdx];
-                        } else {
-                            nameLbl = [[UILabel alloc] init];
-                            nameLbl.userInteractionEnabled = NO;
-                            [self addSubview:nameLbl];
-                            [self.nameLabelPool addObject:nameLbl];
-                        }
-                        nameLabelIdx++;
-                        
-                        UIImageView *avatarView = nil;
-                        if (esp_avatar_enabled) {
-                            if (avatarIdx < self.avatarPool.count) {
-                                avatarView = self.avatarPool[avatarIdx];
-                            } else {
-                                avatarView = [[UIImageView alloc] init];
-                                avatarView.userInteractionEnabled = NO;
-                                avatarView.layer.cornerRadius = 2.0;
-                                avatarView.clipsToBounds = YES;
-                                [self addSubview:avatarView];
-                                [self.avatarPool addObject:avatarView];
-                            }
-                            avatarIdx++;
-                        }
-
-                        mach_vm_address_t photon_n = Read<mach_vm_address_t>(player + 0x160, so2_task);
-                        NSString *nameStr = @"???";
-                        if (photon_n > 0x1000000) {
-                            mach_vm_address_t namePtr = Read<mach_vm_address_t>(photon_n + 0x20, so2_task);
-                            if (namePtr > 0x1000000) {
-                                int nameLen = Read<int>(namePtr + 0x10, so2_task);
-                                if (nameLen > 0 && nameLen < 32) {
-struct UnityString32 { uint16_t chars[32]; };
-                                    UnityString32 strData = Read<UnityString32>(namePtr + 0x14, so2_task);
-                                    nameStr = [NSString stringWithCharacters:(const unichar *)strData.chars length:nameLen];
-                                }
-                            }
-                        }
-
-                        if (esp_name_outline) {
-                            NSDictionary *attrs = @{
-                                NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightBold],
-                                NSForegroundColorAttributeName: [UIColor whiteColor],
-                                NSStrokeColorAttributeName: [UIColor blackColor],
-                                NSStrokeWidthAttributeName: @(-2.0),
-                            };
-                            nameLbl.attributedText = [[NSAttributedString alloc] initWithString:nameStr attributes:attrs];
-                        } else {
-                            nameLbl.font = [UIFont systemFontOfSize:10 weight:UIFontWeightBold];
-                            nameLbl.text = nameStr;
-                            nameLbl.textColor = [UIColor whiteColor];
-                        }
-
-                        [nameLbl sizeToFit];
-                        
-                        if (esp_avatar_enabled) {
-                            NSData *pfpData = GetPlayerAvatarData(player, so2_task);
-                            if (pfpData) {
-                                UIImage *pfpImg = [UIImage imageWithData:pfpData];
-                                if (pfpImg) {
-                                    avatarView.image = pfpImg;
-                                    float avatarSize = 13.0;
-                                    float totalWidth = nameLbl.frame.size.width + avatarSize + 4;
-                                    
-                                    avatarView.frame = CGRectMake(screenHead.x - totalWidth/2.0f, screenHead.y - 10 - avatarSize/2.0f, avatarSize, avatarSize);
-                                    nameLbl.center = CGPointMake(screenHead.x + (avatarSize+4)/2.0f, screenHead.y - 10);
-                                    avatarView.hidden = NO;
-                                } else {
-                                    avatarView.hidden = YES;
-                                    nameLbl.center = CGPointMake(screenHead.x, screenHead.y - 10);
-                                }
-                            } else {
-                                avatarView.hidden = YES;
-                                nameLbl.center = CGPointMake(screenHead.x, screenHead.y - 10);
-                            }
-                        } else {
-                            nameLbl.center = CGPointMake(screenHead.x, screenHead.y - 10);
-                        }
-                        
-                        nameLbl.hidden = NO;
-                    }
-
-                    int hpVal = GetPlayerHealthAim(player, so2_task);
-                    if (hpVal > 100) hpVal = 100;
-                    if (hpVal < 0) hpVal = 0;
-                    float healthPercent = (float)hpVal / 100.0f;
-                    float barTopY = screenFoot.y - (bh * healthPercent);
-                    float barX = screenHead.x - bw/2.0f - 5;
-
-                    if (esp_health_enabled) {
-                        UILabel *hpLbl = nil;
-                        if (hpLabelIdx < self.healthLabelPool.count) {
-                            hpLbl = self.healthLabelPool[hpLabelIdx];
-                        } else {
-                            hpLbl = [[UILabel alloc] init];
-                            hpLbl.userInteractionEnabled = NO;
-                            [self addSubview:hpLbl];
-                            [self.healthLabelPool addObject:hpLbl];
-                        }
-                        hpLabelIdx++;
-
-                        hpLbl.text = [NSString stringWithFormat:@"%d", hpVal];
-                        hpLbl.font = [UIFont systemFontOfSize:10 weight:UIFontWeightBold];
-                        hpLbl.textColor = [UIColor whiteColor];
-                        [hpLbl sizeToFit];
-                        
-                        float textX = screenHead.x - bw/2.0f - hpLbl.frame.size.width/2.0f - 2;
-                        if (esp_health_bar_enabled) {
-                            textX -= 6; 
-                            hpLbl.center = CGPointMake(textX, barTopY);
-                        } else {
-                            hpLbl.center = CGPointMake(textX, screenHead.y + hpLbl.frame.size.height/2.0f);
-                        }
-                        hpLbl.hidden = NO;
-                    }
-
-                    if (esp_health_bar_enabled) {
-                        float barTopYCalc = screenFoot.y - bh; 
-                        
-                        [healthBarOutlinePath moveToPoint:CGPointMake(barX, screenFoot.y)];
-                        [healthBarOutlinePath addLineToPoint:CGPointMake(barX, barTopYCalc)];
-                        
-                        [healthBarPath moveToPoint:CGPointMake(barX, screenFoot.y)];
-                        [healthBarPath addLineToPoint:CGPointMake(barX, barTopY)];
-                    }
-
-                    if (esp_weapon_enabled || esp_weapon_icon_enabled) {
-                        UILabel *weaponLbl = nil;
-                        if (weaponLabelIdx < self.weaponLabelPool.count) {
-                            weaponLbl = self.weaponLabelPool[weaponLabelIdx];
-                        } else {
-                            weaponLbl = [[UILabel alloc] init];
-                            weaponLbl.userInteractionEnabled = NO;
-                            [self addSubview:weaponLbl];
-                            [self.weaponLabelPool addObject:weaponLbl];
-                        }
-                        weaponLabelIdx++;
-
-                        UIImageView *iconView = nil;
-                        if (weaponIconIdx < self.weaponIconPool.count) {
-                            iconView = self.weaponIconPool[weaponIconIdx];
-                        } else {
-                            iconView = [[UIImageView alloc] init];
-                            iconView.userInteractionEnabled = NO;
-                            iconView.contentMode = UIViewContentModeScaleAspectFit;
-                            [self addSubview:iconView];
-                            [self.weaponIconPool addObject:iconView];
-                        }
-                        weaponIconIdx++;
-
-                        NSString *weaponStr = @"";
-                        mach_vm_address_t wc = Read<mach_vm_address_t>(player + 0x88, so2_task);
-                        if (wc > 0x1000000) {
-                            mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-                            if (ctrl > 0x1000000) {
-                                // v0.39.1: weapon name is a direct string field at WeaponController+0x98
-                                mach_vm_address_t namePtr = Read<mach_vm_address_t>(ctrl + 0x98, so2_task);
-                                if (namePtr > 0x1000000) {
-                                    int nameLen = Read<int>(namePtr + 0x10, so2_task);
-                                    if (nameLen > 0 && nameLen < 32) {
-                                        struct UnityString32 { uint16_t chars[32]; };
-                                        UnityString32 strData = Read<UnityString32>(namePtr + 0x14, so2_task);
-                                        weaponStr = [NSString stringWithCharacters:(const unichar *)strData.chars length:nameLen];
-                                    }
-                                }
-                            }
-                        }
-
-                        if (weaponStr.length > 0) {
-                            NSString *lowerStr = weaponStr.lowercaseString;
-                            UIImage *iconImg = nil;
-                            
-                            // MAPPING
-                            if ([lowerStr containsString:@"akr12"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__akr12 length:sizeof(__akr12)]]; weaponStr = @"AKR12"; }
-                            else if ([lowerStr containsString:@"akr"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__akr length:sizeof(__akr)]]; weaponStr = @"AK-47"; }
-                            else if ([lowerStr containsString:@"famas"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__famas length:sizeof(__famas)]]; weaponStr = @"Famas"; }
-                            else if ([lowerStr containsString:@"fnfal"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__fnfal length:sizeof(__fnfal)]]; weaponStr = @"FNFAL"; }
-                            else if ([lowerStr containsString:@"m16"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__m16 length:sizeof(__m16)]]; weaponStr = @"M16"; }
-                            else if ([lowerStr containsString:@"m4a1"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__m4 length:sizeof(__m4)]]; weaponStr = @"M4A1"; }
-                            else if ([lowerStr containsString:@"m4"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__m4 length:sizeof(__m4)]]; weaponStr = @"M4"; }
-                            else if ([lowerStr containsString:@"val"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__val length:sizeof(__val)]]; weaponStr = @"AS VAL"; }
-                            // Pistols
-                            else if ([lowerStr containsString:@"g22"] || [lowerStr containsString:@"glock"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__g22 length:sizeof(__g22)]]; weaponStr = @"G22"; }
-                            else if ([lowerStr containsString:@"deagle"] || [lowerStr containsString:@"desert"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__desert_eagle length:sizeof(__desert_eagle)]]; weaponStr = @"Deagle"; }
-                            else if ([lowerStr containsString:@"usp"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__usp length:sizeof(__usp)]]; weaponStr = @"USP"; }
-                            else if ([lowerStr containsString:@"p350"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__p350 length:sizeof(__p350)]]; weaponStr = @"P350"; }
-                            else if ([lowerStr containsString:@"tec9"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__tec9 length:sizeof(__tec9)]]; weaponStr = @"TEC-9"; }
-                            else if ([lowerStr containsString:@"five"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__five_seven length:sizeof(__five_seven)]]; weaponStr = @"FS"; }
-                            else if ([lowerStr containsString:@"berettas"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__berettas length:sizeof(__berettas)]]; weaponStr = @"Dual Berettas"; }
-                            // SMGs
-                            else if ([lowerStr containsString:@"mac10"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__mac10 length:sizeof(__mac10)]]; weaponStr = @"MAC-10"; }
-                            else if ([lowerStr containsString:@"mp5"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__mp5 length:sizeof(__mp5)]]; weaponStr = @"MP5"; }
-                            else if ([lowerStr containsString:@"mp7"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__mp7 length:sizeof(__mp7)]]; weaponStr = @"MP7"; }
-                            else if ([lowerStr containsString:@"p90"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__p90 length:sizeof(__p90)]]; weaponStr = @"P90"; }
-                            else if ([lowerStr containsString:@"ump45"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__ump45 length:sizeof(__ump45)]]; weaponStr = @"UMP45"; }
-                            else if ([lowerStr containsString:@"uzi"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__uzi length:sizeof(__uzi)]]; weaponStr = @"UZI"; }
-                            // Snipers
-                            else if ([lowerStr containsString:@"awm"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__awm length:sizeof(__awm)]]; weaponStr = @"AWM"; }
-                            else if ([lowerStr containsString:@"m110"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__m110 length:sizeof(__m110)]]; weaponStr = @"M110"; }
-                            else if ([lowerStr containsString:@"m40"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__m40 length:sizeof(__m40)]]; weaponStr = @"M40"; }
-                            else if ([lowerStr containsString:@"mallard"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__mallard length:sizeof(__mallard)]]; weaponStr = @"Mallard"; }
-                            // Heavy
-                            else if ([lowerStr containsString:@"fabm"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__fabm length:sizeof(__fabm)]]; weaponStr = @"Fabarm"; }
-                            else if ([lowerStr containsString:@"m60"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__m60 length:sizeof(__m60)]]; weaponStr = @"M60"; }
-                            else if ([lowerStr containsString:@"sm1014"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__sm1014 length:sizeof(__sm1014)]]; weaponStr = @"SM1014"; }
-                            else if ([lowerStr containsString:@"spas"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__spas length:sizeof(__spas)]]; weaponStr = @"SPAS-12"; }
-                            // Grenades
-                            else if ([lowerStr containsString:@"flash"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__flash length:sizeof(__flash)]]; weaponStr = @"Flash"; }
-                            else if ([lowerStr containsString:@"he"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__he length:sizeof(__he)]]; weaponStr = @"HE"; }
-                            else if ([lowerStr containsString:@"molotov"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__molotov length:sizeof(__molotov)]]; weaponStr = @"Molotov"; }
-                            else if ([lowerStr containsString:@"smoke"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__smoke length:sizeof(__smoke)]]; weaponStr = @"Smoke"; }
-                            else if ([lowerStr containsString:@"thermite"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__thermite length:sizeof(__thermite)]]; weaponStr = @"Thermite"; }
-                            // Knives   (test)
-                            else if ([lowerStr containsString:@"butterfly"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__butterfly length:sizeof(__butterfly)]]; weaponStr = @"Butterfly"; }
-                            else if ([lowerStr containsString:@"karambit"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__karambit length:sizeof(__karambit)]]; weaponStr = @"Karambit"; }
-                            else if ([lowerStr containsString:@"m9"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__m9bayonet length:sizeof(__m9bayonet)]]; weaponStr = @"M9 Bayonet"; }
-                            else if ([lowerStr containsString:@"tanto"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__tanto length:sizeof(__tanto)]]; weaponStr = @"Tanto"; }
-                            else if ([lowerStr containsString:@"flip"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__flipknife length:sizeof(__flipknife)]]; weaponStr = @"Flip Knife"; }
-                            else if ([lowerStr containsString:@"jkommando"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__jkommando length:sizeof(__jkommando)]]; weaponStr = @"Jkommando"; }
-                            else if ([lowerStr containsString:@"scorpion"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__scorpion length:sizeof(__scorpion)]]; weaponStr = @"Scorpion"; }
-                            else if ([lowerStr containsString:@"stiletto"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__stiletto length:sizeof(__stiletto)]]; weaponStr = @"Stiletto"; }
-                            else if ([lowerStr containsString:@"kukri"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__kukri length:sizeof(__kukri)]]; weaponStr = @"Kukri"; }
-                            else if ([lowerStr containsString:@"kunai"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__kunai length:sizeof(__kunai)]]; weaponStr = @"Kunai"; }
-                            else if ([lowerStr containsString:@"fang"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__fang length:sizeof(__fang)]]; weaponStr = @"Fang"; }
-                            else if ([lowerStr containsString:@"dual"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__dual_daggers length:sizeof(__dual_daggers)]]; weaponStr = @"Dual Daggers"; }
-                            else if ([lowerStr containsString:@"kabar"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__kabar length:sizeof(__kabar)]]; weaponStr = @"Kabar"; }
-                            else if ([lowerStr containsString:@"mantis"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__mantis length:sizeof(__mantis)]]; weaponStr = @"Mantis"; }
-                            else if ([lowerStr containsString:@"sting"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__sting length:sizeof(__sting)]]; weaponStr = @"Sting"; }
-                            else if ([lowerStr containsString:@"knife"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__karambit length:sizeof(__karambit)]]; weaponStr = @"Knife"; } // Default knife icon
-                            // Other
-                            else if ([lowerStr containsString:@"bomb"]) { iconImg = [UIImage imageWithData:[NSData dataWithBytes:__bomb length:sizeof(__bomb)]]; weaponStr = @"BOMB"; }
-
-                            if (esp_weapon_enabled) {
-                                if (esp_name_outline) {
-                                    NSDictionary *attrs = @{
-                                        NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightBold],
-                                        NSForegroundColorAttributeName: [UIColor whiteColor],
-                                        NSStrokeColorAttributeName: [UIColor blackColor],
-                                        NSStrokeWidthAttributeName: @(-2.0),
-                                    };
-                                    weaponLbl.attributedText = [[NSAttributedString alloc] initWithString:weaponStr attributes:attrs];
-                                } else {
-                                    weaponLbl.attributedText = nil;
-                                    weaponLbl.font = [UIFont systemFontOfSize:10 weight:UIFontWeightBold];
-                                    weaponLbl.textColor = [UIColor whiteColor];
-                                    weaponLbl.text = weaponStr;
-                                }
-                                [weaponLbl sizeToFit];
-                                weaponLbl.center = CGPointMake(screenHead.x, screenFoot.y + weaponLbl.frame.size.height/2.0f + 2);
-                                weaponLbl.hidden = NO;
-                            } else {
-                                weaponLbl.hidden = YES;
-                            }
-
-                            if (esp_weapon_icon_enabled && iconImg) {
-                                iconView.image = iconImg;
-                                iconView.frame = CGRectMake(0, 0, 30, 15);
-                                CGFloat yIcon = screenFoot.y + 10;
-                                if (esp_weapon_enabled) {
-                                    yIcon = weaponLbl.center.y + weaponLbl.frame.size.height/2.0f + 10;
-                                }
-                                iconView.center = CGPointMake(screenHead.x, yIcon);
-                                iconView.hidden = NO;
-                            } else {
-                                iconView.hidden = YES;
-                            }
-                        } else {
-                            weaponLbl.hidden = YES;
-                            iconView.hidden = YES;
-                        }
-                    }
-
-                    if (esp_platform_enabled) {
-                        UILabel *plLbl = nil;
-                        if (platformLabelIdx < self.platformLabelPool.count) {
-                            plLbl = self.platformLabelPool[platformLabelIdx];
-                        } else {
-                            plLbl = [[UILabel alloc] init];
-                            plLbl.userInteractionEnabled = NO;
-                            plLbl.font = [UIFont systemFontOfSize:10 weight:UIFontWeightBold];
-                            plLbl.textColor = [UIColor whiteColor];
-                            [self addSubview:plLbl];
-                            [self.platformLabelPool addObject:plLbl];
-                        }
-                        platformLabelIdx++;
-
-                        int platformVal = GetPlayerPlatform(player, so2_task);
-
-                        NSString *plStr = @"Unknown";
-                        if (platformVal == 1) plStr = @"Android";
-                        else if (platformVal == 2) plStr = @"iOS";
-                        
-                        plLbl.text = plStr;
-                        [plLbl sizeToFit];
-                        
-                        plLbl.center = CGPointMake(screenHead.x + bw/2.0f + plLbl.frame.size.width/2.0f + 4, screenHead.y + plLbl.frame.size.height/2.0f);
-                        plLbl.hidden = NO;
-                    }
-                }
-            }
-            self.playerCountLabel.text = [NSString stringWithFormat:@"PastaWare | Players: %d", (int)validPlayers];
-            self.playerCountLabel.hidden = NO;
-            [self.playerCountLabel sizeToFit];
-            free(players);
-
-            [CATransaction begin];
-            [CATransaction setDisableActions:YES];
-            self.espBoxFillLayer.path     = (drawBoxes && esp_box_fill) ? boxFillPath.CGPath : nil;
-            self.espBoxLayer.path         = drawBoxes ? boxPath.CGPath : nil;
-            self.espBoxOutlineLayer.path  = (drawBoxes && esp_box_outline) ? boxOutlinePath.CGPath : nil;
-            self.espLineLayer.path        = drawLines ? linesPath.CGPath : nil;
-            self.espLineOutlineLayer.path = (drawLines && esp_line_outline) ? lineOutlinePath.CGPath : nil;
-            self.espHealthBarLayer.path = esp_health_bar_enabled ? healthBarPath.CGPath : nil;
-            self.espHealthBarOutlineLayer.path = (esp_health_bar_enabled && esp_health_bar_outline) ? healthBarOutlinePath.CGPath : nil;
-            [CATransaction commit];
-            [CATransaction flush];
-
-            [self.watermarkLabel sizeToFit];
-            return;
-        }
-    }
-
-CLEAR_BOXES:
-    [self clearAllBoxes];
-
-    self.playerCountLabel.textColor = [[UIColor greenColor] colorWithAlphaComponent:0.5];
-    self.playerCountLabel.text      = @"PLAYERS: 0";
-    self.playerCountLabel.hidden    = !self.isESPCountEnabled;
-    self.noPlayersLabel.hidden      = YES;
-}
-
-static mach_vm_address_t GetAimBoneOffset(int idx) {
-    switch(idx) {
-        case 0: return 0x20;
-        case 1: return 0x28;
-        case 2: return 0x40;
-        case 3: return 0x88;
-        default: return 0x20;
-    }
-}
-
-static Vector3 GetBonePosition(mach_vm_address_t player, int boneIdx, task_t task) {
-    mach_vm_address_t characterView = Read<mach_vm_address_t>(player + 0x48, task);
-    if (!characterView || characterView < 0x1000000) return {0,0,0};
-    
-    mach_vm_address_t bipedMap = Read<mach_vm_address_t>(characterView + 0x48, task);
-    if (!bipedMap || bipedMap < 0x1000000) return {0,0,0};
-    
-    mach_vm_address_t boneTransform = Read<mach_vm_address_t>(bipedMap + GetAimBoneOffset(boneIdx), task);
-    if (!boneTransform || boneTransform < 0x1000000) return {0,0,0};
-    
-    return get_position_by_transform(boneTransform, task);
-}
-
-static int GetPlayerTeamAim(mach_vm_address_t player, task_t task) {
-    // Direct read: PlayerController+0x79 → team byte (новые офсеты)
-    if (!player || player < 0x1000000) return -1;
-    return (int)Read<uint8_t>(player + 0x79, task);
-}
-
-
-
-
-static NSData* GetPlayerAvatarData(mach_vm_address_t player, task_t task) {
-    if (!player || player < 0x1000000) return nil;
-    mach_vm_address_t photon = Read<mach_vm_address_t>(player + 0x160, task);
-    if (!photon || photon < 0x1000000) return nil;
-    mach_vm_address_t props = Read<mach_vm_address_t>(photon + 0x38, task);
-    if (!props || props < 0x1000000) return nil;
-    int sz = Read<int>(props + 0x20, task);
-    if (sz <= 0 || sz > 64) return nil;
-    mach_vm_address_t entries = Read<mach_vm_address_t>(props + 0x18, task);
-    if (!entries || entries < 0x1000000) return nil;
-    for (int j = 0; j < sz && j < 32; j++) {
-        mach_vm_address_t pk = Read<mach_vm_address_t>(entries + 0x28 + 0x18 * j, task);
-        if (!pk || pk < 0x1000000) continue;
-        int kl = Read<int>(pk + 0x10, task);
-        if (kl == 6) { // "avatar"
-            uint64_t v1 = Read<uint64_t>(pk + 0x14, task); // first 4 chars "avat"
-            if (v1 == 0x0074006100760061ULL) {
-                mach_vm_address_t pv = Read<mach_vm_address_t>(entries + 0x30 + 0x18 * j, task);
-                if (!pv || pv < 0x1000000) continue;
-                int arrLen = Read<int>(pv + 0x18, task);
-                if (arrLen > 0 && arrLen < 500000) {
-                    void* buf = malloc(arrLen);
-                    mach_vm_address_t dataCenter = pv + 0x20;
-                    kern_return_t kr = mach_vm_read_overwrite(task, dataCenter, arrLen, (mach_vm_address_t)buf, (mach_vm_size_t*)&arrLen);
-                    if (kr == KERN_SUCCESS) {
-                        return [NSData dataWithBytesNoCopy:buf length:arrLen freeWhenDone:YES];
-                    }
-                    free(buf);
-                }
-            }
-        }
-    }
-    return nil;
-}
-
-static int GetPlayerPlatform(mach_vm_address_t player, task_t task) {
-    if (!player || player < 0x1000000) return 0;
-    mach_vm_address_t photon = Read<mach_vm_address_t>(player + 0x160, task);
-    if (!photon || photon < 0x1000000) return 0;
-    mach_vm_address_t props = Read<mach_vm_address_t>(photon + 0x38, task);
-    if (!props || props < 0x1000000) return 0;
-    int sz = Read<int>(props + 0x20, task);
-    if (sz <= 0 || sz > 64) return 0;
-    mach_vm_address_t entries = Read<mach_vm_address_t>(props + 0x18, task);
-    if (!entries || entries < 0x1000000) return 0;
-    for (int j = 0; j < sz && j < 32; j++) {
-        mach_vm_address_t pk = Read<mach_vm_address_t>(entries + 0x28 + 0x18 * j, task);
-        if (!pk || pk < 0x1000000) continue;
-        int kl = Read<int>(pk + 0x10, task);
-        if (kl == 2) {
-            uint32_t str_val = Read<uint32_t>(pk + 0x14, task);
-             // "pl" -> p=0x70, l=0x6C -> memory: 70 00 6C 00 -> 0x006C0070
-            if (str_val == 0x006C0070) {
-                mach_vm_address_t pv = Read<mach_vm_address_t>(entries + 0x30 + 0x18 * j, task);
-                if (!pv || pv < 0x1000000) continue;
-                return Read<int>(pv + 0x10, task);
-            }
-        }
-    }
-    return 0;
-}
-
-static int cached_hp_off1 = -1;
-static int cached_hp_off2 = -1;
-static int cached_hp_off3 = -1;
-static int cached_hp_fmt = 0; // 0=SafeInt{bool,key,enc}, 1=SafeInt{key,enc}, 2=plain int
-
-static int GetPlayerHealthAim(mach_vm_address_t player, task_t task) {
-    if (!player || player < 0x1000000) return 0;
-    if (cached_hp_off1 < 0) return 0;
-    mach_vm_address_t sub = Read<mach_vm_address_t>(player + cached_hp_off1, task);
-    if (sub < 0x1000000) return 0;
-    mach_vm_address_t obj = sub;
-    if (cached_hp_off2 >= 0) {
-        obj = Read<mach_vm_address_t>(sub + cached_hp_off2, task);
-        if (obj < 0x1000000) return 0;
-    }
-    if (cached_hp_fmt == 0) {
-        int key = Read<int>(obj + cached_hp_off3 + 4, task);
-        int enc = Read<int>(obj + cached_hp_off3 + 8, task);
-        int hp = key ^ enc;
-        if (hp >= 0 && hp <= 200) return hp;
-    } else if (cached_hp_fmt == 1) {
-        int key = Read<int>(obj + cached_hp_off3, task);
-        int enc = Read<int>(obj + cached_hp_off3 + 4, task);
-        int hp = key ^ enc;
-        if (hp >= 0 && hp <= 200) return hp;
-    } else {
-        int hp = Read<int>(obj + cached_hp_off3, task);
-        if (hp >= 0 && hp <= 200) return hp;
-    }
-    return 0;
-}
-
-static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
-    if (!player || player < 0x1000000) return NO;
-    mach_vm_address_t occ = Read<mach_vm_address_t>(player + 0xB8, task);
-    if (!occ || occ < 0x1000000) return YES;
-    
-    int visState = Read<int>(occ + 0x34, task);
-    int occState = Read<int>(occ + 0x38, task);
-    
-    return (visState == 2 && occState != 1);
-}
-
-
-- (void)applyViewmodelSettings:(mach_vm_address_t)localPlayer task:(task_t)task {
-    if (!localPlayer || localPlayer < 0x1000000) return;
-
-    if (viewmodel_enabled) {
-        mach_vm_address_t armsController = Read<mach_vm_address_t>(localPlayer + 0xA0, task);
-        if (armsController && armsController > 0x1000000) {
-            Vector3 offset = {viewmodel_x / -10.0f, viewmodel_y / -10.0f, viewmodel_z / -10.0f};
-            Write<Vector3>(armsController + 0xE8, offset, task);
-        }
-    }
-}
-
-
-- (void)runAimbot:(mach_vm_address_t)localPlayer
-          players:(mach_vm_address_t)playersList
-            count:(int)count
-        localTeam:(int)localTeam
-             task:(task_t)so2_task
-            width:(CGFloat)w
-           height:(CGFloat)h
-       viewMatrix:(SO2_Matrix)viewMatrix {
-
-    [self applyViewmodelSettings:localPlayer task:so2_task];
-
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-    if (aimbot_fov_visible) {
-        CGPoint center = CGPointMake(w / 2.0f, h / 2.0f);
-        CGFloat radius = aimbot_fov;
-        CGRect circleRect = CGRectMake(center.x - radius, center.y - radius, radius*2, radius*2);
-        UIBezierPath *circlePath = [UIBezierPath bezierPathWithOvalInRect:circleRect];
-        self.fovCircleOutlineLayer.path = circlePath.CGPath;
-        self.fovCircleLayer.path        = circlePath.CGPath;
-        self.fovCircleOutlineLayer.hidden = NO;
-        self.fovCircleLayer.hidden        = NO;
-    } else {
-        self.fovCircleOutlineLayer.hidden = YES;
-        self.fovCircleLayer.hidden        = YES;
-    }
-    [CATransaction commit];
-    [CATransaction flush];
-
-    if (!aimbot_enabled && !aimbot_triggerbot) {
-        self.aimbotCurrentTarget = 0;
-        if (self.triggerbotShooting) {
-            mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-            if (!wc) wc = Read<mach_vm_address_t>(localPlayer + 0x68, so2_task);
-            if (wc > 0x1000000) {
-                mach_vm_address_t wctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-                if (wctrl > 0x1000000) {
-                    Write<bool>(wctrl + 0xC1, false, so2_task); // v0.39.1: IsFiring=false
-                }
-            }
-            self.triggerbotShooting = NO;
-            self.triggerbotLastShotTime = CACurrentMediaTime();
-        }
-        return;
-    }
-    
-    if (aimbot_shooting_check) {
-        mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-        if (!wc) wc = Read<mach_vm_address_t>(localPlayer + 0x68, so2_task);
-        if (wc > 0x1000000) {
-            mach_vm_address_t wctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-            if (wctrl > 0x1000000) {
-                // v0.39.1: IsFiring bool at +0xC1
-                bool isFiring = Read<bool>(wctrl + 0xC1, so2_task);
-                if (!isFiring) {
-                    self.aimbotCurrentTarget = 0;
-                    return;
-                }
-            }
-        }
-    }
-    
-    if (aimbot_knife_bot == NO) {
-        mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-        if (wc > 0x1000000) {
-            mach_vm_address_t wctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-            if (wctrl > 0x1000000) {
-                // v0.39.1: detect melee via SlotIndex byte at WeaponController+0x94 (slot 2 = melee)
-                uint8_t wid = Read<uint8_t>(wctrl + 0x94, so2_task);
-                if (wid == 2) {
-                    self.aimbotCurrentTarget = 0;
-                    return;
-                }
-            }
-        }
-    }
-
-    float cx = w / 2.0f, cy = h / 2.0f;
-    float closestDist = FLT_MAX;
-    mach_vm_address_t closestPlayer = 0;
-    Vector3 closestBonePos = {0,0,0};
-
-    mach_vm_address_t entries = Read<mach_vm_address_t>(playersList + 0x18, so2_task);
-    if (!entries || entries < 0x1000000) return;
-
-    for (int i = 0; i < count && i < 32; i++) {
-        mach_vm_address_t player = Read<mach_vm_address_t>(entries + 0x30 + 0x18 * i, so2_task);
-        if (!player || player < 0x1000000) continue;
-        if (player == localPlayer) continue;
-        
-        int hp = GetPlayerHealthAim(player, so2_task);
-        if (hp <= 0) continue;
-        
-        if (aimbot_team_check && GetPlayerTeamAim(player, so2_task) == localTeam) continue;
-        
-        if (aimbot_visible_check && !IsPlayerVisible(player, so2_task)) continue;
-
-        Vector3 bonePos = GetBonePosition(player, aimbot_bone_index, so2_task);
-        if (bonePos.x == 0 && bonePos.y == 0 && bonePos.z == 0) continue;
-
-        Vector3 sp = WorldToScreen(bonePos, viewMatrix, (int)w, (int)h);
-        if (sp.z <= 0) continue;
-
-        float dx = sp.x - cx, dy = sp.y - cy;
-        float dist2D = sqrtf(dx*dx + dy*dy);
-        if (dist2D > aimbot_fov) continue;
-
-        if (dist2D < closestDist) {
-            closestDist = dist2D;
-            closestPlayer = player;
-            closestBonePos = bonePos;
-        }
-    }
-
-    if (!closestPlayer) {
-        self.aimbotCurrentTarget = 0;
-        if (self.triggerbotShooting) {
-            mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-            if (!wc) wc = Read<mach_vm_address_t>(localPlayer + 0x68, so2_task);
-            if (wc > 0x1000000) {
-                mach_vm_address_t wctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-                if (wctrl > 0x1000000) {
-                    Write<bool>(wctrl + 0xC1, false, so2_task); // v0.39.1: IsFiring=false
-                }
-            }
-            self.triggerbotShooting = NO;
-            self.triggerbotLastShotTime = CACurrentMediaTime();
-        }
-        return;
-    }
-
-    self.aimbotCurrentTarget = closestPlayer;
-
-    mach_vm_address_t aimController = Read<mach_vm_address_t>(localPlayer + 0x80, so2_task);
-    if (!aimController) aimController = Read<mach_vm_address_t>(localPlayer + 0x60, so2_task);
-    if (!aimController || aimController < 0x1000000) return;
-
-    mach_vm_address_t aimingData = Read<mach_vm_address_t>(aimController + 0x90, so2_task);
-    if (!aimingData || aimingData < 0x1000000) return;
-
-    mach_vm_address_t camTransform = Read<mach_vm_address_t>(aimController + 0x80, so2_task);
-    Vector3 cameraPos = {0,0,0};
-    if (camTransform && camTransform > 0x1000000) {
-        cameraPos = get_position_by_transform(camTransform, so2_task);
-    }
-    if (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0) {
-        mach_vm_address_t mv = Read<mach_vm_address_t>(localPlayer + 0x98, so2_task);
-        if (mv > 0x1000000) {
-            mach_vm_address_t md = Read<mach_vm_address_t>(mv + 0xB0, so2_task);
-            if (md > 0x1000000) {
-                cameraPos = Read<Vector3>(md + 0x44, so2_task);
-            }
-        }
-    }
-
-    float currentPitch = Read<float>(aimingData + 0x18, so2_task);
-    float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
-
-    float dirX = closestBonePos.x - cameraPos.x;
-    float dirY = closestBonePos.y - cameraPos.y;
-    float dirZ = closestBonePos.z - cameraPos.z;
-    float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
-    if (dist < 0.0001f) return;
-
-    float targetPitch = -asinf(dirY / dist) * (180.0f / M_PI);
-    float targetYaw   = atan2f(dirX, dirZ) * (180.0f / M_PI);
-
-    float pitchDelta = targetPitch - currentPitch;
-    float yawDelta   = targetYaw - currentYaw;
-    while (yawDelta > 180.0f) yawDelta -= 360.0f;
-    while (yawDelta < -180.0f) yawDelta += 360.0f;
-
-    float newPitch, newYaw;
-
-    if (aimbot_smooth <= 1.0f) {
-        newPitch = fmaxf(-89.0f, fminf(89.0f, targetPitch));
-        newYaw   = targetYaw;
-    } else {
-        float smooth = 1.0f / (1.0f + aimbot_smooth * 0.5f);
-        smooth = fmaxf(0.03f, fminf(smooth, 1.0f));
-        
-        newPitch = fmaxf(-89.0f, fminf(89.0f, currentPitch + pitchDelta * smooth));
-        newYaw   = currentYaw + yawDelta * smooth;
-    }
-
-    double now = CACurrentMediaTime();
-    self.aimbotLastWriteTime = now;
-
-    if (aimbot_enabled) {
-        Write<float>(aimingData + 0x18, newPitch, so2_task);
-        Write<float>(aimingData + 0x1C, newYaw,   so2_task);
-        Write<float>(aimingData + 0x24, newPitch, so2_task);
-        Write<float>(aimingData + 0x28, newYaw,   so2_task);
-    }
-
-    if (aimbot_triggerbot) {
-        if (closestDist > 10.0f) {
-            if (self.triggerbotShooting) {
-                mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-                if (!wc) wc = Read<mach_vm_address_t>(localPlayer + 0x68, so2_task);
-                if (wc > 0x1000000) {
-                    mach_vm_address_t wctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-                    if (wctrl > 0x1000000) {
-                        Write<bool>(wctrl + 0xC1, false, so2_task); // v0.39.1: IsFiring=false
-                    }
-                }
-                self.triggerbotShooting = NO;
-                self.triggerbotLastShotTime = now;
-            }
-            return;
-        }
-
-        mach_vm_address_t wc = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
-        if (!wc) wc = Read<mach_vm_address_t>(localPlayer + 0x68, so2_task);
-        if (!wc || wc < 0x1000000) return;
-        mach_vm_address_t wctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
-        if (!wctrl || wctrl < 0x1000000) return;
-
-        double elapsed = now - self.triggerbotLastShotTime;
-
-        if (!self.triggerbotShooting) {
-            if (elapsed >= aimbot_trigger_delay) {
-                Write<bool>(wctrl + 0xC1, true, so2_task); // v0.39.1: IsFiring=true
-                self.triggerbotShooting = YES;
-                self.triggerbotLastShotTime = now;
-            }
-        } else {
-            if (elapsed >= aimbot_trigger_delay) {
-                Write<bool>(wctrl + 0xC1, false, so2_task); // v0.39.1: IsFiring=false
-                self.triggerbotShooting = NO;
-                self.triggerbotLastShotTime = now;
-            }
-        }
-    }
-}
-
-- (void)launchGame {
-    [[LSApplicationWorkspace defaultWorkspace]
-        openApplicationWithBundleID:@(OBF("com.axlebolt.standoff2"))];
-}
-
-- (void)startBackgroundKeeper {
-    [[AVAudioSession sharedInstance]
-        setCategory:AVAudioSessionCategoryPlayback
-        withOptions:AVAudioSessionCategoryOptionMixWithOthers
-        error:nil];
-    [[AVAudioSession sharedInstance] setActive:YES error:nil];
-    // Use a silent local audio loop to keep the process alive in background
-    // No external URL dependency
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
-        // keepalive ping every 5s — just enough to stay alive
-        while (1) {
-            usleep(5000000);
-        }
-    });
-}
-
-- (void)playerItemDidReachEnd:(NSNotification *)notification {
-    // no-op: local keepalive doesn't use AVPlayer anymore
 }
 
 @end
