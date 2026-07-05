@@ -408,11 +408,9 @@ struct ESPBoxData {
         mach_vm_address_t dict28         = 0;
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
-        static int cached_p_off = -1;
         static int cached_s_off = -1;
         static pid_t cached_chain_pid = 0;
         if (cached_chain_pid != so2_pid) {
-            cached_p_off = -1;
             cached_s_off = -1;
             cached_chain_pid = so2_pid;
         }
@@ -435,42 +433,19 @@ struct ESPBoxData {
             uint64_t cls = get_found_class();
 
             int noff = get_found_name_off(); // 0x10
-            if (cached_p_off >= 0 && cached_s_off >= 0) {
-                uint64_t pt = Read<uint64_t>(cls + cached_p_off, so2_task);
-                if (pt > 0x1000000) {
-                    uint64_t sf = Read<uint64_t>(pt + cached_s_off, so2_task);
+            // Parent (LazySingleton) подтверждён на 0x58
+            uint64_t parentCls = Read<uint64_t>(cls + 0x58, so2_task);
+            if (parentCls > 0x1000000 && (parentCls & 7) == 0) {
+                if (cached_s_off >= 0) {
+                    uint64_t sf = Read<uint64_t>(parentCls + cached_s_off, so2_task);
                     if (sf > 0x1000000) {
                         uint64_t pm = Read<uint64_t>(sf, so2_task);
                         if (pm > 0x1000000) playerManager = pm;
                     }
+                    if (!playerManager) cached_s_off = -1;
                 }
-                if (!playerManager) {
-                    cached_p_off = -1;
-                    cached_s_off = -1;
-                }
-            } else {
-                // Шаг 1: найти parent по имени "LazySingleton" в полях Il2CppClass
-                uint64_t parentCls = 0;
-                int parentOff = -1;
-                char nb[20] = {0};
-                for (int off = 0x20; off <= 0x100; off += 8) {
-                    uint64_t val = Read<uint64_t>(cls + off, so2_task);
-                    if (!val || val < 0x1000000 || (val & 7) != 0) continue;
-                    uint64_t np = Read<uint64_t>(val + noff, so2_task);
-                    if (!np || np < 0x1000000) continue;
-                    memset(nb, 0, 20);
-                    mach_vm_size_t sz = 19;
-                    mach_vm_read_overwrite(so2_task, np, 19, (mach_vm_address_t)nb, &sz);
-                    nb[19] = 0;
-                    if (strstr(nb, "Lazy") || strstr(nb, "Singleton")) {
-                        parentCls = val;
-                        parentOff = off;
-                        break;
-                    }
-                }
-                if (parentCls) {
-                    // Шаг 2: найти static_fields в parent
-                    for (int soff = 0x00; soff <= 0x150 && !playerManager; soff += 8) {
+                if (cached_s_off < 0) {
+                    for (int soff = 0x00; soff <= 0x150; soff += 8) {
                         uint64_t sf = Read<uint64_t>(parentCls + soff, so2_task);
                         if (!sf || sf < 0x1000000 || (sf & 7) != 0) continue;
                         uint64_t pm = Read<uint64_t>(sf, so2_task);
@@ -479,30 +454,23 @@ struct ESPBoxData {
                         if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
                         int cnt = Read<int>(dict + 0x20, so2_task);
                         if (cnt > 0 && cnt <= 32) {
-                            cached_p_off = parentOff;
                             cached_s_off = soff;
                             playerManager = pm;
+                            break;
                         }
                     }
                 }
-                if (!playerManager) {
-                    // Показать все имена классов-полей для дебага
-                    NSMutableString *info = [NSMutableString stringWithString:@"FIELDS:"];
-                    for (int off = 0x20; off <= 0x80; off += 8) {
-                        uint64_t val = Read<uint64_t>(cls + off, so2_task);
-                        if (!val || val < 0x1000000 || (val & 7) != 0) continue;
-                        uint64_t np = Read<uint64_t>(val + noff, so2_task);
-                        if (!np || np < 0x1000000) continue;
-                        memset(nb, 0, 20);
-                        mach_vm_size_t sz = 15;
-                        mach_vm_read_overwrite(so2_task, np, 15, (mach_vm_address_t)nb, &sz);
-                        nb[15] = 0;
-                        if (nb[0] >= 'A' && nb[0] <= 'z' && strlen(nb) > 2) {
-                            [info appendFormat:@" %x=%.10s", off, nb];
-                        }
+            }
+            if (!playerManager) {
+                NSMutableString *dbg = [NSMutableString stringWithFormat:@"noSF p=%llx", parentCls];
+                for (int soff = 0x80; soff <= 0x100; soff += 8) {
+                    uint64_t sf = Read<uint64_t>(parentCls + soff, so2_task);
+                    if (sf > 0x1000000 && (sf & 7) == 0) {
+                        uint64_t pm = Read<uint64_t>(sf, so2_task);
+                        [dbg appendFormat:@" %x=%llx>%llx", soff, sf, pm];
                     }
-                    self.watermarkLabel.text = info;
                 }
+                self.watermarkLabel.text = dbg;
             }
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
