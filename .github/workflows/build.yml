@@ -41,6 +41,9 @@ jobs:
           ln -sfn "$SDK_PATH" "$THEOS/sdks/iPhoneOS${SDK_VER}.sdk"
           echo "SDK_VER=${SDK_VER}" >> $GITHUB_ENV
 
+      - name: Install ldid
+        run: brew install ldid
+
       - name: Build package
         env:
           THEOS: ${{ github.workspace }}/theos
