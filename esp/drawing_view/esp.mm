@@ -472,40 +472,31 @@ struct ESPBoxData {
             }
 
             if (!playerManager) {
-                char nameBuf[64] = {0};
-                // Try double indirection: maybe ti is a pointer TO the real Il2CppClass
-                mach_vm_address_t ti2 = Read<mach_vm_address_t>(ti, so2_task);
-                mach_vm_address_t targets[2] = {ti, ti2};
-                const char *labels[2] = {"ti", "ti2"};
-                NSMutableString *found = [NSMutableString string];
-                for (int t = 0; t < 2; t++) {
-                    mach_vm_address_t tgt = targets[t];
-                    if (!tgt || tgt < 0x1000000) continue;
-                    for (int off = 0x00; off <= 0x60; off += 8) {
-                        mach_vm_address_t ptr = Read<mach_vm_address_t>(tgt + off, so2_task);
-                        if (!ptr || ptr < 0x1000000) continue;
-                        memset(nameBuf, 0, 64);
-                        mach_vm_size_t sz = 63;
-                        kern_return_t kr = mach_vm_read_overwrite(so2_task, ptr, 63, (mach_vm_address_t)nameBuf, &sz);
-                        if (kr != KERN_SUCCESS) continue;
-                        nameBuf[63] = 0;
-                        size_t len = strlen(nameBuf);
-                        if (len >= 2 && len < 60 && ((nameBuf[0] >= 'A' && nameBuf[0] <= 'Z') || (nameBuf[0] >= 'a' && nameBuf[0] <= 'z') || nameBuf[0] == '<')) {
-                            [found appendFormat:@"%s+0x%x=%s ", labels[t], off, nameBuf];
-                            if (found.length > 80) goto done_scan;
-                        }
-                    }
+                // Verify unity_base is correct by reading Mach-O magic
+                uint32_t magic = Read<uint32_t>(unity_base, so2_task);
+                // Show base, magic, ti, and first 4 full pointers at ti
+                uint64_t p0 = Read<uint64_t>(ti + 0x00, so2_task);
+                uint64_t p1 = Read<uint64_t>(ti + 0x08, so2_task);
+                uint64_t p2 = Read<uint64_t>(ti + 0x10, so2_task);
+                uint64_t p3 = Read<uint64_t>(ti + 0x18, so2_task);
+                // Also try reading name at p2 (offset 0x10, standard Il2CppClass.name)
+                char nameBuf[32] = {0};
+                if (p2 > 0x1000000) {
+                    mach_vm_size_t sz = 31;
+                    mach_vm_read_overwrite(so2_task, p2, 31, (mach_vm_address_t)nameBuf, &sz);
+                    nameBuf[31] = 0;
                 }
-                done_scan:
-                if (found.length == 0) {
-                    // Show low16 bits to distinguish pointers + ti2 value
-                    [found appendFormat:@"ti=0x%llx ti2=0x%llx L:", (uint64_t)ti, (uint64_t)ti2];
-                    for (int off = 0x00; off <= 0x58; off += 8) {
-                        uint64_t val = Read<uint64_t>(ti + off, so2_task);
-                        [found appendFormat:@"%04x,", (uint32_t)(val & 0xFFFF)];
-                    }
+                // Show first 8 raw bytes at p2 as hex
+                uint8_t raw[8] = {0};
+                if (p2 > 0x1000000) {
+                    mach_vm_size_t sz = 8;
+                    mach_vm_read_overwrite(so2_task, p2, 8, (mach_vm_address_t)raw, &sz);
                 }
-                self.watermarkLabel.text = found;
+                self.watermarkLabel.text = [NSString stringWithFormat:
+                    @"B=0x%llx M=%08x ti=0x%llx [%llx %llx %llx %llx] r=%02x%02x%02x%02x%02x%02x%02x%02x",
+                    (uint64_t)unity_base, magic, (uint64_t)ti,
+                    p0, p1, p2, p3,
+                    raw[0],raw[1],raw[2],raw[3],raw[4],raw[5],raw[6],raw[7]];
             }
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
