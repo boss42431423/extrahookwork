@@ -408,14 +408,47 @@ struct ESPBoxData {
         mach_vm_address_t dict28         = 0;
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
-        // Wait for background scanner to find PlayerManager Il2CppClass by name
+        // Resolve PlayerManager via Il2CppClass found by background scanner
         {
+            static int cached_sf_off = -1;
+            static int cached_p_off = -1;
+            static int cached_s_off = -1;
+
             int phase = get_scan_phase();
-            if (phase == 2) {
-                uint64_t cls = get_found_class();
-                int noff = get_found_name_off();
-                uint64_t tiOff = s_pm_ti_offset.load();
-                // Пробуем ВСЕ указатели как static_fields (sf→*sf=pm→pm+0x28=dict)
+            if (phase != 2) {
+                if (phase == 1) {
+                    uint64_t prog = get_scan_progress();
+                    uint64_t total = get_scan_total();
+                    self.watermarkLabel.text = [NSString stringWithFormat:
+                        @"SCANNING %llu/%llu...", prog, total];
+                } else if (phase == -1) {
+                    self.watermarkLabel.text = @"NOT FOUND";
+                } else {
+                    self.watermarkLabel.text = @"Waiting...";
+                }
+                goto CLEAR_BOXES;
+            }
+
+            uint64_t cls = get_found_class();
+
+            // Если офсеты уже найдены — быстрый путь
+            if (cached_sf_off >= 0) {
+                uint64_t sf = Read<uint64_t>(cls + cached_sf_off, so2_task);
+                if (sf > 0x1000000) {
+                    uint64_t pm = Read<uint64_t>(sf, so2_task);
+                    if (pm > 0x1000000) playerManager = pm;
+                }
+            } else if (cached_p_off >= 0 && cached_s_off >= 0) {
+                uint64_t pt = Read<uint64_t>(cls + cached_p_off, so2_task);
+                if (pt > 0x1000000) {
+                    uint64_t sf = Read<uint64_t>(pt + cached_s_off, so2_task);
+                    if (sf > 0x1000000) {
+                        uint64_t pm = Read<uint64_t>(sf, so2_task);
+                        if (pm > 0x1000000) playerManager = pm;
+                    }
+                }
+            } else {
+                // Первый раз — найти путь к static_fields
                 for (int off = 0x00; off <= 0x150 && !playerManager; off += 8) {
                     uint64_t val = Read<uint64_t>(cls + off, so2_task);
                     if (!val || val < 0x1000000 || (val & 7) != 0) continue;
@@ -425,12 +458,10 @@ struct ESPBoxData {
                     if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
                     int cnt = Read<int>(dict + 0x20, so2_task);
                     if (cnt > 0 && cnt <= 32) {
-                        playerManager = pm; playersDict = dict; playersCount = cnt;
-                        self.watermarkLabel.text = [NSString stringWithFormat:
-                            @"OK sf+%x cnt=%d", off, cnt];
+                        cached_sf_off = off;
+                        playerManager = pm;
                     }
                 }
-                // Через parent
                 for (int poff = 0x20; poff <= 0x100 && !playerManager; poff += 8) {
                     uint64_t pt = Read<uint64_t>(cls + poff, so2_task);
                     if (!pt || pt < 0x1000000 || (pt & 7) != 0) continue;
@@ -443,71 +474,15 @@ struct ESPBoxData {
                         if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
                         int cnt = Read<int>(dict + 0x20, so2_task);
                         if (cnt > 0 && cnt <= 32) {
-                            playerManager = pm; playersDict = dict; playersCount = cnt;
-                            self.watermarkLabel.text = [NSString stringWithFormat:
-                                @"OK p+%x s+%x cnt=%d", poff, soff, cnt];
+                            cached_p_off = poff;
+                            cached_s_off = soff;
+                            playerManager = pm;
                         }
                     }
                 }
-                if (!playerManager) {
-                    // Показать имена классов-полей (до 5шт)
-                    NSMutableString *info = [NSMutableString stringWithFormat:@"%llu:", tiOff];
-                    int shown = 0;
-                    for (int off = 0x00; off <= 0x100 && shown < 5; off += 8) {
-                        uint64_t val = Read<uint64_t>(cls + off, so2_task);
-                        if (!val || val < 0x1000000 || (val & 7) != 0) continue;
-                        uint64_t np = Read<uint64_t>(val + noff, so2_task);
-                        if (np > 0x1000000) {
-                            char nb[16] = {0};
-                            mach_vm_size_t sz = 15;
-                            mach_vm_read_overwrite(so2_task, np, 15, (mach_vm_address_t)nb, &sz);
-                            nb[15] = 0;
-                            if (nb[0] >= 'A' && nb[0] <= 'z' && strlen(nb) > 2) {
-                                [info appendFormat:@"%x=%.8s ", off, nb];
-                                shown++;
-                            }
-                        }
-                    }
-                    self.watermarkLabel.text = info;
-                }
-            } else if (phase == 1) {
-                uint64_t prog = get_scan_progress();
-                uint64_t total = get_scan_total();
-                self.watermarkLabel.text = [NSString stringWithFormat:
-                    @"SCANNING %llu/%llu for PlayerManager...", prog, total];
-            } else if (phase == -1) {
-                self.watermarkLabel.text = @"NOT FOUND in 600MB scan";
-            } else {
-                self.watermarkLabel.text = @"Waiting for scanner...";
             }
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
-
-        // Auto-find dict offset
-        {
-            int foundOff = -1;
-            int foundCnt = 0;
-            mach_vm_address_t foundDict = 0;
-            for (int off = 0x20; off <= 0x78; off += 8) {
-                mach_vm_address_t d = Read<mach_vm_address_t>(playerManager + off, so2_task);
-                if (d < 0x1000000 || (d & 7) != 0) continue;
-                int cnt = Read<int>(d + 0x20, so2_task);
-                if (cnt > 0 && cnt <= 32) {
-                    foundOff = off;
-                    foundCnt = cnt;
-                    foundDict = d;
-                    break;
-                }
-            }
-            mach_vm_address_t lp68 = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
-            mach_vm_address_t lp70 = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
-            mach_vm_address_t lp78 = Read<mach_vm_address_t>(playerManager + 0x78, so2_task);
-            mach_vm_address_t lp80 = Read<mach_vm_address_t>(playerManager + 0x80, so2_task);
-            self.watermarkLabel.text = [NSString stringWithFormat:
-                @"SCAN: off=0x%x cnt=%d dict=0x%llx lp68=0x%llx lp70=0x%llx lp78=0x%llx lp80=0x%llx",
-                foundOff, foundCnt, (uint64_t)foundDict,
-                (uint64_t)lp68, (uint64_t)lp70, (uint64_t)lp78, (uint64_t)lp80];
-        }
 
         dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
         playersDict = dict28;
