@@ -437,8 +437,6 @@ struct ESPBoxData {
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
 
-        self.watermarkLabel.text = [NSString stringWithFormat:@"DBG OK: pm=0x%llx off=%llu", (uint64_t)playerManager, s_pm_ti_offset.load()];
-
         dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
         playersDict = dict28;
 
@@ -449,6 +447,8 @@ struct ESPBoxData {
         if      (c20 > 0 && c20 <= 32) playersCount = c20;
         else if (c40 > 0 && c40 <= 32) playersCount = c40;
         else if (c18 > 0 && c18 <= 32) playersCount = c18;
+
+        self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: dict=0x%llx c18=%d c20=%d c40=%d cnt=%d", (uint64_t)dict28, c18, c20, c40, playersCount];
 
         if (playersCount > 0 && playersCount <= 32) {
             mach_vm_address_t localPlayer = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
