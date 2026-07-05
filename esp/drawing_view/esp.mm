@@ -472,43 +472,33 @@ struct ESPBoxData {
             }
 
             if (!playerManager) {
-                // Try to read class name from Il2CppClass to verify ti is correct
-                // Il2CppClass.name is typically at offset 0x10 (pointer to C string)
+                // Scan ALL offsets 0x00..0x60 for a char* that looks like a class name
                 char nameBuf[64] = {0};
-                mach_vm_address_t namePtr = 0;
-                // Try name at multiple offsets (varies by Il2Cpp version)
-                int nameOffs[] = {0x10, 0x08, 0x18, 0x20};
-                NSString *className = @"?";
-                for (int ni = 0; ni < 4; ni++) {
-                    namePtr = Read<mach_vm_address_t>(ti + nameOffs[ni], so2_task);
-                    if (namePtr > 0x1000000) {
-                        mach_vm_size_t sz = 63;
-                        mach_vm_read_overwrite(so2_task, namePtr, 63, (mach_vm_address_t)nameBuf, &sz);
-                        nameBuf[63] = 0;
-                        if (nameBuf[0] >= 'A' && nameBuf[0] <= 'Z' && strlen(nameBuf) > 3 && strlen(nameBuf) < 60) {
-                            className = [NSString stringWithFormat:@"+0x%x:%s", nameOffs[ni], nameBuf];
-                            break;
-                        }
+                NSMutableString *found = [NSMutableString stringWithFormat:@"ti=0x%llx ", (uint64_t)ti];
+                int strCount = 0;
+                for (int off = 0x00; off <= 0x60 && strCount < 4; off += 8) {
+                    mach_vm_address_t ptr = Read<mach_vm_address_t>(ti + off, so2_task);
+                    if (!ptr || ptr < 0x1000000) continue;
+                    memset(nameBuf, 0, 64);
+                    mach_vm_size_t sz = 63;
+                    kern_return_t kr = mach_vm_read_overwrite(so2_task, ptr, 63, (mach_vm_address_t)nameBuf, &sz);
+                    if (kr != KERN_SUCCESS) continue;
+                    nameBuf[63] = 0;
+                    size_t len = strlen(nameBuf);
+                    if (len >= 3 && len < 60 && nameBuf[0] >= 'A' && nameBuf[0] <= 'z') {
+                        [found appendFormat:@"0x%x=%s ", off, nameBuf];
+                        strCount++;
                     }
                 }
-                // Also read parent class name via ti+0x58
-                mach_vm_address_t pt58 = Read<mach_vm_address_t>(ti + 0x58, so2_task);
-                NSString *parentName = @"?";
-                if (pt58 > 0x1000000) {
-                    for (int ni = 0; ni < 4; ni++) {
-                        namePtr = Read<mach_vm_address_t>(pt58 + nameOffs[ni], so2_task);
-                        if (namePtr > 0x1000000) {
-                            mach_vm_size_t sz = 63;
-                            mach_vm_read_overwrite(so2_task, namePtr, 63, (mach_vm_address_t)nameBuf, &sz);
-                            nameBuf[63] = 0;
-                            if (nameBuf[0] >= 'A' && nameBuf[0] <= 'Z' && strlen(nameBuf) > 3 && strlen(nameBuf) < 60) {
-                                parentName = [NSString stringWithFormat:@"+0x%x:%s", nameOffs[ni], nameBuf];
-                                break;
-                            }
-                        }
+                if (strCount == 0) {
+                    // Dump raw hex of first 12 pointers so we can see structure
+                    [found appendString:@"RAW:"];
+                    for (int off = 0x00; off <= 0x58; off += 8) {
+                        uint64_t val = Read<uint64_t>(ti + off, so2_task);
+                        [found appendFormat:@"%x,", (uint32_t)(val >> 32)];
                     }
                 }
-                self.watermarkLabel.text = [NSString stringWithFormat:@"NOPE cls=%@ parent=%@ ti=0x%llx", className, parentName, (uint64_t)ti];
+                self.watermarkLabel.text = found;
             }
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
