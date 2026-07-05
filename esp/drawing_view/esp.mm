@@ -917,10 +917,22 @@ struct ESPBoxData {
                 if (pos.x == 0 && pos.y == 0 && pos.z == 0) continue;
 
                 if (validPlayers == 0 && i < 3) {
-                    int dbgHp = GetPlayerHealthAim(player, so2_task);
-                    self.watermarkLabel.text = [NSString stringWithFormat:
-                        @"hp=%d off=%x fmt=%d cnt=%d",
-                        dbgHp, cached_hp_off, cached_hp_fmt, playersCount];
+                    // Дамп памяти PlayerController: показать все int и SafeInt значения 1-200
+                    NSMutableString *dump = [NSMutableString stringWithString:@"PC:"];
+                    for (int doff = 0x60; doff <= 0xE0; doff += 4) {
+                        int iv = Read<int>(player + doff, task);
+                        if (iv >= 1 && iv <= 200) {
+                            [dump appendFormat:@" %x=%d", doff, iv];
+                        }
+                        // SafeInt: key at doff, enc at doff+4
+                        int key = Read<int>(player + doff, task);
+                        int enc = Read<int>(player + doff + 4, task);
+                        int si = key ^ enc;
+                        if (si >= 1 && si <= 200 && si != iv && key != 0) {
+                            [dump appendFormat:@" %x^%d", doff, si];
+                        }
+                    }
+                    self.watermarkLabel.text = dump;
                 }
 
                 Vector3 screenFoot = WorldToScreen(pos, viewMatrix, w, h);
