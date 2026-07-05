@@ -917,16 +917,10 @@ struct ESPBoxData {
                 if (pos.x == 0 && pos.y == 0 && pos.z == 0) continue;
 
                 if (validPlayers == 0 && i < 3) {
-                    if (matrixFound && cam_off_cache >= 0) {
-                        self.watermarkLabel.text = [NSString stringWithFormat:
-                            @"CAM %x>%x>%x>%x d=%.1f,%.1f,%.1f",
-                            cam_off_cache, cam_p1_cache, cam_p2_cache, cam_m_cache,
-                            (double)viewMatrix.m11, (double)viewMatrix.m22, (double)viewMatrix.m33];
-                    } else {
-                        self.watermarkLabel.text = [NSString stringWithFormat:
-                            @"noCAM p=%.1f,%.1f,%.1f",
-                            (double)pos.x, (double)pos.y, (double)pos.z];
-                    }
+                    int dbgHp = GetPlayerHealthAim(player, so2_task);
+                    self.watermarkLabel.text = [NSString stringWithFormat:
+                        @"hp=%d hpOff=%x cnt=%d",
+                        dbgHp, cached_hp_off, playersCount];
                 }
 
                 Vector3 screenFoot = WorldToScreen(pos, viewMatrix, w, h);
@@ -1450,13 +1444,40 @@ static int GetPlayerPlatform(mach_vm_address_t player, task_t task) {
     return 0;
 }
 
+static int cached_hp_off = -1;
+
 static int GetPlayerHealthAim(mach_vm_address_t player, task_t task) {
-    // Direct read: PlayerController+0x7C → float Health (новые офсеты)
     if (!player || player < 0x1000000) return 0;
-    float hp = Read<float>(player + 0x7C, task);
-    if (hp < 0.0f) hp = 0.0f;
-    if (hp > 100.0f) hp = 100.0f;
-    return (int)hp;
+
+    // SafeInt: {bool hasValue; int key; int encValue;} → value = key ^ encValue
+    // Пробуем кэшированный оффсет
+    if (cached_hp_off >= 0) {
+        bool has = Read<bool>(player + cached_hp_off, task);
+        if (has) {
+            int key = Read<int>(player + cached_hp_off + 4, task);
+            int enc = Read<int>(player + cached_hp_off + 8, task);
+            int hp = key ^ enc;
+            if (hp >= 0 && hp <= 100) return hp;
+        }
+        // Также пробуем plain int на случай если оффсет верный но формат другой
+        int plain = Read<int>(player + cached_hp_off + 4, task);
+        if (plain > 0 && plain <= 100) return plain;
+        return 0;
+    }
+
+    // Скан: ищем SafeInt с HP в диапазоне 1-100
+    for (int off = 0x60; off <= 0xC0; off += 4) {
+        bool has = Read<bool>(player + off, task);
+        if (!has) continue;
+        int key = Read<int>(player + off + 4, task);
+        int enc = Read<int>(player + off + 8, task);
+        int hp = key ^ enc;
+        if (hp >= 1 && hp <= 100) {
+            cached_hp_off = off;
+            return hp;
+        }
+    }
+    return 0;
 }
 
 static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
