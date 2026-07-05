@@ -410,11 +410,15 @@ struct ESPBoxData {
 
         static int cached_s_off = -1;
         static int cached_s_src = -1; // 0=parent, 1=cls
+        static int cached_s_deref = 0; // 0=direct *sf, 1=*((*sf)+0x10)
         static pid_t cached_chain_pid = 0;
+        static int dbg_frame = 0;
         if (cached_chain_pid != so2_pid) {
             cached_s_off = -1;
             cached_s_src = -1;
+            cached_s_deref = 0;
             cached_chain_pid = so2_pid;
+            dbg_frame = 0;
         }
         {
             int phase = get_scan_phase();
@@ -434,49 +438,101 @@ struct ESPBoxData {
             uint64_t parentCls = Read<uint64_t>(cls + 0x58, so2_task);
             uint64_t targets[2] = { parentCls, cls };
 
+            // Быстрый путь: используем кэшированный оффсет
             if (cached_s_off >= 0 && cached_s_src >= 0) {
                 uint64_t base = targets[cached_s_src];
                 if (base > 0x1000000) {
                     uint64_t sf = Read<uint64_t>(base + cached_s_off, so2_task);
                     if (sf > 0x1000000) {
-                        uint64_t pm = Read<uint64_t>(sf, so2_task);
+                        uint64_t pm = 0;
+                        if (cached_s_deref == 0) {
+                            pm = Read<uint64_t>(sf, so2_task);
+                        } else {
+                            uint64_t mbref = Read<uint64_t>(sf, so2_task);
+                            if (mbref > 0x1000000)
+                                pm = Read<uint64_t>(mbref + 0x10, so2_task);
+                        }
                         if (pm > 0x1000000) playerManager = pm;
                     }
                 }
             }
 
+            // Полный скан: ищем static_fields в parent и cls
             if (!playerManager && cached_s_off < 0) {
                 for (int src = 0; src < 2 && !playerManager; src++) {
                     uint64_t base = targets[src];
                     if (!base || base < 0x1000000 || (base & 7) != 0) continue;
-                    for (int soff = 0x00; soff <= 0x150; soff += 8) {
+                    for (int soff = 0x00; soff <= 0x200; soff += 8) {
                         uint64_t sf = Read<uint64_t>(base + soff, so2_task);
                         if (!sf || sf < 0x1000000 || (sf & 7) != 0) continue;
+
+                        // Путь A: *sf = PM напрямую
                         uint64_t pm = Read<uint64_t>(sf, so2_task);
-                        if (!pm || pm < 0x1000000 || (pm & 7) != 0) continue;
-                        uint64_t dict = Read<uint64_t>(pm + 0x28, so2_task);
-                        if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
-                        int cnt = Read<int>(dict + 0x20, so2_task);
-                        if (cnt > 0 && cnt <= 32) {
-                            cached_s_off = soff;
-                            cached_s_src = src;
-                            playerManager = pm;
-                            break;
+                        if (pm > 0x1000000 && (pm & 7) == 0) {
+                            uint64_t dict = Read<uint64_t>(pm + 0x28, so2_task);
+                            if (dict > 0x1000000 && (dict & 7) == 0) {
+                                int cnt = Read<int>(dict + 0x20, so2_task);
+                                if (cnt >= 0 && cnt <= 32) {
+                                    cached_s_off = soff;
+                                    cached_s_src = src;
+                                    cached_s_deref = 0;
+                                    playerManager = pm;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Путь B: *sf = MonoBehaviourRef, *(mbref+0x10) = PM
+                        if (pm > 0x1000000 && (pm & 7) == 0) {
+                            for (int moff = 0x08; moff <= 0x18; moff += 8) {
+                                uint64_t pm2 = Read<uint64_t>(pm + moff, so2_task);
+                                if (!pm2 || pm2 < 0x1000000 || (pm2 & 7) != 0) continue;
+                                uint64_t dict = Read<uint64_t>(pm2 + 0x28, so2_task);
+                                if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
+                                int cnt = Read<int>(dict + 0x20, so2_task);
+                                if (cnt >= 0 && cnt <= 32) {
+                                    cached_s_off = soff;
+                                    cached_s_src = src;
+                                    cached_s_deref = 1;
+                                    playerManager = pm2;
+                                    break;
+                                }
+                            }
+                            if (playerManager) break;
                         }
                     }
                 }
             }
 
+            dbg_frame++;
             if (!playerManager) {
                 if (cached_s_off >= 0) {
-                    uint64_t base = targets[cached_s_src];
-                    uint64_t sf = Read<uint64_t>(base + cached_s_off, so2_task);
-                    uint64_t pm = sf > 0x1000000 ? Read<uint64_t>(sf, so2_task) : 0;
                     self.watermarkLabel.text = [NSString stringWithFormat:
-                        @"s%d:%x sf=%llx pm=%llx (wait)", cached_s_src, cached_s_off, sf, pm];
+                        @"s%d:%x d%d (wait)", cached_s_src, cached_s_off, cached_s_deref];
+                } else if (dbg_frame <= 3) {
+                    // Первые 3 кадра — дамп parent для диагностики
+                    NSMutableString *dbg = [NSMutableString stringWithFormat:@"PAR=%llx:", parentCls];
+                    if (parentCls > 0x1000000 && (parentCls & 7) == 0) {
+                        for (int soff = 0xB0; soff <= 0x100; soff += 8) {
+                            uint64_t v = Read<uint64_t>(parentCls + soff, so2_task);
+                            if (v > 0x1000000) {
+                                uint64_t v2 = Read<uint64_t>(v, so2_task);
+                                [dbg appendFormat:@" %x>%llx>%llx", soff, v, v2];
+                            }
+                        }
+                    }
+                    [dbg appendFormat:@" CLS:"];
+                    for (int soff = 0xB0; soff <= 0x100; soff += 8) {
+                        uint64_t v = Read<uint64_t>(cls + soff, so2_task);
+                        if (v > 0x1000000) {
+                            uint64_t v2 = Read<uint64_t>(v, so2_task);
+                            [dbg appendFormat:@" %x>%llx>%llx", soff, v, v2];
+                        }
+                    }
+                    self.watermarkLabel.text = dbg;
                 } else {
-                    self.watermarkLabel.text = [NSString stringWithFormat:
-                        @"noSF cls=%llx par=%llx", cls, parentCls];
+                    self.watermarkLabel.text = @"noSF (scan every frame)";
+                    cached_s_off = -1; // keep trying
                 }
             }
         }
