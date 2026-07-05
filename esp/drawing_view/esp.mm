@@ -408,36 +408,59 @@ struct ESPBoxData {
         mach_vm_address_t dict28         = 0;
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
-        // Resolve PlayerManager via IL2CPP type chain: unity_base + typeInfoOffset -> parentTypeInfo -> staticFields -> playerManager
-        // s_pm_ti_offset is updated in background by the auto-scanner when the old offset is wrong
+        // Full chain debug: try multiple parent/static_fields offsets
         {
             uint64_t dbg_off = s_pm_ti_offset.load();
             mach_vm_address_t ti = Read<mach_vm_address_t>(unity_base + dbg_off, so2_task);
-            if (ti && ti >= 0x1000000) {
-                mach_vm_address_t pt = Read<mach_vm_address_t>(ti + 0x58, so2_task);
-                if (pt && pt >= 0x1000000) {
-                    mach_vm_address_t sf = Read<mach_vm_address_t>(pt + 0xB8, so2_task);
-                    if (!sf || sf < 0x1000000)
-                        sf = Read<mach_vm_address_t>(pt + 0xB0, so2_task);
-                    if (sf && sf >= 0x1000000) {
-                        mach_vm_address_t pm = Read<mach_vm_address_t>(sf + 0x0, so2_task);
-                        if (pm && pm >= 0x1000000)
+            if (!ti || ti < 0x1000000) {
+                self.watermarkLabel.text = [NSString stringWithFormat:@"FAIL: ti=0x%llx", (uint64_t)ti];
+                goto CLEAR_BOXES;
+            }
+
+            // Try parent at multiple offsets
+            mach_vm_address_t pt58 = Read<mach_vm_address_t>(ti + 0x58, so2_task);
+            mach_vm_address_t pt60 = Read<mach_vm_address_t>(ti + 0x60, so2_task);
+            mach_vm_address_t pt48 = Read<mach_vm_address_t>(ti + 0x48, so2_task);
+            mach_vm_address_t pt50 = Read<mach_vm_address_t>(ti + 0x50, so2_task);
+
+            // For each candidate parent, try static_fields at multiple offsets
+            mach_vm_address_t candidates[] = {pt48, pt50, pt58, pt60};
+            int parentOffs[] = {0x48, 0x50, 0x58, 0x60};
+            int sfOffs[] = {0xA8, 0xB0, 0xB8, 0xC0, 0xC8};
+
+            for (int pi = 0; pi < 4 && !playerManager; pi++) {
+                mach_vm_address_t pt = candidates[pi];
+                if (!pt || pt < 0x1000000) continue;
+                for (int si = 0; si < 5 && !playerManager; si++) {
+                    mach_vm_address_t sf = Read<mach_vm_address_t>(pt + sfOffs[si], so2_task);
+                    if (!sf || sf < 0x1000000) continue;
+                    mach_vm_address_t pm = Read<mach_vm_address_t>(sf, so2_task);
+                    if (!pm || pm < 0x1000000) continue;
+                    // Validate: pm should have a valid dict with player count 1-32
+                    for (int d = 0x20; d <= 0x50; d += 8) {
+                        mach_vm_address_t dict = Read<mach_vm_address_t>(pm + d, so2_task);
+                        if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
+                        int cnt = Read<int>(dict + 0x20, so2_task);
+                        if (cnt > 0 && cnt <= 32) {
                             playerManager = pm;
-                        else
-                            self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: pm=0x%llx", (uint64_t)pm];
-                    } else {
-                        self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: sf=0x%llx (B8=0x%llx B0=0x%llx)", (uint64_t)sf, (uint64_t)Read<mach_vm_address_t>(pt + 0xB8, so2_task), (uint64_t)Read<mach_vm_address_t>(pt + 0xB0, so2_task)];
+                            self.watermarkLabel.text = [NSString stringWithFormat:
+                                @"FOUND! parent+0x%x sf+0x%x dict+0x%x cnt=%d pm=0x%llx",
+                                parentOffs[pi], sfOffs[si], d, cnt, (uint64_t)pm];
+                            break;
+                        }
                     }
-                } else {
-                    self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: pt=0x%llx (ti+0x58)", (uint64_t)pt];
                 }
-            } else {
-                self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: ti=0x%llx off=%llu base=0x%llx task=%u", (uint64_t)ti, dbg_off, (uint64_t)unity_base, so2_task];
+            }
+
+            if (!playerManager) {
+                self.watermarkLabel.text = [NSString stringWithFormat:
+                    @"NOPE ti=0x%llx p48=0x%llx p50=0x%llx p58=0x%llx p60=0x%llx",
+                    (uint64_t)ti, (uint64_t)pt48, (uint64_t)pt50, (uint64_t)pt58, (uint64_t)pt60];
             }
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
 
-        // Auto-scan PM offsets 0x20..0x78 for a valid Dictionary<int,PlayerController>
+        // Auto-find dict offset
         {
             int foundOff = -1;
             int foundCnt = 0;
