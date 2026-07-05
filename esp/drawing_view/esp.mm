@@ -778,6 +778,8 @@ struct ESPBoxData {
             SO2_Matrix viewMatrix = {0};
             bool matrixFound = false;
             static int cam_bad_frames = 0;
+            // Глобально запомненные оффсеты (переживают сброс cam_off_cache)
+            static int last_good_cam = -1, last_good_p1 = -1, last_good_p2 = -1, last_good_m = -1;
 
             // Быстрый путь: кэшированная цепочка + валидация
             if (localPlayer > 0x1000000 && cam_off_cache >= 0) {
@@ -793,6 +795,10 @@ struct ESPBoxData {
                                 viewMatrix = m;
                                 matrixFound = true;
                                 cam_bad_frames = 0;
+                                last_good_cam = cam_off_cache;
+                                last_good_p1 = cam_p1_cache;
+                                last_good_p2 = cam_p2_cache;
+                                last_good_m = cam_m_cache;
                             }
                         }
                     }
@@ -802,6 +808,29 @@ struct ESPBoxData {
                     if (cam_bad_frames > 10) {
                         cam_off_cache = -1;
                         cam_bad_frames = 0;
+                    }
+                }
+            }
+
+            // После сброса: сразу попробовать последние рабочие оффсеты (без полного перебора)
+            if (localPlayer > 0x1000000 && cam_off_cache < 0 && last_good_cam >= 0 && !matrixFound) {
+                mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + last_good_cam, so2_task);
+                if (v1 > 0x1000000) {
+                    mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + last_good_p1, so2_task);
+                    if (v2 > 0x1000000) {
+                        mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + last_good_p2, so2_task);
+                        if (v3 > 0x1000000) {
+                            SO2_Matrix m = Read<SO2_Matrix>(v3 + last_good_m, so2_task);
+                            if (fabsf(m.m11) > 0.01f && fabsf(m.m22) > 0.01f && fabsf(m.m33) > 0.01f &&
+                                fabsf(m.m11) < 10.0f && fabsf(m.m22) < 10.0f && fabsf(m.m33) < 10.0f) {
+                                viewMatrix = m;
+                                matrixFound = true;
+                                cam_off_cache = last_good_cam;
+                                cam_p1_cache = last_good_p1;
+                                cam_p2_cache = last_good_p2;
+                                cam_m_cache = last_good_m;
+                            }
+                        }
                     }
                 }
             }
