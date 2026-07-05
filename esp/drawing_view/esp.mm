@@ -437,16 +437,30 @@ struct ESPBoxData {
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
 
-        // Dump first 12 pointers from PlayerManager to find actual field layout
+        // Auto-scan PM offsets 0x20..0x78 for a valid Dictionary<int,PlayerController>
         {
-            mach_vm_address_t p[12];
-            for (int i = 0; i < 12; i++)
-                p[i] = Read<mach_vm_address_t>(playerManager + i * 8, so2_task);
+            int foundOff = -1;
+            int foundCnt = 0;
+            mach_vm_address_t foundDict = 0;
+            for (int off = 0x20; off <= 0x78; off += 8) {
+                mach_vm_address_t d = Read<mach_vm_address_t>(playerManager + off, so2_task);
+                if (d < 0x1000000 || (d & 7) != 0) continue;
+                int cnt = Read<int>(d + 0x20, so2_task);
+                if (cnt > 0 && cnt <= 32) {
+                    foundOff = off;
+                    foundCnt = cnt;
+                    foundDict = d;
+                    break;
+                }
+            }
+            mach_vm_address_t lp68 = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
+            mach_vm_address_t lp70 = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
+            mach_vm_address_t lp78 = Read<mach_vm_address_t>(playerManager + 0x78, so2_task);
+            mach_vm_address_t lp80 = Read<mach_vm_address_t>(playerManager + 0x80, so2_task);
             self.watermarkLabel.text = [NSString stringWithFormat:
-                @"PM: 0:%llx 8:%llx 10:%llx 18:%llx 20:%llx 28:%llx 30:%llx 38:%llx 40:%llx 48:%llx 50:%llx 58:%llx",
-                (uint64_t)p[0], (uint64_t)p[1], (uint64_t)p[2], (uint64_t)p[3],
-                (uint64_t)p[4], (uint64_t)p[5], (uint64_t)p[6], (uint64_t)p[7],
-                (uint64_t)p[8], (uint64_t)p[9], (uint64_t)p[10], (uint64_t)p[11]];
+                @"SCAN: off=0x%x cnt=%d dict=0x%llx lp68=0x%llx lp70=0x%llx lp78=0x%llx lp80=0x%llx",
+                foundOff, foundCnt, (uint64_t)foundDict,
+                (uint64_t)lp68, (uint64_t)lp70, (uint64_t)lp78, (uint64_t)lp80];
         }
 
         dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
