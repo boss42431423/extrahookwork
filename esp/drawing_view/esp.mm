@@ -933,6 +933,8 @@ struct ESPBoxData {
                 return;
             }
 
+            self.watermarkLabel.text = @"t.me/projectios";
+
             int validPlayers = 0;
             CGFloat w = self.bounds.size.width;
             CGFloat h = self.bounds.size.height;
