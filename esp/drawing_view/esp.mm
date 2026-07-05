@@ -375,12 +375,21 @@ struct ESPBoxData {
         s_pm_scanned_pid = 0;
     }
 
-    // Launch background scanner once per game process to find correct PlayerManager typeInfo offset
-    if (cached_unity_base && cached_so2_task &&
-        !s_pm_scanning && s_pm_scanned_pid != so2_pid) {
-
+    // Launch background scanner — retry every 5 sec if failed
+    static double s_last_scan_time = 0;
+    bool shouldScan = false;
+    if (cached_unity_base && cached_so2_task && !s_pm_scanning) {
+        if (s_pm_scanned_pid != so2_pid) {
+            shouldScan = true;
+        } else if (get_scan_phase() == -1) {
+            double now = CACurrentMediaTime();
+            if (now - s_last_scan_time > 5.0) shouldScan = true;
+        }
+    }
+    if (shouldScan) {
         s_pm_scanning    = true;
         s_pm_scanned_pid = so2_pid;
+        s_last_scan_time = CACurrentMediaTime();
         task_t           scan_task = cached_so2_task;
         mach_vm_address_t scan_base = cached_unity_base;
 
@@ -899,18 +908,27 @@ struct ESPBoxData {
                 players[i] = Read<mach_vm_address_t>(entries_arr + 0x20 + (i * 0x18) + 0x10, so2_task);
             }
 
-            // Hex-дамп PlayerController для поиска HP
+            // Поиск HP в sub-компонентах PlayerController
             if (cached_hp_off < 0) {
                 for (int pi = 0; pi < capacity; pi++) {
                     mach_vm_address_t p = players[pi];
                     if (p < 0x1000000 || p == localPlayer) continue;
-                    uint8_t buf[64] = {0};
-                    mach_vm_size_t sz = 64;
-                    mach_vm_read_overwrite(so2_task, p + 0x60, 64, (mach_vm_address_t)buf, &sz);
-                    NSMutableString *d = [NSMutableString stringWithFormat:@"60:"];
-                    for (int j = 0; j < 64; j += 4) {
-                        int v = *(int*)(buf + j);
-                        [d appendFormat:@"%08x ", v];
+                    NSMutableString *d = [NSMutableString stringWithString:@"HP:"];
+                    // Пройти по всем указателям в PlayerController, в каждом sub-объекте искать 100
+                    for (int off = 0x60; off <= 0x100; off += 8) {
+                        uint64_t sub = Read<uint64_t>(p + off, so2_task);
+                        if (sub < 0x1000000 || (sub & 3) != 0) continue;
+                        // Искать int=100 или SafeInt=100 в sub-объекте
+                        for (int soff = 0x10; soff <= 0x60; soff += 4) {
+                            int v = Read<int>(sub + soff, so2_task);
+                            if (v == 100) {
+                                [d appendFormat:@" %x+%x=100i", off, soff];
+                            }
+                            float f = Read<float>(sub + soff, so2_task);
+                            if (f == 100.0f) {
+                                [d appendFormat:@" %x+%x=100f", off, soff];
+                            }
+                        }
                     }
                     self.watermarkLabel.text = d;
                     break;
