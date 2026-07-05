@@ -412,47 +412,72 @@ struct ESPBoxData {
         {
             int phase = get_scan_phase();
             if (phase == 2) {
-                // Scanner found PlayerManager Il2CppClass! Dump its structure.
                 uint64_t cls = get_found_class();
                 int noff = get_found_name_off();
                 uint64_t tiOff = s_pm_ti_offset.load();
-                // Read key pointers from Il2CppClass to find parent & static_fields
-                NSMutableString *dump = [NSMutableString stringWithFormat:
-                    @"PM cls=0x%llx n=0x%x off=%llu ", cls, noff, tiOff];
-                // Dump every 8-byte field from 0x00 to 0x100 looking for:
-                // 1) parent (another Il2CppClass* - has name at same offset)
-                // 2) static_fields (pointer to data block)
-                for (int off = 0x00; off <= 0x100; off += 8) {
+                // Ищем static_fields и parent в структуре Il2CppClass
+                // Пробуем ВСЕ указатели 0x00..0x150 как static_fields напрямую
+                // (sf → *sf=pm → pm+0x28=dict → dict+0x20=count)
+                for (int off = 0x00; off <= 0x150 && !playerManager; off += 8) {
                     uint64_t val = Read<uint64_t>(cls + off, so2_task);
                     if (!val || val < 0x1000000 || (val & 7) != 0) continue;
-                    // Check if this pointer leads to another Il2CppClass (has a name)
-                    uint64_t namePtr = Read<uint64_t>(val + noff, so2_task);
-                    if (namePtr > 0x1000000) {
-                        char nb[20] = {0};
-                        mach_vm_size_t sz = 19;
-                        mach_vm_read_overwrite(so2_task, namePtr, 19, (mach_vm_address_t)nb, &sz);
-                        nb[19] = 0;
-                        if (nb[0] >= 'A' && nb[0] <= 'z' && strlen(nb) > 2) {
-                            [dump appendFormat:@"+0x%x->%.12s ", off, nb];
-                        }
-                    }
-                    // Check if this could be static_fields (dereference once, check for PM instance)
                     uint64_t pm = Read<uint64_t>(val, so2_task);
-                    if (pm > 0x1000000 && (pm & 7) == 0) {
+                    if (!pm || pm < 0x1000000 || (pm & 7) != 0) continue;
+                    uint64_t dict = Read<uint64_t>(pm + 0x28, so2_task);
+                    if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
+                    int cnt = Read<int>(dict + 0x20, so2_task);
+                    if (cnt > 0 && cnt <= 32) {
+                        playerManager = pm;
+                        playersDict = dict;
+                        playersCount = cnt;
+                        self.watermarkLabel.text = [NSString stringWithFormat:
+                            @"OK! off=%llu sf=+0x%x pm=0x%llx d=0x%llx cnt=%d",
+                            tiOff, off, pm, dict, cnt];
+                    }
+                }
+                // Также через parent: cls+X → parent, parent+Y → sf, *sf=pm
+                for (int poff = 0x20; poff <= 0x100 && !playerManager; poff += 8) {
+                    uint64_t pt = Read<uint64_t>(cls + poff, so2_task);
+                    if (!pt || pt < 0x1000000 || (pt & 7) != 0) continue;
+                    for (int soff = 0x60; soff <= 0x150 && !playerManager; soff += 8) {
+                        uint64_t sf = Read<uint64_t>(pt + soff, so2_task);
+                        if (!sf || sf < 0x1000000 || (sf & 7) != 0) continue;
+                        uint64_t pm = Read<uint64_t>(sf, so2_task);
+                        if (!pm || pm < 0x1000000 || (pm & 7) != 0) continue;
                         uint64_t dict = Read<uint64_t>(pm + 0x28, so2_task);
-                        if (dict > 0x1000000 && (dict & 7) == 0) {
-                            int cnt = Read<int>(dict + 0x20, so2_task);
-                            if (cnt > 0 && cnt <= 32) {
-                                playerManager = pm;
-                                playersDict = dict;
-                                playersCount = cnt;
-                                [dump appendFormat:@"SF+0x%x! pm=0x%llx cnt=%d", off, pm, cnt];
-                                break;
-                            }
+                        if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
+                        int cnt = Read<int>(dict + 0x20, so2_task);
+                        if (cnt > 0 && cnt <= 32) {
+                            playerManager = pm;
+                            playersDict = dict;
+                            playersCount = cnt;
+                            self.watermarkLabel.text = [NSString stringWithFormat:
+                                @"OK! off=%llu p=+0x%x s=+0x%x pm=0x%llx cnt=%d",
+                                tiOff, poff, soff, pm, cnt];
                         }
                     }
                 }
-                self.watermarkLabel.text = dump;
+                if (!playerManager) {
+                    // Показать имена классов на которые указывают поля
+                    NSMutableString *info = [NSMutableString stringWithFormat:@"off=%llu ", tiOff];
+                    int shown = 0;
+                    for (int off = 0x00; off <= 0x100 && shown < 6; off += 8) {
+                        uint64_t val = Read<uint64_t>(cls + off, so2_task);
+                        if (!val || val < 0x1000000 || (val & 7) != 0) continue;
+                        uint64_t np = Read<uint64_t>(val + noff, so2_task);
+                        if (np > 0x1000000) {
+                            char nb[16] = {0};
+                            mach_vm_size_t sz = 15;
+                            mach_vm_read_overwrite(so2_task, np, 15, (mach_vm_address_t)nb, &sz);
+                            nb[15] = 0;
+                            if (nb[0] >= 'A' && nb[0] <= 'z' && strlen(nb) > 2) {
+                                [info appendFormat:@"%x=%.10s ", off, nb];
+                                shown++;
+                            }
+                        }
+                    }
+                    self.watermarkLabel.text = info;
+                }
             } else if (phase == 1) {
                 uint64_t prog = get_scan_progress();
                 uint64_t total = get_scan_total();
