@@ -234,63 +234,76 @@ static uint64_t _safe64(task_t task, uint64_t addr) {
     return val;
 }
 
+static std::atomic<int> s_scan_phase{0};
+static std::atomic<uint64_t> s_scan_progress{0};
+static std::atomic<uint64_t> s_scan_total{0};
+static std::atomic<uint64_t> s_found_class_addr{0};
+static std::atomic<int> s_found_name_off{0};
+
+int get_scan_phase(void)    { return s_scan_phase.load(); }
+uint64_t get_scan_progress(void) { return s_scan_progress.load(); }
+uint64_t get_scan_total(void)    { return s_scan_total.load(); }
+uint64_t get_found_class(void)   { return s_found_class_addr.load(); }
+int get_found_name_off(void)     { return s_found_name_off.load(); }
+
+static bool _check_name(task_t task, uint64_t cls_ptr, const char *target, int *out_name_off) {
+    int name_offsets[] = {0x10, 0x08, 0x18, 0x20, 0x28, 0x30, 0x38, 0x40, 0x48};
+    char buf[32] = {0};
+    size_t tlen = strlen(target);
+    for (int ni = 0; ni < 9; ni++) {
+        uint64_t np = _safe64(task, cls_ptr + name_offsets[ni]);
+        if (!_is_vm_ptr(np)) continue;
+        if ((np & 3) != 0) continue;
+        mach_vm_size_t sz = tlen + 1;
+        kern_return_t kr = mach_vm_read_overwrite(task, np, tlen + 1, (mach_vm_address_t)buf, &sz);
+        if (kr != KERN_SUCCESS) continue;
+        buf[tlen] = 0;
+        if (memcmp(buf, target, tlen) == 0) {
+            *out_name_off = name_offsets[ni];
+            return true;
+        }
+    }
+    return false;
+}
+
 uint64_t find_pm_typeinfo_offset(task_t task, mach_vm_address_t unity_base) {
-    const uint64_t KNOWN_OFF  = 178356728ULL; // 0xAA29DE8 — current version
-    const uint64_t SCAN_RADIUS = 256ULL * 1024 * 1024; // search +-256 MB (v0.39.1 offset may have shifted far)
-    const uint64_t CHUNK_BYTES = 256 * 1024;          // read 256 KB per chunk
+    const uint64_t SCAN_RADIUS = 300ULL * 1024 * 1024;
+    const uint64_t CHUNK_BYTES = 256 * 1024;
 
-    uint64_t scan_start = (KNOWN_OFF > SCAN_RADIUS) ? (KNOWN_OFF - SCAN_RADIUS) : 0;
-    scan_start &= ~7ULL; // 8-byte align
-    uint64_t scan_end   = KNOWN_OFF + SCAN_RADIUS;
+    s_scan_phase = 1;
+    s_scan_progress = 0;
+    uint64_t scan_end = SCAN_RADIUS * 2;
+    s_scan_total = scan_end / CHUNK_BYTES;
 
-    for (uint64_t off = scan_start; off < scan_end; off += CHUNK_BYTES) {
-        vm_offset_t           buf = 0;
+    for (uint64_t off = 0; off < scan_end; off += CHUNK_BYTES) {
+        s_scan_progress = off / CHUNK_BYTES;
+
+        vm_offset_t buf = 0;
         mach_msg_type_number_t cnt = 0;
         if (vm_read(task, unity_base + off, CHUNK_BYTES, &buf, &cnt) != KERN_SUCCESS)
             continue;
 
-        uint32_t  n_words = cnt / 8;
-        uint64_t *words   = (uint64_t *)buf;
+        uint32_t n_words = cnt / 8;
+        uint64_t *words = (uint64_t *)buf;
 
         for (uint32_t i = 0; i < n_words; i++) {
             uint64_t ti = words[i];
             if (!_is_vm_ptr(ti)) continue;
+            if ((ti & 7) != 0) continue;
 
-            // parentTypeInfo = typeInfo->parent  (+0x58 in Il2CppClass)
-            uint64_t pt = _safe64(task, ti + 0x58);
-            if (!_is_vm_ptr(pt)) continue;
-
-            // staticFields = parent->static_fields  (+0xB8, fallback +0xB0)
-            uint64_t sf = _safe64(task, pt + 0xB8);
-            if (!_is_vm_ptr(sf)) sf = _safe64(task, pt + 0xB0);
-            if (!_is_vm_ptr(sf)) continue;
-
-            // playerManager = *staticFields
-            uint64_t pm = _safe64(task, sf);
-            if (!_is_vm_ptr(pm)) continue;
-
-            // players dict = playerManager+0x28
-            uint64_t dict = _safe64(task, pm + 0x28);
-            if (!_is_vm_ptr(dict)) continue;
-
-            // dict must carry a reasonable player count in any of three count slots
-            int32_t c18 = 0, c20 = 0, c40 = 0;
-            mach_vm_size_t sz = 4;
-            mach_vm_read_overwrite(task, dict + 0x18, 4, (mach_vm_address_t)&c18, &sz); sz = 4;
-            mach_vm_read_overwrite(task, dict + 0x20, 4, (mach_vm_address_t)&c20, &sz); sz = 4;
-            mach_vm_read_overwrite(task, dict + 0x40, 4, (mach_vm_address_t)&c40, &sz);
-
-            bool count_ok = (c18 >= 0 && c18 <= 64) ||
-                            (c20 >= 0 && c20 <= 64) ||
-                            (c40 >= 0 && c40 <= 64);
-            if (!count_ok) continue;
-
-            vm_deallocate(mach_task_self(), buf, cnt);
-            return off + (uint64_t)i * 8; // ← found offset
+            int name_off = 0;
+            if (_check_name(task, ti, "PlayerManager", &name_off)) {
+                s_found_class_addr = ti;
+                s_found_name_off = name_off;
+                s_scan_phase = 2;
+                vm_deallocate(mach_task_self(), buf, cnt);
+                return off + (uint64_t)i * 8;
+            }
         }
 
         vm_deallocate(mach_task_self(), buf, cnt);
     }
-    return 0; // not found in this scan range
+    s_scan_phase = -1;
+    return 0;
 }
 

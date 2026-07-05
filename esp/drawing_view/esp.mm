@@ -417,14 +417,14 @@ struct ESPBoxData {
                 goto CLEAR_BOXES;
             }
 
-            // Brute-force: for EVERY pointer in ti[0x00..0xD0], treat it as parent,
-            // then for EVERY pointer in parent[0x80..0xD0], treat it as static_fields,
+            // Brute-force: for EVERY pointer in ti[0x00..0x150], treat it as parent,
+            // then for EVERY pointer in parent[0x00..0x150], treat it as static_fields,
             // then read *sf as pm, then scan pm for a dict with count 1-32
-            for (int poff = 0x30; poff <= 0xD0; poff += 8) {
+            for (int poff = 0x20; poff <= 0x150; poff += 8) {
                 if (playerManager) break;
                 mach_vm_address_t pt = Read<mach_vm_address_t>(ti + poff, so2_task);
-                if (!pt || pt < 0x1000000 || (pt & 3) != 0) continue;
-                for (int soff = 0x80; soff <= 0xD0; soff += 8) {
+                if (!pt || pt < 0x1000000 || (pt & 7) != 0) continue;
+                for (int soff = 0x60; soff <= 0x150; soff += 8) {
                     if (playerManager) break;
                     mach_vm_address_t sf = Read<mach_vm_address_t>(pt + soff, so2_task);
                     if (!sf || sf < 0x1000000 || (sf & 3) != 0) continue;
@@ -449,9 +449,9 @@ struct ESPBoxData {
 
             if (!playerManager) {
                 // Also try: ti itself has static_fields (skip parent step)
-                for (int soff = 0x80; soff <= 0xD0 && !playerManager; soff += 8) {
+                for (int soff = 0x60; soff <= 0x150 && !playerManager; soff += 8) {
                     mach_vm_address_t sf = Read<mach_vm_address_t>(ti + soff, so2_task);
-                    if (!sf || sf < 0x1000000 || (sf & 3) != 0) continue;
+                    if (!sf || sf < 0x1000000 || (sf & 7) != 0) continue;
                     mach_vm_address_t pm = Read<mach_vm_address_t>(sf, so2_task);
                     if (!pm || pm < 0x1000000) continue;
                     for (int doff = 0x18; doff <= 0x58; doff += 8) {
@@ -472,31 +472,24 @@ struct ESPBoxData {
             }
 
             if (!playerManager) {
-                // Verify unity_base is correct by reading Mach-O magic
-                uint32_t magic = Read<uint32_t>(unity_base, so2_task);
-                // Show base, magic, ti, and first 4 full pointers at ti
-                uint64_t p0 = Read<uint64_t>(ti + 0x00, so2_task);
-                uint64_t p1 = Read<uint64_t>(ti + 0x08, so2_task);
-                uint64_t p2 = Read<uint64_t>(ti + 0x10, so2_task);
-                uint64_t p3 = Read<uint64_t>(ti + 0x18, so2_task);
-                // Also try reading name at p2 (offset 0x10, standard Il2CppClass.name)
-                char nameBuf[32] = {0};
-                if (p2 > 0x1000000) {
-                    mach_vm_size_t sz = 31;
-                    mach_vm_read_overwrite(so2_task, p2, 31, (mach_vm_address_t)nameBuf, &sz);
-                    nameBuf[31] = 0;
+                int phase = get_scan_phase();
+                if (phase == 0) {
+                    self.watermarkLabel.text = @"SCAN: waiting for match...";
+                } else if (phase == 1) {
+                    uint64_t prog = get_scan_progress();
+                    uint64_t total = get_scan_total();
+                    self.watermarkLabel.text = [NSString stringWithFormat:
+                        @"SCANNING %llu/%llu (looking for PlayerManager class)", prog, total];
+                } else if (phase == 2) {
+                    uint64_t cls = get_found_class();
+                    int noff = get_found_name_off();
+                    uint64_t off = s_pm_ti_offset.load();
+                    self.watermarkLabel.text = [NSString stringWithFormat:
+                        @"FOUND! cls=0x%llx nameOff=0x%x tiOff=%llu", cls, noff, off];
+                } else {
+                    self.watermarkLabel.text = [NSString stringWithFormat:
+                        @"SCAN DONE: NOT FOUND in 600MB (ti=0x%llx)", (uint64_t)ti];
                 }
-                // Show first 8 raw bytes at p2 as hex
-                uint8_t raw[8] = {0};
-                if (p2 > 0x1000000) {
-                    mach_vm_size_t sz = 8;
-                    mach_vm_read_overwrite(so2_task, p2, 8, (mach_vm_address_t)raw, &sz);
-                }
-                self.watermarkLabel.text = [NSString stringWithFormat:
-                    @"B=0x%llx M=%08x ti=0x%llx [%llx %llx %llx %llx] r=%02x%02x%02x%02x%02x%02x%02x%02x",
-                    (uint64_t)unity_base, magic, (uint64_t)ti,
-                    p0, p1, p2, p3,
-                    raw[0],raw[1],raw[2],raw[3],raw[4],raw[5],raw[6],raw[7]];
             }
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
