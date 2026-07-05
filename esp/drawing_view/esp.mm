@@ -448,7 +448,16 @@ struct ESPBoxData {
         else if (c40 > 0 && c40 <= 32) playersCount = c40;
         else if (c18 > 0 && c18 <= 32) playersCount = c18;
 
-        self.watermarkLabel.text = [NSString stringWithFormat:@"DBG: dict=0x%llx c18=%d c20=%d c40=%d cnt=%d", (uint64_t)dict28, c18, c20, c40, playersCount];
+        {
+            int d10 = Read<int>(playersDict + 0x10, so2_task);
+            int d14 = Read<int>(playersDict + 0x14, so2_task);
+            int d28 = Read<int>(playersDict + 0x28, so2_task);
+            int d2C = Read<int>(playersDict + 0x2C, so2_task);
+            int d30 = Read<int>(playersDict + 0x30, so2_task);
+            mach_vm_address_t lp68 = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
+            mach_vm_address_t lp70 = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
+            self.watermarkLabel.text = [NSString stringWithFormat:@"d=0x%llx 18:%d 20:%d 28:%d 2C:%d 40:%d lp=0x%llx/0x%llx", (uint64_t)dict28, c18, c20, d28, d2C, c40, (uint64_t)lp68, (uint64_t)lp70];
+        }
 
         if (playersCount > 0 && playersCount <= 32) {
             mach_vm_address_t localPlayer = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
