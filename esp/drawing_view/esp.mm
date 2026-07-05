@@ -953,11 +953,11 @@ struct ESPBoxData {
                         for (int soff = 0x10; soff <= 0x80; soff += 4) {
                             int k = Read<int>(sub + soff + 4, so2_task);
                             int e = Read<int>(sub + soff + 8, so2_task);
-                            if (k != 0) { int v = k ^ e; if (v >= 1 && v <= 100) cands[nCands++] = {off1, -1, soff, 0}; }
+                            if (k != 0) { int v = k ^ e; if (v >= 20 && v <= 100) cands[nCands++] = {off1, -1, soff, 0}; }
                             if (nCands >= 60) break;
                             k = Read<int>(sub + soff, so2_task);
                             e = Read<int>(sub + soff + 4, so2_task);
-                            if (k != 0 && k != e) { int v = k ^ e; if (v >= 1 && v <= 100) cands[nCands++] = {off1, -1, soff, 1}; }
+                            if (k != 0 && k != e) { int v = k ^ e; if (v >= 20 && v <= 100) cands[nCands++] = {off1, -1, soff, 1}; }
                             if (nCands >= 60) break;
                         }
                         for (int off2 = 0x10; off2 <= 0x80 && nCands < 60; off2 += 8) {
@@ -966,18 +966,19 @@ struct ESPBoxData {
                             for (int soff = 0x10; soff <= 0x80 && nCands < 60; soff += 4) {
                                 int k = Read<int>(sub2 + soff + 4, so2_task);
                                 int e = Read<int>(sub2 + soff + 8, so2_task);
-                                if (k != 0) { int v = k ^ e; if (v >= 1 && v <= 100) cands[nCands++] = {off1, off2, soff, 0}; }
+                                if (k != 0) { int v = k ^ e; if (v >= 20 && v <= 100) cands[nCands++] = {off1, off2, soff, 0}; }
                                 if (nCands >= 60) break;
                                 k = Read<int>(sub2 + soff, so2_task);
                                 e = Read<int>(sub2 + soff + 4, so2_task);
-                                if (k != 0 && k != e) { int v = k ^ e; if (v >= 1 && v <= 100) cands[nCands++] = {off1, off2, soff, 1}; }
+                                if (k != 0 && k != e) { int v = k ^ e; if (v >= 20 && v <= 100) cands[nCands++] = {off1, off2, soff, 1}; }
                             }
                         }
                     }
-                    // Валидация: кандидат должен давать 1-100 на всех scanN игроках
+                    // Валидация: кандидат должен давать 20-100 на ВСЕХ игроках, и хотя бы 2 игрока = 100
                     int bestIdx = -1;
                     for (int ci = 0; ci < nCands; ci++) {
                         bool valid = true;
+                        int count100 = 0;
                         for (int si = 0; si < scanN; si++) {
                             uint64_t sub = Read<uint64_t>(scanP[si] + cands[ci].o1, so2_task);
                             if (sub < 0x1000000) { valid = false; break; }
@@ -996,8 +997,10 @@ struct ESPBoxData {
                                 int e = Read<int>(obj + cands[ci].o3 + 4, so2_task);
                                 hp = k ^ e;
                             }
-                            if (hp < 1 || hp > 100) { valid = false; break; }
+                            if (hp < 20 || hp > 100) { valid = false; break; }
+                            if (hp == 100) count100++;
                         }
+                        if (valid && count100 < 2) valid = false;
                         if (valid) { bestIdx = ci; break; }
                     }
                     if (bestIdx >= 0) {
