@@ -46,7 +46,9 @@ jobs:
           THEOS: ${{ github.workspace }}/theos
         run: |
           make package FINALPACKAGE=1 DEBUG=0 \
-            TARGET="iphone:clang:${SDK_VER}:15.0"
+            TARGET="iphone:clang:${SDK_VER}:15.0" \
+            "extrahook_PRIVATE_FRAMEWORKS=" \
+            LDFLAGS="-Wl,-undefined,dynamic_lookup"
 
       - name: Upload .deb
         uses: actions/upload-artifact@v4
