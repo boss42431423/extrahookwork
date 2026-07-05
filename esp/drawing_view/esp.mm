@@ -743,14 +743,35 @@ struct ESPBoxData {
             }
 
             SO2_Matrix viewMatrix = {0};
+            bool matrixFound = false;
             if (localPlayer > 0x1000000) {
-                mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + 0xE8, so2_task);
-                if (v1 > 0x1000000) {
-                    mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + 0x20, so2_task);
-                    if (v2 > 0x1000000) {
-                        mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + 0x10, so2_task);
-                        if (v3 > 0x1000000) {
-                            viewMatrix = Read<SO2_Matrix>(v3 + 0x100, so2_task);
+                // Сканируем оффсет камеры в PlayerController (0xD0-0x120)
+                for (int camOff = 0xD0; camOff <= 0x120 && !matrixFound; camOff += 8) {
+                    mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + camOff, so2_task);
+                    if (v1 < 0x1000000) continue;
+                    // Unity Camera: пробуем несколько путей к матрице
+                    int paths[][2] = {{0x20,0x10}, {0x18,0x10}, {0x28,0x10}, {0x20,0x18}, {0x10,0x10}};
+                    for (int p = 0; p < 5 && !matrixFound; p++) {
+                        mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + paths[p][0], so2_task);
+                        if (v2 < 0x1000000) continue;
+                        mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + paths[p][1], so2_task);
+                        if (v3 < 0x1000000) continue;
+                        // Матрица на нескольких оффсетах
+                        for (int moff = 0xC0; moff <= 0x120; moff += 0x10) {
+                            SO2_Matrix m = Read<SO2_Matrix>(v3 + moff, so2_task);
+                            // Валидация: view matrix должна иметь нормальные значения
+                            float sum = fabsf(m.m[0]) + fabsf(m.m[5]) + fabsf(m.m[10]);
+                            if (sum > 0.5f && sum < 5.0f &&
+                                fabsf(m.m[15]) > 0.5f && fabsf(m.m[15]) < 2.0f) {
+                                viewMatrix = m;
+                                matrixFound = true;
+                                static bool logged = false;
+                                if (!logged) {
+                                    NSLog(@"ESP: cam chain: lp+%x -> +%x -> +%x -> +%x", camOff, paths[p][0], paths[p][1], moff);
+                                    logged = true;
+                                }
+                                break;
+                            }
                         }
                     }
                 }
@@ -837,9 +858,11 @@ struct ESPBoxData {
                 Vector3 pos = Read<Vector3>(moveData + 0x44, so2_task);
                 if (pos.x == 0 && pos.y == 0 && pos.z == 0) continue;
 
-                if (i == 0 || (validPlayers == 0 && i < 3)) {
+                if (validPlayers == 0 && i < 3) {
                     self.watermarkLabel.text = [NSString stringWithFormat:
-                        @"p=%.1f,%.1f,%.1f mc=%llx md=%llx", pos.x, pos.y, pos.z, moveCtrl, moveData];
+                        @"p=%.1f,%.1f,%.1f m%d [%.2f %.2f %.2f %.2f]",
+                        pos.x, pos.y, pos.z, matrixFound?1:0,
+                        viewMatrix.m[0], viewMatrix.m[5], viewMatrix.m[10], viewMatrix.m[15]];
                 }
 
                 Vector3 screenFoot = WorldToScreen(pos, viewMatrix, w, h);
