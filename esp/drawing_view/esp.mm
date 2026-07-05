@@ -920,13 +920,12 @@ struct ESPBoxData {
                     // Дамп памяти PlayerController: показать все int и SafeInt значения 1-200
                     NSMutableString *dump = [NSMutableString stringWithString:@"PC:"];
                     for (int doff = 0x60; doff <= 0xE0; doff += 4) {
-                        int iv = Read<int>(player + doff, task);
+                        int iv = Read<int>(player + doff, so2_task);
                         if (iv >= 1 && iv <= 200) {
                             [dump appendFormat:@" %x=%d", doff, iv];
                         }
-                        // SafeInt: key at doff, enc at doff+4
-                        int key = Read<int>(player + doff, task);
-                        int enc = Read<int>(player + doff + 4, task);
+                        int key = Read<int>(player + doff, so2_task);
+                        int enc = Read<int>(player + doff + 4, so2_task);
                         int si = key ^ enc;
                         if (si >= 1 && si <= 200 && si != iv && key != 0) {
                             [dump appendFormat:@" %x^%d", doff, si];
