@@ -410,6 +410,12 @@ struct ESPBoxData {
 
         static int cached_p_off = -1;
         static int cached_s_off = -1;
+        static pid_t cached_chain_pid = 0;
+        if (cached_chain_pid != so2_pid) {
+            cached_p_off = -1;
+            cached_s_off = -1;
+            cached_chain_pid = so2_pid;
+        }
         // Resolve PlayerManager via Il2CppClass found by background scanner
         {
 
@@ -428,6 +434,7 @@ struct ESPBoxData {
 
             uint64_t cls = get_found_class();
 
+            int noff = get_found_name_off(); // 0x10
             if (cached_p_off >= 0 && cached_s_off >= 0) {
                 uint64_t pt = Read<uint64_t>(cls + cached_p_off, so2_task);
                 if (pt > 0x1000000) {
@@ -438,35 +445,59 @@ struct ESPBoxData {
                     }
                 }
             } else {
-                // Ищем через parent → static_fields (MonoBehaviourRef в LazySingleton)
-                for (int poff = 0x20; poff <= 0x100 && !playerManager; poff += 8) {
-                    uint64_t pt = Read<uint64_t>(cls + poff, so2_task);
-                    if (!pt || pt < 0x1000000 || (pt & 7) != 0) continue;
-                    for (int soff = 0x60; soff <= 0x150 && !playerManager; soff += 8) {
-                        uint64_t sf = Read<uint64_t>(pt + soff, so2_task);
+                // Шаг 1: найти parent по имени "LazySingleton" в полях Il2CppClass
+                uint64_t parentCls = 0;
+                int parentOff = -1;
+                char nb[20] = {0};
+                for (int off = 0x20; off <= 0x100; off += 8) {
+                    uint64_t val = Read<uint64_t>(cls + off, so2_task);
+                    if (!val || val < 0x1000000 || (val & 7) != 0) continue;
+                    uint64_t np = Read<uint64_t>(val + noff, so2_task);
+                    if (!np || np < 0x1000000) continue;
+                    memset(nb, 0, 20);
+                    mach_vm_size_t sz = 19;
+                    mach_vm_read_overwrite(so2_task, np, 19, (mach_vm_address_t)nb, &sz);
+                    nb[19] = 0;
+                    if (strstr(nb, "Lazy") || strstr(nb, "Singleton")) {
+                        parentCls = val;
+                        parentOff = off;
+                        break;
+                    }
+                }
+                if (parentCls) {
+                    // Шаг 2: найти static_fields в parent
+                    for (int soff = 0x00; soff <= 0x150 && !playerManager; soff += 8) {
+                        uint64_t sf = Read<uint64_t>(parentCls + soff, so2_task);
                         if (!sf || sf < 0x1000000 || (sf & 7) != 0) continue;
                         uint64_t pm = Read<uint64_t>(sf, so2_task);
                         if (!pm || pm < 0x1000000 || (pm & 7) != 0) continue;
-                        // Проверка: dict+0x20 = count И localPlayer имеет hp 1-100
                         uint64_t dict = Read<uint64_t>(pm + 0x28, so2_task);
                         if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
                         int cnt = Read<int>(dict + 0x20, so2_task);
-                        if (cnt <= 0 || cnt > 32) continue;
-                        // Проверка localPlayer HP
-                        uint64_t lp = Read<uint64_t>(pm + 0x68, so2_task);
-                        if (!lp || lp < 0x1000000) lp = Read<uint64_t>(pm + 0x70, so2_task);
-                        if (lp > 0x1000000) {
-                            float hp = Read<float>(lp + 0x7C, so2_task);
-                            if (hp > 0.0f && hp <= 100.0f) {
-                                cached_p_off = poff;
-                                cached_s_off = soff;
-                                playerManager = pm;
-                            }
+                        if (cnt > 0 && cnt <= 32) {
+                            cached_p_off = parentOff;
+                            cached_s_off = soff;
+                            playerManager = pm;
                         }
                     }
                 }
                 if (!playerManager) {
-                    self.watermarkLabel.text = @"chain: no valid PM via parent";
+                    // Показать все имена классов-полей для дебага
+                    NSMutableString *info = [NSMutableString stringWithString:@"FIELDS:"];
+                    for (int off = 0x20; off <= 0x80; off += 8) {
+                        uint64_t val = Read<uint64_t>(cls + off, so2_task);
+                        if (!val || val < 0x1000000 || (val & 7) != 0) continue;
+                        uint64_t np = Read<uint64_t>(val + noff, so2_task);
+                        if (!np || np < 0x1000000) continue;
+                        memset(nb, 0, 20);
+                        mach_vm_size_t sz = 15;
+                        mach_vm_read_overwrite(so2_task, np, 15, (mach_vm_address_t)nb, &sz);
+                        nb[15] = 0;
+                        if (nb[0] >= 'A' && nb[0] <= 'z' && strlen(nb) > 2) {
+                            [info appendFormat:@" %x=%.10s", off, nb];
+                        }
+                    }
+                    self.watermarkLabel.text = info;
                 }
             }
         }
@@ -488,32 +519,6 @@ struct ESPBoxData {
             if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0)
                 localPlayer = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
 
-            // Дебаг: сканировать localPlayer на наличие hp=100 и team=0/1
-            if (localPlayer > 0x1000000) {
-                NSMutableString *dbg = [NSMutableString stringWithFormat:@"p%d s%d ",
-                    cached_p_off, cached_s_off];
-                // Ищем float ~100.0 (0x42C80000) в диапазоне 0x60-0x100
-                for (int off = 0x60; off <= 0x100; off += 4) {
-                    float val = Read<float>(localPlayer + off, so2_task);
-                    if (val >= 90.0f && val <= 100.0f) {
-                        [dbg appendFormat:@"hp?%x=%.0f ", off, val];
-                    }
-                }
-                // Ищем byte 0 или 1 рядом (team) в диапазоне 0x60-0x90
-                for (int off = 0x60; off <= 0x90; off++) {
-                    uint8_t val = Read<uint8_t>(localPlayer + off, so2_task);
-                    if (val <= 1) {
-                        // Проверим что рядом нет других нулей (чтобы не ловить пустые поля)
-                        uint8_t prev = Read<uint8_t>(localPlayer + off - 1, so2_task);
-                        uint8_t next = Read<uint8_t>(localPlayer + off + 1, so2_task);
-                        if (prev > 1 || next > 1) {
-                            [dbg appendFormat:@"t?%x=%d ", off, val];
-                            if (dbg.length > 70) break;
-                        }
-                    }
-                }
-                self.watermarkLabel.text = dbg;
-            }
 
             if (esp_invisible && localPlayer > 0x1000000) {
                 mach_vm_address_t weaponryController = Read<mach_vm_address_t>(localPlayer + 0x88, so2_task);
