@@ -409,16 +409,21 @@ struct ESPBoxData {
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
 
         static int cached_s_off = -1;
-        static int cached_s_src = -1; // 0=parent, 1=cls
-        static int cached_s_deref = 0; // 0=direct *sf, 1=*((*sf)+0x10)
+        static int cached_s_src = -1;
+        static int cached_s_deref = 0;
         static pid_t cached_chain_pid = 0;
         static int dbg_frame = 0;
+        static int cam_off_cache = -1, cam_p1_cache = -1, cam_p2_cache = -1, cam_m_cache = -1;
         if (cached_chain_pid != so2_pid) {
             cached_s_off = -1;
             cached_s_src = -1;
             cached_s_deref = 0;
             cached_chain_pid = so2_pid;
             dbg_frame = 0;
+            cam_off_cache = -1;
+            cam_p1_cache = -1;
+            cam_p2_cache = -1;
+            cam_m_cache = -1;
         }
         {
             int phase = get_scan_phase();
@@ -744,7 +749,6 @@ struct ESPBoxData {
 
             SO2_Matrix viewMatrix = {0};
             bool matrixFound = false;
-            static int cam_off_cache = -1, cam_p1_cache = -1, cam_p2_cache = -1, cam_m_cache = -1;
 
             if (localPlayer > 0x1000000 && cam_off_cache >= 0) {
                 mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + cam_off_cache, so2_task);
@@ -800,11 +804,13 @@ struct ESPBoxData {
                             if (v3 < 0x1000000) continue;
                             for (int mi = 0; mi < 9 && !matrixFound; mi++) {
                                 SO2_Matrix m = Read<SO2_Matrix>(v3 + moffs[mi], so2_task);
-                                float diag = fabsf(m.m11) + fabsf(m.m22) + fabsf(m.m33);
-                                if (diag < 0.1f) continue;
+                                // Все 3 диагональных элемента должны быть ненулевыми
+                                if (fabsf(m.m11) < 0.01f || fabsf(m.m22) < 0.01f || fabsf(m.m33) < 0.01f) continue;
+                                // Диагональ не должна быть слишком большой
+                                if (fabsf(m.m11) > 10.0f || fabsf(m.m22) > 10.0f || fabsf(m.m33) > 10.0f) continue;
                                 if (testPos.x != 0 || testPos.y != 0 || testPos.z != 0) {
                                     Vector3 sc = WorldToScreen(testPos, m, sw, sh);
-                                    if (sc.z > 0.01f && sc.x > -sw && sc.x < sw*2 && sc.y > -sh && sc.y < sh*2) {
+                                    if (sc.z > 0.01f && sc.x > 0 && sc.x < sw && sc.y > 0 && sc.y < sh) {
                                         viewMatrix = m;
                                         matrixFound = true;
                                         cam_off_cache = camOffs[ci];
@@ -813,12 +819,15 @@ struct ESPBoxData {
                                         cam_m_cache = moffs[mi];
                                     }
                                 } else {
-                                    viewMatrix = m;
-                                    matrixFound = true;
-                                    cam_off_cache = camOffs[ci];
-                                    cam_p1_cache = p1s[pi];
-                                    cam_p2_cache = p2s[qi];
-                                    cam_m_cache = moffs[mi];
+                                    float s = fabsf(m.m11) + fabsf(m.m22) + fabsf(m.m33);
+                                    if (s > 1.0f && s < 10.0f) {
+                                        viewMatrix = m;
+                                        matrixFound = true;
+                                        cam_off_cache = camOffs[ci];
+                                        cam_p1_cache = p1s[pi];
+                                        cam_p2_cache = p2s[qi];
+                                        cam_m_cache = moffs[mi];
+                                    }
                                 }
                             }
                         }
