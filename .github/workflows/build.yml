@@ -21,29 +21,33 @@ jobs:
         id: theos-cache
         with:
           path: ${{ github.workspace }}/theos
-          key: theos-${{ runner.os }}-v1
+          key: theos-${{ runner.os }}-v2
 
       - name: Install Theos
         if: steps.theos-cache.outputs.cache-hit != 'true'
         env:
           THEOS: ${{ github.workspace }}/theos
         run: |
-          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+          git clone --recursive https://github.com/theos/theos.git $THEOS
 
       - name: Cache iOS SDK
         uses: actions/cache@v4
         id: sdk-cache
         with:
           path: ${{ github.workspace }}/theos/sdks/iPhoneOS16.5.sdk
-          key: sdk-iPhoneOS16.5
+          key: sdk-iPhoneOS16.5-v1
 
       - name: Download iOS 16.5 SDK
         if: steps.sdk-cache.outputs.cache-hit != 'true'
         env:
           THEOS: ${{ github.workspace }}/theos
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -L -o sdk.tar.xz \
-            https://github.com/theos/sdks/releases/download/iOS16.5/iPhoneOS16.5.sdk.tar.xz
+          mkdir -p $THEOS/sdks
+          gh release download iOS16.5 \
+            --repo theos/sdks \
+            --pattern "iPhoneOS16.5.sdk.tar.xz" \
+            --output sdk.tar.xz
           tar -xJf sdk.tar.xz -C $THEOS/sdks/
           rm sdk.tar.xz
 
