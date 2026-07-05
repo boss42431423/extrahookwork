@@ -410,17 +410,14 @@ struct ESPBoxData {
 
         // Resolve PlayerManager via Il2CppClass found by background scanner
         {
-            static int cached_sf_off = -1;
             static int cached_p_off = -1;
             static int cached_s_off = -1;
 
             int phase = get_scan_phase();
             if (phase != 2) {
                 if (phase == 1) {
-                    uint64_t prog = get_scan_progress();
-                    uint64_t total = get_scan_total();
                     self.watermarkLabel.text = [NSString stringWithFormat:
-                        @"SCANNING %llu/%llu...", prog, total];
+                        @"SCANNING %llu/%llu...", get_scan_progress(), get_scan_total()];
                 } else if (phase == -1) {
                     self.watermarkLabel.text = @"NOT FOUND";
                 } else {
@@ -431,14 +428,7 @@ struct ESPBoxData {
 
             uint64_t cls = get_found_class();
 
-            // Если офсеты уже найдены — быстрый путь
-            if (cached_sf_off >= 0) {
-                uint64_t sf = Read<uint64_t>(cls + cached_sf_off, so2_task);
-                if (sf > 0x1000000) {
-                    uint64_t pm = Read<uint64_t>(sf, so2_task);
-                    if (pm > 0x1000000) playerManager = pm;
-                }
-            } else if (cached_p_off >= 0 && cached_s_off >= 0) {
+            if (cached_p_off >= 0 && cached_s_off >= 0) {
                 uint64_t pt = Read<uint64_t>(cls + cached_p_off, so2_task);
                 if (pt > 0x1000000) {
                     uint64_t sf = Read<uint64_t>(pt + cached_s_off, so2_task);
@@ -448,20 +438,7 @@ struct ESPBoxData {
                     }
                 }
             } else {
-                // Первый раз — найти путь к static_fields
-                for (int off = 0x00; off <= 0x150 && !playerManager; off += 8) {
-                    uint64_t val = Read<uint64_t>(cls + off, so2_task);
-                    if (!val || val < 0x1000000 || (val & 7) != 0) continue;
-                    uint64_t pm = Read<uint64_t>(val, so2_task);
-                    if (!pm || pm < 0x1000000 || (pm & 7) != 0) continue;
-                    uint64_t dict = Read<uint64_t>(pm + 0x28, so2_task);
-                    if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
-                    int cnt = Read<int>(dict + 0x20, so2_task);
-                    if (cnt > 0 && cnt <= 32) {
-                        cached_sf_off = off;
-                        playerManager = pm;
-                    }
-                }
+                // Ищем через parent → static_fields (MonoBehaviourRef в LazySingleton)
                 for (int poff = 0x20; poff <= 0x100 && !playerManager; poff += 8) {
                     uint64_t pt = Read<uint64_t>(cls + poff, so2_task);
                     if (!pt || pt < 0x1000000 || (pt & 7) != 0) continue;
@@ -470,15 +447,26 @@ struct ESPBoxData {
                         if (!sf || sf < 0x1000000 || (sf & 7) != 0) continue;
                         uint64_t pm = Read<uint64_t>(sf, so2_task);
                         if (!pm || pm < 0x1000000 || (pm & 7) != 0) continue;
+                        // Проверка: dict+0x20 = count И localPlayer имеет hp 1-100
                         uint64_t dict = Read<uint64_t>(pm + 0x28, so2_task);
                         if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
                         int cnt = Read<int>(dict + 0x20, so2_task);
-                        if (cnt > 0 && cnt <= 32) {
-                            cached_p_off = poff;
-                            cached_s_off = soff;
-                            playerManager = pm;
+                        if (cnt <= 0 || cnt > 32) continue;
+                        // Проверка localPlayer HP
+                        uint64_t lp = Read<uint64_t>(pm + 0x68, so2_task);
+                        if (!lp || lp < 0x1000000) lp = Read<uint64_t>(pm + 0x70, so2_task);
+                        if (lp > 0x1000000) {
+                            float hp = Read<float>(lp + 0x7C, so2_task);
+                            if (hp > 0.0f && hp <= 100.0f) {
+                                cached_p_off = poff;
+                                cached_s_off = soff;
+                                playerManager = pm;
+                            }
                         }
                     }
+                }
+                if (!playerManager) {
+                    self.watermarkLabel.text = @"chain: no valid PM via parent";
                 }
             }
         }
