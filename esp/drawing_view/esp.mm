@@ -1252,6 +1252,7 @@ struct UnityString32 { uint16_t chars[32]; };
                     }
 
                     if (esp_skeleton_enabled) {
+                        // Сначала пробуем полный скелетон через BipedMap
                         mach_vm_address_t bMap = FindBipedMap(player, so2_task);
                         if (bMap) {
                             struct BoneConn { int from; int to; };
@@ -1273,6 +1274,24 @@ struct UnityString32 { uint16_t chars[32]; };
                                 if (s1.z <= 0 || s2.z <= 0) continue;
                                 [skeletonPath moveToPoint:CGPointMake(s1.x, s1.y)];
                                 [skeletonPath addLineToPoint:CGPointMake(s2.x, s2.y)];
+                            }
+                        } else {
+                            // Фоллбэк: простой скелетон из GetBonePosition (head, neck, chest, hip)
+                            Vector3 bones[4];
+                            bones[0] = GetBonePosition(player, 0, so2_task); // head
+                            bones[1] = GetBonePosition(player, 1, so2_task); // neck
+                            bones[2] = GetBonePosition(player, 2, so2_task); // chest
+                            bones[3] = GetBonePosition(player, 3, so2_task); // hip
+                            int links[][2] = {{0,1},{1,2},{2,3}};
+                            for (int li = 0; li < 3; li++) {
+                                Vector3 &a = bones[links[li][0]], &b = bones[links[li][1]];
+                                if ((a.x == 0 && a.y == 0 && a.z == 0) ||
+                                    (b.x == 0 && b.y == 0 && b.z == 0)) continue;
+                                Vector3 sa = WorldToScreen(a, viewMatrix, w, h);
+                                Vector3 sb = WorldToScreen(b, viewMatrix, w, h);
+                                if (sa.z <= 0 || sb.z <= 0) continue;
+                                [skeletonPath moveToPoint:CGPointMake(sa.x, sa.y)];
+                                [skeletonPath addLineToPoint:CGPointMake(sb.x, sb.y)];
                             }
                         }
                     }
@@ -1656,17 +1675,14 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     float currentPitch = Read<float>(aimingData + 0x18, so2_task);
     float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-    // Извлекаем FOV из VP матрицы
+    // Извлекаем вертикальный FOV из VP матрицы и используем для обеих осей
     float vfov = 2.0f * atanf(1.0f / fabsf(viewMatrix.m22)) * (180.0f / M_PI);
-    float hfov = 2.0f * atanf(1.0f / fabsf(viewMatrix.m11)) * (180.0f / M_PI);
     if (vfov < 10.0f || vfov > 170.0f) vfov = 70.0f;
-    if (hfov < 10.0f || hfov > 170.0f) hfov = 70.0f;
 
-    float degPerPxY = vfov / h;
-    float degPerPxX = hfov / w;
+    float degPerPx = vfov / h;
 
-    float targetDeltaPitch = errY * degPerPxY;
-    float targetDeltaYaw   = errX * degPerPxX;
+    float targetDeltaPitch = errY * degPerPx;
+    float targetDeltaYaw   = errX * degPerPx;
 
     float newPitch, newYaw;
 
