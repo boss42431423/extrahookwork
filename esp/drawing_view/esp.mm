@@ -1253,32 +1253,39 @@ struct UnityString32 { uint16_t chars[32]; };
                     }
 
                     if (esp_skeleton_enabled) {
-                        mach_vm_address_t bMap = FindBipedMap(player, so2_task);
-                        if (bMap) {
-                            struct BoneConn { int from; int to; };
-                            BoneConn conns[] = {
-                                {0x20, 0x28}, {0x28, 0x40}, {0x40, 0x38},
-                                {0x38, 0x30}, {0x30, 0x88},
-                                {0x28, 0x48}, {0x48, 0x50}, {0x50, 0x58}, {0x58, 0x60},
-                                {0x28, 0x68}, {0x68, 0x70}, {0x70, 0x78}, {0x78, 0x80},
-                                {0x88, 0x90}, {0x90, 0x98}, {0x98, 0xA0},
-                                {0x88, 0xB0}, {0xB0, 0xB8}, {0xB8, 0xC0},
-                            };
-                            for (int bi = 0; bi < 19; bi++) {
-                                Vector3 p1 = GetBoneByOffset(bMap, conns[bi].from, so2_task);
-                                Vector3 p2 = GetBoneByOffset(bMap, conns[bi].to, so2_task);
-                                if ((p1.x == 0 && p1.y == 0 && p1.z == 0) ||
-                                    (p2.x == 0 && p2.y == 0 && p2.z == 0)) continue;
-                                Vector3 s1 = WorldToScreen(p1, viewMatrix, w, h);
-                                Vector3 s2 = WorldToScreen(p2, viewMatrix, w, h);
-                                if (s1.z <= 0 || s2.z <= 0) continue;
-                                [skeletonPath moveToPoint:CGPointMake(s1.x, s1.y)];
-                                [skeletonPath addLineToPoint:CGPointMake(s2.x, s2.y)];
-                            }
+                        // Скелетон из расчётных позиций (basePos + offsets)
+                        Vector3 head     = {pos.x, pos.y + 1.67f, pos.z};
+                        Vector3 neck     = {pos.x, pos.y + 1.50f, pos.z};
+                        Vector3 chest    = {pos.x, pos.y + 1.20f, pos.z};
+                        Vector3 hip      = {pos.x, pos.y + 0.90f, pos.z};
+                        Vector3 lShldr   = {pos.x - 0.22f, pos.y + 1.45f, pos.z};
+                        Vector3 rShldr   = {pos.x + 0.22f, pos.y + 1.45f, pos.z};
+                        Vector3 lElbow   = {pos.x - 0.40f, pos.y + 1.15f, pos.z};
+                        Vector3 rElbow   = {pos.x + 0.40f, pos.y + 1.15f, pos.z};
+                        Vector3 lHand    = {pos.x - 0.35f, pos.y + 0.90f, pos.z};
+                        Vector3 rHand    = {pos.x + 0.35f, pos.y + 0.90f, pos.z};
+                        Vector3 lKnee    = {pos.x - 0.12f, pos.y + 0.45f, pos.z};
+                        Vector3 rKnee    = {pos.x + 0.12f, pos.y + 0.45f, pos.z};
+                        Vector3 lFoot    = {pos.x - 0.12f, pos.y, pos.z};
+                        Vector3 rFoot    = {pos.x + 0.12f, pos.y, pos.z};
+
+                        Vector3 skelBones[] = {head, neck, chest, hip,
+                            lShldr, lElbow, lHand, rShldr, rElbow, rHand,
+                            lKnee, lFoot, rKnee, rFoot};
+                        int skelLinks[][2] = {
+                            {0,1},{1,2},{2,3},       // head→neck→chest→hip
+                            {1,4},{4,5},{5,6},       // neck→lShldr→lElbow→lHand
+                            {1,7},{7,8},{8,9},       // neck→rShldr→rElbow→rHand
+                            {3,10},{10,11},          // hip→lKnee→lFoot
+                            {3,12},{12,13},          // hip→rKnee→rFoot
+                        };
+                        for (int li = 0; li < 13; li++) {
+                            Vector3 s1 = WorldToScreen(skelBones[skelLinks[li][0]], viewMatrix, w, h);
+                            Vector3 s2 = WorldToScreen(skelBones[skelLinks[li][1]], viewMatrix, w, h);
+                            if (s1.z <= 0 || s2.z <= 0) continue;
+                            [skeletonPath moveToPoint:CGPointMake(s1.x, s1.y)];
+                            [skeletonPath addLineToPoint:CGPointMake(s2.x, s2.y)];
                         }
-                        // Всегда рисуем центральную линию head→foot через screenHead/screenFoot
-                        [skeletonPath moveToPoint:CGPointMake(screenHead.x, screenHead.y)];
-                        [skeletonPath addLineToPoint:CGPointMake(screenFoot.x, screenFoot.y)];
                     }
                 }
             }
@@ -1660,17 +1667,16 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     float currentPitch = Read<float>(aimingData + 0x18, so2_task);
     float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-    float degPerPx = 0.015f;
+    float degPerPx = 0.022f;
 
     float targetDeltaPitch = errY * degPerPx;
-    float targetDeltaYaw   = errX * degPerPx;
+    float targetDeltaYaw   = (errX - 3.0f) * degPerPx;
 
     float newPitch, newYaw;
 
     if (aimbot_smooth <= 1.0f) {
-        // Мгновенный снап: увеличенный множитель для конвергенции за 1 кадр
-        newPitch = currentPitch + targetDeltaPitch * 1.5f;
-        newYaw   = currentYaw   + targetDeltaYaw   * 1.5f;
+        newPitch = currentPitch + targetDeltaPitch;
+        newYaw   = currentYaw   + targetDeltaYaw;
     } else {
         float smooth = 1.0f / (1.0f + aimbot_smooth * 0.5f);
         smooth = fmaxf(0.03f, fminf(smooth, 1.0f));
