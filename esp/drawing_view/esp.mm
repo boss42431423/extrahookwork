@@ -1632,31 +1632,45 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     mach_vm_address_t aimingData = Read<mach_vm_address_t>(aimController + 0x90, so2_task);
     if (!aimingData || aimingData < 0x1000000) return;
 
-    Vector3 screenTarget = WorldToScreen(closestBonePos, viewMatrix, (int)w, (int)h);
-    if (screenTarget.z <= 0) return;
-
-    float cx2 = w / 2.0f, cy2 = h / 2.0f;
-    float errX = screenTarget.x - cx2;
-    float errY = screenTarget.y - cy2;
-
     float currentPitch = Read<float>(aimingData + 0x18, so2_task);
     float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-    float degPerPx = 0.022f;
+    // Позиция камеры из moveData локального игрока + высота глаз
+    Vector3 camPos = {0,0,0};
+    mach_vm_address_t lmc = Read<mach_vm_address_t>(localPlayer + 0x98, so2_task);
+    if (lmc > 0x1000000) {
+        mach_vm_address_t lmd = Read<mach_vm_address_t>(lmc + 0xB0, so2_task);
+        if (lmd > 0x1000000) {
+            camPos = Read<Vector3>(lmd + 0x44, so2_task);
+            camPos.y += 1.45f;
+        }
+    }
+    if (camPos.x == 0 && camPos.y == 0 && camPos.z == 0) return;
 
-    float targetDeltaPitch = errY * degPerPx;
-    float targetDeltaYaw   = errX * degPerPx;
+    float dx = closestBonePos.x - camPos.x;
+    float dy = closestBonePos.y - camPos.y;
+    float dz = closestBonePos.z - camPos.z;
+    float horizDist = sqrtf(dx * dx + dz * dz);
+    if (horizDist < 0.01f) return;
+
+    float targetPitch = -atan2f(dy, horizDist) * (180.0f / M_PI);
+    float targetYaw   =  atan2f(dx, dz) * (180.0f / M_PI);
+
+    float diffYaw = targetYaw - currentYaw;
+    while (diffYaw > 180.0f)  diffYaw -= 360.0f;
+    while (diffYaw < -180.0f) diffYaw += 360.0f;
+    float diffPitch = targetPitch - currentPitch;
 
     float newPitch, newYaw;
 
     if (aimbot_smooth <= 1.0f) {
-        newPitch = currentPitch + targetDeltaPitch;
-        newYaw   = currentYaw   + targetDeltaYaw;
+        newPitch = targetPitch;
+        newYaw   = currentYaw + diffYaw;
     } else {
-        float smooth = 1.0f / (1.0f + aimbot_smooth * 0.5f);
-        smooth = fmaxf(0.03f, fminf(smooth, 1.0f));
-        newPitch = currentPitch + targetDeltaPitch * smooth;
-        newYaw   = currentYaw   + targetDeltaYaw   * smooth;
+        float t = 1.0f / (1.0f + aimbot_smooth * 0.5f);
+        t = fmaxf(0.05f, fminf(t, 1.0f));
+        newPitch = currentPitch + diffPitch * t;
+        newYaw   = currentYaw   + diffYaw   * t;
     }
 
     newPitch = fmaxf(-89.0f, fminf(89.0f, newPitch));
