@@ -1581,8 +1581,12 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     mach_vm_address_t aimingData = Read<mach_vm_address_t>(aimController + 0x90, so2_task);
     if (!aimingData || aimingData < 0x1000000) return;
 
-    Vector3 cameraPos = GetBonePosition(localPlayer, 6, so2_task);
-    cameraPos.y += 0.15f;
+    Vector3 screenTarget = WorldToScreen(closestBonePos, viewMatrix, (int)w, (int)h);
+    if (screenTarget.z <= 0) return;
+
+    float cx2 = w / 2.0f, cy2 = h / 2.0f;
+    float errX = screenTarget.x - cx2;
+    float errY = screenTarget.y - cy2;
 
     double now = CACurrentMediaTime();
     self.aimbotLastWriteTime = now;
@@ -1591,20 +1595,15 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
         float currentPitch = Read<float>(aimingData + 0x18, so2_task);
         float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-        float dirX = closestBonePos.x - cameraPos.x;
-        float dirY = closestBonePos.y - cameraPos.y;
-        float dirZ = closestBonePos.z - cameraPos.z;
-        float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
-        if (dist < 0.01f) dist = 0.01f;
-
-        float targetPitch = -asinf(dirY / dist) * (180.0f / M_PI);
-        float targetYaw   = atan2f(dirX, dirZ) * (180.0f / M_PI);
+        float fov_deg = 60.0f;
+        float degPerPxX = fov_deg / w;
+        float degPerPxY = fov_deg / h;
 
         float sm = (aimbot_smooth <= 1.0f) ? 1.0f : (1.0f / (1.0f + aimbot_smooth * 0.3f));
         sm = fmaxf(0.05f, fminf(sm, 1.0f));
 
-        float newPitch = currentPitch + (targetPitch - currentPitch) * sm;
-        float newYaw   = currentYaw   + (targetYaw   - currentYaw)   * sm;
+        float newPitch = currentPitch - errY * degPerPxY * sm;
+        float newYaw   = currentYaw   + errX * degPerPxX * sm;
 
         Write<float>(aimingData + 0x18, newPitch, so2_task);
         Write<float>(aimingData + 0x1C, newYaw,   so2_task);
