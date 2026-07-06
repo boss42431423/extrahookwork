@@ -423,6 +423,8 @@ struct ESPBoxData {
         static pid_t cached_chain_pid = 0;
         static int dbg_frame = 0;
         static int cam_off_cache = -1, cam_p1_cache = -1, cam_p2_cache = -1, cam_m_cache = -1;
+        static SO2_Matrix prevValidMatrix = {0};
+        static bool hasPrevMatrix = false;
         if (cached_chain_pid != so2_pid) {
             cached_s_off = -1;
             cached_s_src = -1;
@@ -552,10 +554,9 @@ struct ESPBoxData {
         }
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
 
-        // Сброс кэшей камеры при смене PM или localPlayer
+        // Сброс кэшей камеры при смене PM
         {
             static mach_vm_address_t prev_pm = 0;
-            static mach_vm_address_t prev_lp = 0;
             if (playerManager != prev_pm) {
                 cam_off_cache = -1;
                 prev_pm = playerManager;
@@ -584,6 +585,7 @@ struct ESPBoxData {
                 static mach_vm_address_t prev_lp = 0;
                 if (localPlayer != prev_lp && localPlayer > 0x1000000) {
                     cam_off_cache = -1;
+                    hasPrevMatrix = false;
                     prev_lp = localPlayer;
                 }
             }
@@ -780,35 +782,49 @@ struct ESPBoxData {
             static int last_good_cam = -1, last_good_p1 = -1, last_good_p2 = -1, last_good_m = -1;
             CGFloat sw = self.bounds.size.width, sh = self.bounds.size.height;
 
-            // Найти позицию первого врага для валидации матрицы
-            Vector3 valPos = {0,0,0};
+            // Собрать позиции нескольких врагов для валидации
+            Vector3 valPositions[3] = {{0,0,0},{0,0,0},{0,0,0}};
+            int valCount = 0;
             {
                 mach_vm_address_t tdict = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
                 if (tdict > 0x1000000) {
                     mach_vm_address_t tarr = Read<mach_vm_address_t>(tdict + 0x18, so2_task);
                     if (tarr > 0x1000000) {
-                        for (int ti = 0; ti < 10; ti++) {
+                        for (int ti = 0; ti < 10 && valCount < 3; ti++) {
                             mach_vm_address_t tp = Read<mach_vm_address_t>(tarr + 0x20 + ti * 0x18 + 0x10, so2_task);
                             if (tp < 0x1000000 || tp == localPlayer) continue;
                             mach_vm_address_t mc = Read<mach_vm_address_t>(tp + 0x98, so2_task);
                             if (mc < 0x1000000) continue;
                             mach_vm_address_t md = Read<mach_vm_address_t>(mc + 0xB0, so2_task);
                             if (md < 0x1000000) continue;
-                            valPos = Read<Vector3>(md + 0x44, so2_task);
-                            if (valPos.x != 0 || valPos.y != 0 || valPos.z != 0) break;
+                            Vector3 vp = Read<Vector3>(md + 0x44, so2_task);
+                            if (vp.x != 0 || vp.y != 0 || vp.z != 0) {
+                                valPositions[valCount++] = vp;
+                            }
                         }
                     }
                 }
             }
 
-            // Проверка матрицы: диагональ + WorldToScreen если есть враг
-            auto validateMatrix = [&](SO2_Matrix &m) -> bool {
+            auto validateMatrix = [&](SO2_Matrix &m, bool strict) -> bool {
                 if (fabsf(m.m11) < 0.01f || fabsf(m.m22) < 0.01f || fabsf(m.m33) < 0.01f) return false;
                 if (fabsf(m.m11) > 10.0f || fabsf(m.m22) > 10.0f || fabsf(m.m33) > 10.0f) return false;
-                if (valPos.x != 0 || valPos.y != 0 || valPos.z != 0) {
-                    Vector3 sc = WorldToScreen(valPos, m, sw, sh);
-                    if (sc.z < 0.001f) return false;
-                    if (sc.x < -sw || sc.x > sw * 2 || sc.y < -sh || sc.y > sh * 2) return false;
+                if (fabsf(m.m44) < 0.5f || fabsf(m.m44) > 1.5f) return false;
+                if (valCount > 0) {
+                    int passed = 0;
+                    for (int vi = 0; vi < valCount; vi++) {
+                        Vector3 sc = WorldToScreen(valPositions[vi], m, sw, sh);
+                        if (sc.z > 0.001f && sc.x > -sw * 0.5f && sc.x < sw * 1.5f && sc.y > -sh * 0.5f && sc.y < sh * 1.5f)
+                            passed++;
+                    }
+                    if (strict && passed < valCount) return false;
+                    if (passed == 0) return false;
+                }
+                if (hasPrevMatrix) {
+                    float diff = fabsf(m.m11 - prevValidMatrix.m11) + fabsf(m.m22 - prevValidMatrix.m22)
+                               + fabsf(m.m33 - prevValidMatrix.m33) + fabsf(m.m14 - prevValidMatrix.m14)
+                               + fabsf(m.m24 - prevValidMatrix.m24) + fabsf(m.m34 - prevValidMatrix.m34);
+                    if (diff > 50.0f) return false;
                 }
                 return true;
             };
@@ -822,13 +838,9 @@ struct ESPBoxData {
                         mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + cam_p2_cache, so2_task);
                         if (v3 > 0x1000000) {
                             SO2_Matrix m = Read<SO2_Matrix>(v3 + cam_m_cache, so2_task);
-                            if (validateMatrix(m)) {
+                            if (validateMatrix(m, true)) {
                                 viewMatrix = m;
                                 matrixFound = true;
-                                last_good_cam = cam_off_cache;
-                                last_good_p1 = cam_p1_cache;
-                                last_good_p2 = cam_p2_cache;
-                                last_good_m = cam_m_cache;
                             }
                         }
                     }
@@ -847,7 +859,7 @@ struct ESPBoxData {
                         mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + last_good_p2, so2_task);
                         if (v3 > 0x1000000) {
                             SO2_Matrix m = Read<SO2_Matrix>(v3 + last_good_m, so2_task);
-                            if (validateMatrix(m)) {
+                            if (validateMatrix(m, true)) {
                                 viewMatrix = m;
                                 matrixFound = true;
                                 cam_off_cache = last_good_cam;
@@ -860,54 +872,53 @@ struct ESPBoxData {
                 }
             }
 
-            if (localPlayer > 0x1000000 && !matrixFound) {
-                Vector3 testPos = valPos;
+            // Если кэш не сработал — используем предыдущую матрицу пока ищем
+            if (!matrixFound && hasPrevMatrix) {
+                viewMatrix = prevValidMatrix;
+                matrixFound = true;
+            }
 
+            // Полный скан оффсетов (без блокировки отрисовки)
+            if (localPlayer > 0x1000000 && cam_off_cache < 0) {
                 int camOffs[] = {0xE8, 0xE0, 0xF0, 0xD8, 0xD0, 0xF8, 0x100, 0x108, 0x110, 0x118, 0x120};
                 int p1s[] = {0x20, 0x18, 0x28, 0x10, 0x30};
                 int p2s[] = {0x10, 0x18, 0x08, 0x20};
                 int moffs[] = {0x100, 0xF0, 0xE0, 0xD0, 0xC0, 0x110, 0x120, 0xB0, 0xA0};
+                bool scanFound = false;
 
-                for (int ci = 0; ci < 11 && !matrixFound; ci++) {
+                for (int ci = 0; ci < 11 && !scanFound; ci++) {
                     mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + camOffs[ci], so2_task);
                     if (v1 < 0x1000000) continue;
-                    for (int pi = 0; pi < 5 && !matrixFound; pi++) {
+                    for (int pi = 0; pi < 5 && !scanFound; pi++) {
                         mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + p1s[pi], so2_task);
                         if (v2 < 0x1000000) continue;
-                        for (int qi = 0; qi < 4 && !matrixFound; qi++) {
+                        for (int qi = 0; qi < 4 && !scanFound; qi++) {
                             mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + p2s[qi], so2_task);
                             if (v3 < 0x1000000) continue;
-                            for (int mi = 0; mi < 9 && !matrixFound; mi++) {
+                            for (int mi = 0; mi < 9 && !scanFound; mi++) {
                                 SO2_Matrix m = Read<SO2_Matrix>(v3 + moffs[mi], so2_task);
-                                // Все 3 диагональных элемента должны быть ненулевыми
-                                if (fabsf(m.m11) < 0.01f || fabsf(m.m22) < 0.01f || fabsf(m.m33) < 0.01f) continue;
-                                // Диагональ не должна быть слишком большой
-                                if (fabsf(m.m11) > 10.0f || fabsf(m.m22) > 10.0f || fabsf(m.m33) > 10.0f) continue;
-                                if (testPos.x != 0 || testPos.y != 0 || testPos.z != 0) {
-                                    Vector3 sc = WorldToScreen(testPos, m, sw, sh);
-                                    if (sc.z > 0.01f && sc.x > 0 && sc.x < sw && sc.y > 0 && sc.y < sh) {
-                                        viewMatrix = m;
-                                        matrixFound = true;
-                                        cam_off_cache = camOffs[ci];
-                                        cam_p1_cache = p1s[pi];
-                                        cam_p2_cache = p2s[qi];
-                                        cam_m_cache = moffs[mi];
-                                    }
-                                } else {
-                                    float s = fabsf(m.m11) + fabsf(m.m22) + fabsf(m.m33);
-                                    if (s > 1.0f && s < 10.0f) {
-                                        viewMatrix = m;
-                                        matrixFound = true;
-                                        cam_off_cache = camOffs[ci];
-                                        cam_p1_cache = p1s[pi];
-                                        cam_p2_cache = p2s[qi];
-                                        cam_m_cache = moffs[mi];
-                                    }
+                                if (validateMatrix(m, false)) {
+                                    viewMatrix = m;
+                                    matrixFound = true;
+                                    scanFound = true;
+                                    cam_off_cache = camOffs[ci];
+                                    cam_p1_cache = p1s[pi];
+                                    cam_p2_cache = p2s[qi];
+                                    cam_m_cache = moffs[mi];
+                                    last_good_cam = camOffs[ci];
+                                    last_good_p1 = p1s[pi];
+                                    last_good_p2 = p2s[qi];
+                                    last_good_m = moffs[mi];
                                 }
                             }
                         }
                     }
                 }
+            }
+
+            if (matrixFound) {
+                prevValidMatrix = viewMatrix;
+                hasPrevMatrix = true;
             }
 
             {
@@ -1781,8 +1792,6 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     self.aimbotLastWriteTime = now;
 
     if (aimbot_enabled) {
-        Write<float>(aimingData + 0x10, newPitch, so2_task);
-        Write<float>(aimingData + 0x14, newYaw,   so2_task);
         Write<float>(aimingData + 0x18, newPitch, so2_task);
         Write<float>(aimingData + 0x1C, newYaw,   so2_task);
         Write<float>(aimingData + 0x24, newPitch, so2_task);
