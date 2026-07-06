@@ -1740,39 +1740,63 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
     if (dist < 0.0001f) return;
 
-    float targetPitch = asinf(dirY / dist) * (180.0f / M_PI);
+    float targetPitch = -asinf(dirY / dist) * (180.0f / M_PI);
     float targetYaw   = atan2f(dirX, dirZ) * (180.0f / M_PI);
 
     double now = CACurrentMediaTime();
     self.aimbotLastWriteTime = now;
 
-    if (aimbot_enabled) {
-        float currentPitch = Read<float>(aimingData + 0x18, so2_task);
-        float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
+    if (aimbot_enabled && camTransform > 0x1000000) {
+        mach_vm_address_t transObj = Read<mach_vm_address_t>(camTransform + 0x10, so2_task);
+        if (transObj > 0x1000000) {
+            mach_vm_address_t matrixPtr = Read<mach_vm_address_t>(transObj + 0x38, so2_task);
+            int tIndex = Read<int>(transObj + 0x40, so2_task);
+            if (matrixPtr > 0x1000000 && tIndex >= 0) {
+                mach_vm_address_t matList = Read<mach_vm_address_t>(matrixPtr + 0x18, so2_task);
+                if (matList > 0x1000000) {
+                    // Читаем текущий quaternion камеры
+                    mach_vm_address_t tAddr = matList + (mach_vm_address_t)(48 * tIndex);
+                    Vector4 curRot = Read<Vector4>(tAddr + 16, so2_task);
 
-        float pitchDelta = targetPitch - currentPitch;
-        float yawDelta   = targetYaw - currentYaw;
-        while (yawDelta > 180.0f) yawDelta -= 360.0f;
-        while (yawDelta < -180.0f) yawDelta += 360.0f;
+                    // Текущие Euler из quaternion
+                    float sinp = 2.0f * (curRot.w * curRot.x - curRot.y * curRot.z);
+                    float curP = fabsf(sinp) >= 1.0f ? copysignf(90.0f, sinp) : asinf(sinp) * (180.0f / M_PI);
+                    float siny = 2.0f * (curRot.w * curRot.y + curRot.x * curRot.z);
+                    float cosy = 1.0f - 2.0f * (curRot.x * curRot.x + curRot.y * curRot.y);
+                    float curY = atan2f(siny, cosy) * (180.0f / M_PI);
 
-        float newPitch, newYaw;
-        if (aimbot_smooth <= 1.0f) {
-            newPitch = fmaxf(-89.0f, fminf(89.0f, targetPitch));
-            newYaw   = targetYaw;
-        } else {
-            float smooth = 1.0f / (1.0f + aimbot_smooth * 0.5f);
-            smooth = fmaxf(0.03f, fminf(smooth, 1.0f));
-            newPitch = fmaxf(-89.0f, fminf(89.0f, currentPitch + pitchDelta * smooth));
-            newYaw   = currentYaw + yawDelta * smooth;
+                    float pitchDelta = targetPitch - curP;
+                    float yawDelta = targetYaw - curY;
+                    while (yawDelta > 180.0f) yawDelta -= 360.0f;
+                    while (yawDelta < -180.0f) yawDelta += 360.0f;
+
+                    float newP, newY;
+                    if (aimbot_smooth <= 1.0f) {
+                        newP = fmaxf(-89.0f, fminf(89.0f, targetPitch));
+                        newY = targetYaw;
+                    } else {
+                        float sm = 1.0f / (1.0f + aimbot_smooth * 0.5f);
+                        sm = fmaxf(0.03f, fminf(sm, 1.0f));
+                        newP = fmaxf(-89.0f, fminf(89.0f, curP + pitchDelta * sm));
+                        newY = curY + yawDelta * sm;
+                    }
+
+                    // Euler → Quaternion (Unity YXZ)
+                    float hp = newP * 0.5f * (M_PI / 180.0f);
+                    float hy = newY * 0.5f * (M_PI / 180.0f);
+                    float shp = sinf(hp), chp = cosf(hp);
+                    float shy = sinf(hy), chy = cosf(hy);
+
+                    Vector4 newRot;
+                    newRot.x = chy * shp;
+                    newRot.y = shy * chp;
+                    newRot.z = -shy * shp;
+                    newRot.w = chy * chp;
+
+                    Write<Vector4>(tAddr + 16, newRot, so2_task);
+                }
+            }
         }
-
-        Write<float>(aimingData + 0x18, newPitch, so2_task);
-        Write<float>(aimingData + 0x1C, newYaw,   so2_task);
-        Write<float>(aimingData + 0x24, newPitch, so2_task);
-        Write<float>(aimingData + 0x28, newYaw,   so2_task);
-
-        Write<float>(aimController + 0x1E4, newPitch, so2_task);
-        Write<float>(aimController + 0x1E8, newYaw,   so2_task);
     }
 
     if (aimbot_triggerbot) {
