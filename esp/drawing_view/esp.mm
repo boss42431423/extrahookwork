@@ -117,7 +117,7 @@ volatile float viewmodel_y        = 0.0f;
 volatile float viewmodel_z        = 0.0f;
 
 volatile bool esp_auto_load = false;
-volatile bool esp_skeleton_enabled = false;
+volatile bool esp_skeleton_enabled = true;
 NSString *esp_selected_config = nil;
 
 @interface UIWindow (Private)
@@ -1675,11 +1675,7 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     float currentPitch = Read<float>(aimingData + 0x18, so2_task);
     float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-    // Извлекаем вертикальный FOV из VP матрицы и используем для обеих осей
-    float vfov = 2.0f * atanf(1.0f / fabsf(viewMatrix.m22)) * (180.0f / M_PI);
-    if (vfov < 10.0f || vfov > 170.0f) vfov = 70.0f;
-
-    float degPerPx = vfov / h;
+    float degPerPx = 0.018f;
 
     float targetDeltaPitch = errY * degPerPx;
     float targetDeltaYaw   = errX * degPerPx;
