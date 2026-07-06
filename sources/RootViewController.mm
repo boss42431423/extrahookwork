@@ -140,12 +140,6 @@ else
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSString *urlStr = @(OBF("https://t.me/projectios"));
-        NSURL *url = [NSURL URLWithString:urlStr];
-        [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
-    });
 }
 
 - (void)reloadMainButtonState

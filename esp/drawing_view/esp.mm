@@ -233,11 +233,9 @@ struct ESPBoxData {
     [self.layer addSublayer:self.fovCircleLayer];
 
     UILabel *wm = [[UILabel alloc] init];
-    wm.text = @(OBF("t.me/projectios"));
-    wm.textColor = [UIColor whiteColor];
-    wm.font = [UIFont boldSystemFontOfSize:16.0f];
+    wm.text = @"";
+    wm.hidden = YES;
     wm.userInteractionEnabled = NO;
-    [self addSubview:wm];
     self.watermarkLabel = wm;
 
     UILabel *playerCountLabel = [UILabel new];
@@ -1245,7 +1243,7 @@ struct UnityString32 { uint16_t chars[32]; };
                 }
             }
             self.playerCountLabel.text = [NSString stringWithFormat:@"PastaWare | Players: %d", (int)validPlayers];
-            self.playerCountLabel.hidden = NO;
+            self.playerCountLabel.hidden = YES;
             [self.playerCountLabel sizeToFit];
             free(players);
 
@@ -1611,7 +1609,7 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
         float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
         if (dist < 0.01f) dist = 0.01f;
 
-        float targetPitch = -asinf(dirY / dist) * (180.0f / M_PI);
+        float targetPitch = asinf(dirY / dist) * (180.0f / M_PI);
         float targetYaw   = atan2f(dirX, dirZ) * (180.0f / M_PI);
 
         float sm = (aimbot_smooth <= 1.0f) ? 1.0f : (1.0f / (1.0f + aimbot_smooth * 0.3f));
