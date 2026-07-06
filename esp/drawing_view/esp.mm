@@ -1269,25 +1269,27 @@ struct UnityString32 { uint16_t chars[32]; };
                             // 0x98=rightUpperLeg, 0xA0=rightLowerLeg, 0xA8=rightFoot
                             struct BoneConn { int from; int to; };
                             BoneConn conns[] = {
-                                {0x20, 0x28}, // head → neck
-                                {0x28, 0x30}, // neck → spine2
-                                {0x30, 0x38}, // spine2 → spine1
-                                {0x38, 0x40}, // spine1 → spine
-                                {0x40, 0x48}, // spine → hips
-                                {0x28, 0x50}, // neck → leftUpperArm
-                                {0x50, 0x58}, // leftUpperArm → leftLowerArm
-                                {0x58, 0x60}, // leftLowerArm → leftHand
-                                {0x28, 0x68}, // neck → rightUpperArm
-                                {0x68, 0x70}, // rightUpperArm → rightLowerArm
-                                {0x70, 0x78}, // rightLowerArm → rightHand
-                                {0x48, 0x80}, // hips → leftUpperLeg
-                                {0x80, 0x88}, // leftUpperLeg → leftLowerLeg
-                                {0x88, 0x90}, // leftLowerLeg → leftFoot
-                                {0x48, 0x98}, // hips → rightUpperLeg
-                                {0x98, 0xA0}, // rightUpperLeg → rightLowerLeg
-                                {0xA0, 0xA8}, // rightLowerLeg → rightFoot
+                                {0x20, 0x28}, // Head → Neck
+                                {0x28, 0x40}, // Neck → Spine2
+                                {0x40, 0x38}, // Spine2 → Spine1
+                                {0x38, 0x30}, // Spine1 → Spine
+                                {0x30, 0x88}, // Spine → Hip
+                                {0x28, 0x48}, // Neck → LeftShoulder
+                                {0x48, 0x50}, // LeftShoulder → LeftUpperarm
+                                {0x50, 0x58}, // LeftUpperarm → LeftForearm
+                                {0x58, 0x60}, // LeftForearm → LeftHand
+                                {0x28, 0x68}, // Neck → RightShoulder
+                                {0x68, 0x70}, // RightShoulder → RightUpperarm
+                                {0x70, 0x78}, // RightUpperarm → RightForearm
+                                {0x78, 0x80}, // RightForearm → RightHand
+                                {0x88, 0x90}, // Hip → LeftUpLeg
+                                {0x90, 0x98}, // LeftUpLeg → LeftLeg
+                                {0x98, 0xA0}, // LeftLeg → LeftFoot
+                                {0x88, 0xB0}, // Hip → RightUpLeg
+                                {0xB0, 0xB8}, // RightUpLeg → RightLeg
+                                {0xB8, 0xC0}, // RightLeg → RightFoot
                             };
-                            for (int bi = 0; bi < 17; bi++) {
+                            for (int bi = 0; bi < 19; bi++) {
                                 Vector3 p1 = GetBoneByOffset(bMap, conns[bi].from, so2_task);
                                 Vector3 p2 = GetBoneByOffset(bMap, conns[bi].to, so2_task);
                                 if ((p1.x == 0 && p1.y == 0 && p1.z == 0) ||
@@ -1662,15 +1664,20 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
         float currentPitch = Read<float>(aimingData + 0x18, so2_task);
         float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-        float fov_deg = 60.0f;
-        float degPerPxX = fov_deg / w;
-        float degPerPxY = fov_deg / h;
+        // Вычисляем углы к цели через VP матрицу (точно, без угадывания FOV)
+        // errX/errY в пикселях от центра, нормализуем к [-1,1]
+        float ndcX = errX / (w * 0.5f);  // -1..1
+        float ndcY = errY / (h * 0.5f);  // -1..1
+
+        // Угол через atan — учитывает реальный FOV камеры
+        float angleX = atanf(ndcX) * (180.0f / M_PI);
+        float angleY = atanf(ndcY) * (180.0f / M_PI);
 
         float sm = (aimbot_smooth <= 1.0f) ? 1.0f : (1.0f / (1.0f + aimbot_smooth * 0.3f));
         sm = fmaxf(0.05f, fminf(sm, 1.0f));
 
-        float newPitch = currentPitch + errY * degPerPxY * sm;
-        float newYaw   = currentYaw   + errX * degPerPxX * sm;
+        float newPitch = currentPitch + angleY * sm;
+        float newYaw   = currentYaw   + angleX * sm;
 
         Write<float>(aimingData + 0x18, newPitch, so2_task);
         Write<float>(aimingData + 0x1C, newYaw,   so2_task);
