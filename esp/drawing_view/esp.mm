@@ -221,9 +221,10 @@ struct ESPBoxData {
     [self.layer addSublayer:self.espLineLayer];
 
     self.espSkeletonLayer = [CAShapeLayer layer];
-    self.espSkeletonLayer.strokeColor = [UIColor cyanColor].CGColor;
+    self.espSkeletonLayer.strokeColor = [UIColor greenColor].CGColor;
     self.espSkeletonLayer.fillColor   = [UIColor clearColor].CGColor;
-    self.espSkeletonLayer.lineWidth   = 1.5;
+    self.espSkeletonLayer.lineWidth   = 2.0;
+    self.espSkeletonLayer.zPosition   = 100;
     [self.layer addSublayer:self.espSkeletonLayer];
 
     self.fovCircleOutlineLayer = [CAShapeLayer layer];
@@ -1252,7 +1253,6 @@ struct UnityString32 { uint16_t chars[32]; };
                     }
 
                     if (esp_skeleton_enabled) {
-                        // Сначала пробуем полный скелетон через BipedMap
                         mach_vm_address_t bMap = FindBipedMap(player, so2_task);
                         if (bMap) {
                             struct BoneConn { int from; int to; };
@@ -1275,25 +1275,10 @@ struct UnityString32 { uint16_t chars[32]; };
                                 [skeletonPath moveToPoint:CGPointMake(s1.x, s1.y)];
                                 [skeletonPath addLineToPoint:CGPointMake(s2.x, s2.y)];
                             }
-                        } else {
-                            // Фоллбэк: простой скелетон из GetBonePosition (head, neck, chest, hip)
-                            Vector3 bones[4];
-                            bones[0] = GetBonePosition(player, 0, so2_task); // head
-                            bones[1] = GetBonePosition(player, 1, so2_task); // neck
-                            bones[2] = GetBonePosition(player, 2, so2_task); // chest
-                            bones[3] = GetBonePosition(player, 3, so2_task); // hip
-                            int links[][2] = {{0,1},{1,2},{2,3}};
-                            for (int li = 0; li < 3; li++) {
-                                Vector3 &a = bones[links[li][0]], &b = bones[links[li][1]];
-                                if ((a.x == 0 && a.y == 0 && a.z == 0) ||
-                                    (b.x == 0 && b.y == 0 && b.z == 0)) continue;
-                                Vector3 sa = WorldToScreen(a, viewMatrix, w, h);
-                                Vector3 sb = WorldToScreen(b, viewMatrix, w, h);
-                                if (sa.z <= 0 || sb.z <= 0) continue;
-                                [skeletonPath moveToPoint:CGPointMake(sa.x, sa.y)];
-                                [skeletonPath addLineToPoint:CGPointMake(sb.x, sb.y)];
-                            }
                         }
+                        // Всегда рисуем центральную линию head→foot через screenHead/screenFoot
+                        [skeletonPath moveToPoint:CGPointMake(screenHead.x, screenHead.y)];
+                        [skeletonPath addLineToPoint:CGPointMake(screenFoot.x, screenFoot.y)];
                     }
                 }
             }
@@ -1675,7 +1660,7 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     float currentPitch = Read<float>(aimingData + 0x18, so2_task);
     float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-    float degPerPx = 0.018f;
+    float degPerPx = 0.015f;
 
     float targetDeltaPitch = errY * degPerPx;
     float targetDeltaYaw   = errX * degPerPx;
@@ -1683,8 +1668,9 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     float newPitch, newYaw;
 
     if (aimbot_smooth <= 1.0f) {
-        newPitch = currentPitch + targetDeltaPitch;
-        newYaw   = currentYaw   + targetDeltaYaw;
+        // Мгновенный снап: увеличенный множитель для конвергенции за 1 кадр
+        newPitch = currentPitch + targetDeltaPitch * 1.5f;
+        newYaw   = currentYaw   + targetDeltaYaw   * 1.5f;
     } else {
         float smooth = 1.0f / (1.0f + aimbot_smooth * 0.5f);
         smooth = fmaxf(0.03f, fminf(smooth, 1.0f));
