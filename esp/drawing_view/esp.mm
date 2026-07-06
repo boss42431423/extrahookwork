@@ -337,7 +337,6 @@ struct ESPBoxData {
     static std::atomic<bool>     s_pm_scanning{false};
     static std::atomic<pid_t>    s_pm_scanned_pid{0};
     static bool s_quick_tried = false;
-    static pid_t s_quick_pid = 0;
 
     pid_t so2_pid = get_pid_by_name("Standoff2");
 
@@ -374,7 +373,6 @@ struct ESPBoxData {
         cached_so2_pid = so2_pid;
         s_pm_scanned_pid = 0;
         s_quick_tried = false;
-        s_quick_pid = 0;
     }
 
     // Быстрый старт: читаем 256KB вокруг хинта и ищем PlayerManager
