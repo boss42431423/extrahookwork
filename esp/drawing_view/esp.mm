@@ -1254,8 +1254,6 @@ struct UnityString32 { uint16_t chars[32]; };
 
                     if (esp_skeleton_enabled) {
                         mach_vm_address_t bm = FindBipedMapCached(player, so2_task);
-                        bool usedRealBones = false;
-
                         if (bm) {
                             int boneOffsets[] = {
                                 0x20, 0x28, 0x40, 0x88,
@@ -1270,8 +1268,7 @@ struct UnityString32 { uint16_t chars[32]; };
                                 bones[bi] = GetBoneWorldPos(bm, boneOffsets[bi], so2_task);
                                 if (bones[bi].x != 0 || bones[bi].y != 0 || bones[bi].z != 0) validCount++;
                             }
-                            if (validCount >= 10) {
-                                usedRealBones = true;
+                            if (validCount >= 6) {
                                 int skelLinks[][2] = {
                                     {0,1},{1,2},{2,3},
                                     {1,4},{4,5},{5,6},{6,7},
@@ -1289,42 +1286,6 @@ struct UnityString32 { uint16_t chars[32]; };
                                     if (s1.z <= 0 || s2.z <= 0) continue;
                                     [skeletonPath moveToPoint:CGPointMake(s1.x, s1.y)];
                                     [skeletonPath addLineToPoint:CGPointMake(s2.x, s2.y)];
-                                }
-                            }
-                        }
-
-                        if (!usedRealBones) {
-                            float hx = screenHead.x, hy = screenHead.y;
-                            float fy = screenFoot.y;
-                            float bh = fy - hy;
-                            float bw = bh / 2.0f;
-                            if (bh > 5.0f) {
-                                CGPoint pts[] = {
-                                    CGPointMake(hx, hy),
-                                    CGPointMake(hx, hy + bh * 0.12f),
-                                    CGPointMake(hx, hy + bh * 0.30f),
-                                    CGPointMake(hx, hy + bh * 0.48f),
-                                    CGPointMake(hx - bw * 0.38f, hy + bh * 0.14f),
-                                    CGPointMake(hx - bw * 0.52f, hy + bh * 0.34f),
-                                    CGPointMake(hx - bw * 0.40f, hy + bh * 0.52f),
-                                    CGPointMake(hx + bw * 0.38f, hy + bh * 0.14f),
-                                    CGPointMake(hx + bw * 0.52f, hy + bh * 0.34f),
-                                    CGPointMake(hx + bw * 0.40f, hy + bh * 0.52f),
-                                    CGPointMake(hx - bw * 0.16f, hy + bh * 0.75f),
-                                    CGPointMake(hx - bw * 0.18f, fy),
-                                    CGPointMake(hx + bw * 0.16f, hy + bh * 0.75f),
-                                    CGPointMake(hx + bw * 0.18f, fy),
-                                };
-                                int links[][2] = {
-                                    {0,1},{1,2},{2,3},
-                                    {1,4},{4,5},{5,6},
-                                    {1,7},{7,8},{8,9},
-                                    {3,10},{10,11},
-                                    {3,12},{12,13},
-                                };
-                                for (int li = 0; li < 13; li++) {
-                                    [skeletonPath moveToPoint:pts[links[li][0]]];
-                                    [skeletonPath addLineToPoint:pts[links[li][1]]];
                                 }
                             }
                         }
@@ -1691,67 +1652,44 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     float currentPitch = Read<float>(aimingData + 0x18, so2_task);
     float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-    Vector3 camPos = {0,0,0};
-    bool hasCamPos = false;
+    // Извлекаем позицию камеры из VP матрицы (Cramer's rule)
+    float a11 = viewMatrix.m11, a12 = viewMatrix.m21, a13 = viewMatrix.m31;
+    float a21 = viewMatrix.m12, a22 = viewMatrix.m22, a23 = viewMatrix.m32;
+    float a31 = viewMatrix.m14, a32 = viewMatrix.m24, a33 = viewMatrix.m34;
+    float b1 = -viewMatrix.m41, b2 = -viewMatrix.m42, b3 = -viewMatrix.m44;
 
-    mach_vm_address_t camTransform = Read<mach_vm_address_t>(aimController + 0x80, so2_task);
-    if (camTransform > 0x1000000) {
-        camPos = get_position_by_transform(camTransform, so2_task);
-        if (camPos.x != 0 || camPos.y != 0 || camPos.z != 0) hasCamPos = true;
-    }
-    if (!hasCamPos) {
-        camTransform = Read<mach_vm_address_t>(aimController + 0x78, so2_task);
-        if (camTransform > 0x1000000) {
-            camPos = get_position_by_transform(camTransform, so2_task);
-            if (camPos.x != 0 || camPos.y != 0 || camPos.z != 0) hasCamPos = true;
-        }
-    }
+    float det = a11*(a22*a33 - a23*a32) - a12*(a21*a33 - a23*a31) + a13*(a21*a32 - a22*a31);
+    if (fabsf(det) < 1e-6f) return;
+
+    float invDet = 1.0f / det;
+    Vector3 camPos;
+    camPos.x = (b1*(a22*a33 - a23*a32) - a12*(b2*a33 - a23*b3) + a13*(b2*a32 - a22*b3)) * invDet;
+    camPos.y = (a11*(b2*a33 - a23*b3) - b1*(a21*a33 - a23*a31) + a13*(a21*b3 - b2*a31)) * invDet;
+    camPos.z = (a11*(a22*b3 - b2*a32) - a12*(a21*b3 - b2*a31) + b1*(a21*a32 - a22*a31)) * invDet;
+
+    float dx = closestBonePos.x - camPos.x;
+    float dy = closestBonePos.y - camPos.y;
+    float dz = closestBonePos.z - camPos.z;
+    float horizDist = sqrtf(dx * dx + dz * dz);
+    if (horizDist < 0.01f) return;
+
+    float targetPitch = -atan2f(dy, horizDist) * (180.0f / M_PI);
+    float targetYaw   =  atan2f(dx, dz) * (180.0f / M_PI);
+
+    float diffYaw = targetYaw - currentYaw;
+    while (diffYaw > 180.0f)  diffYaw -= 360.0f;
+    while (diffYaw < -180.0f) diffYaw += 360.0f;
 
     float newPitch, newYaw;
 
-    if (hasCamPos) {
-        float dx = closestBonePos.x - camPos.x;
-        float dy = closestBonePos.y - camPos.y;
-        float dz = closestBonePos.z - camPos.z;
-        float horizDist = sqrtf(dx * dx + dz * dz);
-        if (horizDist < 0.01f) return;
-
-        float targetPitch = -atan2f(dy, horizDist) * (180.0f / M_PI);
-        float targetYaw   =  atan2f(dx, dz) * (180.0f / M_PI);
-
-        float diffYaw = targetYaw - currentYaw;
-        while (diffYaw > 180.0f)  diffYaw -= 360.0f;
-        while (diffYaw < -180.0f) diffYaw += 360.0f;
-
-        if (aimbot_smooth <= 1.0f) {
-            newPitch = targetPitch;
-            newYaw   = currentYaw + diffYaw;
-        } else {
-            float t = 1.0f / (1.0f + aimbot_smooth * 0.5f);
-            t = fmaxf(0.05f, fminf(t, 1.0f));
-            newPitch = currentPitch + (targetPitch - currentPitch) * t;
-            newYaw   = currentYaw   + diffYaw * t;
-        }
+    if (aimbot_smooth <= 1.0f) {
+        newPitch = targetPitch;
+        newYaw   = currentYaw + diffYaw;
     } else {
-        Vector3 screenTarget = WorldToScreen(closestBonePos, viewMatrix, (int)w, (int)h);
-        if (screenTarget.z <= 0) return;
-
-        float cx2 = w / 2.0f, cy2 = h / 2.0f;
-        float errX = screenTarget.x - cx2;
-        float errY = screenTarget.y - cy2;
-
-        float degPerPxX = 0.045f;
-        float degPerPxY = 0.055f;
-
-        if (aimbot_smooth <= 1.0f) {
-            newPitch = currentPitch + errY * degPerPxY;
-            newYaw   = currentYaw   + errX * degPerPxX;
-        } else {
-            float t = 1.0f / (1.0f + aimbot_smooth * 0.5f);
-            t = fmaxf(0.05f, fminf(t, 1.0f));
-            newPitch = currentPitch + errY * degPerPxY * t;
-            newYaw   = currentYaw   + errX * degPerPxX * t;
-        }
+        float t = 1.0f / (1.0f + aimbot_smooth * 0.5f);
+        t = fmaxf(0.05f, fminf(t, 1.0f));
+        newPitch = currentPitch + (targetPitch - currentPitch) * t;
+        newYaw   = currentYaw   + diffYaw * t;
     }
 
     newPitch = fmaxf(-89.0f, fminf(89.0f, newPitch));
