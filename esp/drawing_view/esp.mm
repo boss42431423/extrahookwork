@@ -333,11 +333,8 @@ struct ESPBoxData {
     static pid_t cached_so2_pid = 0;
     static task_t cached_so2_task = 0;
     static mach_vm_address_t cached_unity_base = 0;
-    static std::atomic<uint64_t> s_pm_ti_offset{178356728ULL};
     static std::atomic<bool>     s_pm_scanning{false};
     static std::atomic<pid_t>    s_pm_scanned_pid{0};
-    static bool s_quick_tried = false;
-    static int s_quick_chunk = 0;
 
     pid_t so2_pid = get_pid_by_name("Standoff2");
 
@@ -373,63 +370,19 @@ struct ESPBoxData {
 
         cached_so2_pid = so2_pid;
         s_pm_scanned_pid = 0;
-        s_quick_tried = false;
-        s_quick_chunk = 0;
     }
 
-    // Мгновенный старт: пробуем хинт + ±1024 байт каждый кадр
-    if (cached_unity_base && cached_so2_task && get_scan_phase() != 2 && !s_quick_tried) {
-        const uint64_t HINT = 178356728ULL;
-        // Зигзаг: 0, +8, -8, +16, -16, ... до ±1024
-        int64_t delta = (s_quick_chunk == 0) ? 0 : ((s_quick_chunk % 2 == 1) ? ((s_quick_chunk/2+1)*8) : (-(s_quick_chunk/2)*8));
-        uint64_t tryOff = (int64_t)HINT + delta;
-        uint64_t ti = Read<uint64_t>(cached_unity_base + tryOff, cached_so2_task);
-        if (ti > 0x1000000 && (ti & 7) == 0) {
-            uint64_t namePtr = Read<uint64_t>(ti + 0x10, cached_so2_task);
-            if (namePtr > 0x1000000) {
-                char nbuf[16] = {0};
-                mach_vm_size_t nsz = 14;
-                if (mach_vm_read_overwrite(cached_so2_task, namePtr, 14, (mach_vm_address_t)nbuf, &nsz) == KERN_SUCCESS) {
-                    if (memcmp(nbuf, "PlayerManager", 13) == 0) {
-                        s_pm_ti_offset = tryOff;
-                        set_found_class(ti);
-                        set_found_name_off(0x10);
-                        set_scan_phase(2);
-                    }
-                }
-            }
-        }
-        s_quick_chunk++;
-        if (s_quick_chunk >= 256) s_quick_tried = true; // ±1024 байт покрыто
-    }
-
-    // Фоновый скан — запускаем СРАЗУ параллельно с быстрым стартом
-    static double s_last_scan_time = 0;
+    // Фоновый скан — запускаем сразу при новом PID
     if (cached_unity_base && cached_so2_task && !s_pm_scanning && get_scan_phase() != 2) {
-        if (s_pm_scanned_pid != so2_pid) {
+        if (s_pm_scanned_pid != so2_pid || get_scan_phase() == -1) {
             s_pm_scanning    = true;
             s_pm_scanned_pid = so2_pid;
-            s_last_scan_time = CACurrentMediaTime();
             task_t           scan_task = cached_so2_task;
             mach_vm_address_t scan_base = cached_unity_base;
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-                uint64_t found = find_pm_typeinfo_offset(scan_task, scan_base);
-                if (found != 0) s_pm_ti_offset = found;
+                find_pm_typeinfo_offset(scan_task, scan_base);
                 s_pm_scanning = false;
             });
-        } else if (get_scan_phase() == -1) {
-            double now = CACurrentMediaTime();
-            if (now - s_last_scan_time > 3.0) {
-                s_pm_scanning = true;
-                s_last_scan_time = now;
-                task_t scan_task = cached_so2_task;
-                mach_vm_address_t scan_base = cached_unity_base;
-                dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-                    uint64_t found = find_pm_typeinfo_offset(scan_task, scan_base);
-                    if (found != 0) s_pm_ti_offset = found;
-                    s_pm_scanning = false;
-                });
-            }
         }
     }
 
@@ -446,151 +399,48 @@ struct ESPBoxData {
             goto CLEAR_BOXES;
         }
 
+        mach_vm_address_t typeInfo       = 0, staticFields  = 0;
         mach_vm_address_t playerManager  = 0, playersDict   = 0;
+        mach_vm_address_t parentTypeInfo = 0;
         mach_vm_address_t dict28         = 0;
         int playersCount = 0, c18 = 0, c20 = 0, c40 = 0;
-
-        static int cached_s_off = -1;
-        static int cached_s_src = -1;
-        static int cached_s_deref = 0;
-        static pid_t cached_chain_pid = 0;
-        static int dbg_frame = 0;
         static int cam_off_cache = -1, cam_p1_cache = -1, cam_p2_cache = -1, cam_m_cache = -1;
+        static pid_t cached_chain_pid = 0;
         if (cached_chain_pid != so2_pid) {
-            cached_s_off = -1;
-            cached_s_src = -1;
-            cached_s_deref = 0;
             cached_chain_pid = so2_pid;
-            dbg_frame = 0;
             cam_off_cache = -1;
-            cam_p1_cache = -1;
-            cam_p2_cache = -1;
-            cam_m_cache = -1;
         }
-        {
-            int phase = get_scan_phase();
-            if (phase != 2) {
-                if (s_pm_scanning) {
-                    self.watermarkLabel.text = [NSString stringWithFormat:
-                        @"SCANNING %llu/%llu...", get_scan_progress(), get_scan_total()];
-                } else {
-                    self.watermarkLabel.text = @"Waiting...";
-                }
-                goto CLEAR_BOXES;
+
+        // Ждём результат сканера
+        if (get_scan_phase() != 2) {
+            if (s_pm_scanning) {
+                self.watermarkLabel.text = [NSString stringWithFormat:
+                    @"SCANNING %llu/%llu...", get_scan_progress(), get_scan_total()];
+            } else {
+                self.watermarkLabel.text = @"Waiting...";
             }
-
-            uint64_t cls = get_found_class();
-            uint64_t parentCls = Read<uint64_t>(cls + 0x58, so2_task);
-            uint64_t targets[2] = { parentCls, cls };
-
-            // Быстрый путь: используем кэшированный оффсет
-            if (cached_s_off >= 0 && cached_s_src >= 0) {
-                uint64_t base = targets[cached_s_src];
-                if (base > 0x1000000) {
-                    uint64_t sf = Read<uint64_t>(base + cached_s_off, so2_task);
-                    if (sf > 0x1000000) {
-                        uint64_t pm = 0;
-                        if (cached_s_deref == 0) {
-                            pm = Read<uint64_t>(sf, so2_task);
-                        } else {
-                            uint64_t mbref = Read<uint64_t>(sf, so2_task);
-                            if (mbref > 0x1000000)
-                                pm = Read<uint64_t>(mbref + 0x10, so2_task);
-                        }
-                        if (pm > 0x1000000) playerManager = pm;
-                    }
-                }
-            }
-
-            // Полный скан: ищем static_fields в parent и cls
-            if (!playerManager && cached_s_off < 0) {
-                for (int src = 0; src < 2 && !playerManager; src++) {
-                    uint64_t base = targets[src];
-                    if (!base || base < 0x1000000 || (base & 7) != 0) continue;
-                    for (int soff = 0x00; soff <= 0x200; soff += 8) {
-                        uint64_t sf = Read<uint64_t>(base + soff, so2_task);
-                        if (!sf || sf < 0x1000000 || (sf & 7) != 0) continue;
-
-                        // Путь A: *sf = PM напрямую
-                        uint64_t pm = Read<uint64_t>(sf, so2_task);
-                        if (pm > 0x1000000 && (pm & 7) == 0) {
-                            uint64_t dict = Read<uint64_t>(pm + 0x28, so2_task);
-                            if (dict > 0x1000000 && (dict & 7) == 0) {
-                                int cnt = Read<int>(dict + 0x20, so2_task);
-                                if (cnt >= 0 && cnt <= 32) {
-                                    cached_s_off = soff;
-                                    cached_s_src = src;
-                                    cached_s_deref = 0;
-                                    playerManager = pm;
-                                    break;
-                                }
-                            }
-                        }
-
-                        // Путь B: *sf = MonoBehaviourRef, *(mbref+0x10) = PM
-                        if (pm > 0x1000000 && (pm & 7) == 0) {
-                            for (int moff = 0x08; moff <= 0x18; moff += 8) {
-                                uint64_t pm2 = Read<uint64_t>(pm + moff, so2_task);
-                                if (!pm2 || pm2 < 0x1000000 || (pm2 & 7) != 0) continue;
-                                uint64_t dict = Read<uint64_t>(pm2 + 0x28, so2_task);
-                                if (!dict || dict < 0x1000000 || (dict & 7) != 0) continue;
-                                int cnt = Read<int>(dict + 0x20, so2_task);
-                                if (cnt >= 0 && cnt <= 32) {
-                                    cached_s_off = soff;
-                                    cached_s_src = src;
-                                    cached_s_deref = 1;
-                                    playerManager = pm2;
-                                    break;
-                                }
-                            }
-                            if (playerManager) break;
-                        }
-                    }
-                }
-            }
-
-            dbg_frame++;
-            if (!playerManager) {
-                if (cached_s_off >= 0) {
-                    self.watermarkLabel.text = [NSString stringWithFormat:
-                        @"s%d:%x d%d (wait)", cached_s_src, cached_s_off, cached_s_deref];
-                } else if (dbg_frame <= 3) {
-                    // Первые 3 кадра — дамп parent для диагностики
-                    NSMutableString *dbg = [NSMutableString stringWithFormat:@"PAR=%llx:", parentCls];
-                    if (parentCls > 0x1000000 && (parentCls & 7) == 0) {
-                        for (int soff = 0xB0; soff <= 0x100; soff += 8) {
-                            uint64_t v = Read<uint64_t>(parentCls + soff, so2_task);
-                            if (v > 0x1000000) {
-                                uint64_t v2 = Read<uint64_t>(v, so2_task);
-                                [dbg appendFormat:@" %x>%llx>%llx", soff, v, v2];
-                            }
-                        }
-                    }
-                    [dbg appendFormat:@" CLS:"];
-                    for (int soff = 0xB0; soff <= 0x100; soff += 8) {
-                        uint64_t v = Read<uint64_t>(cls + soff, so2_task);
-                        if (v > 0x1000000) {
-                            uint64_t v2 = Read<uint64_t>(v, so2_task);
-                            [dbg appendFormat:@" %x>%llx>%llx", soff, v, v2];
-                        }
-                    }
-                    self.watermarkLabel.text = dbg;
-                } else {
-                    self.watermarkLabel.text = @"noSF (scan every frame)";
-                    cached_s_off = -1; // keep trying
-                }
-            }
+            goto CLEAR_BOXES;
         }
+
+        // Как в старой рабочей версии: typeInfo → parent(+0x58) → staticFields(+0xB8/+0xB0) → PM(+0x0)
+        typeInfo = (mach_vm_address_t)get_found_class();
+        if (!typeInfo || typeInfo < 0x1000000) goto CLEAR_BOXES;
+
+        parentTypeInfo = Read<mach_vm_address_t>(typeInfo + 0x58, so2_task);
+        if (parentTypeInfo > 0x1000000) {
+            staticFields = Read<mach_vm_address_t>(parentTypeInfo + 0xB8, so2_task);
+            if (!staticFields || staticFields < 0x1000000)
+                staticFields = Read<mach_vm_address_t>(parentTypeInfo + 0xB0, so2_task);
+        }
+        if (!staticFields || staticFields < 0x1000000) {
+            staticFields = Read<mach_vm_address_t>(typeInfo + 0xB8, so2_task);
+            if (!staticFields || staticFields < 0x1000000)
+                staticFields = Read<mach_vm_address_t>(typeInfo + 0xB0, so2_task);
+        }
+        if (!staticFields || staticFields < 0x1000000) goto CLEAR_BOXES;
+
+        playerManager = Read<mach_vm_address_t>(staticFields + 0x0, so2_task);
         if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
-
-        // Сброс кэшей камеры при смене PM
-        {
-            static mach_vm_address_t prev_pm = 0;
-            if (playerManager != prev_pm) {
-                cam_off_cache = -1;
-                prev_pm = playerManager;
-            }
-        }
 
         dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
         playersDict = dict28;
@@ -1635,7 +1485,7 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
             if (wc > 0x1000000) {
                 mach_vm_address_t wctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                 if (wctrl > 0x1000000) {
-                    Write<bool>(wctrl + 0xC1, false, so2_task); // v0.39.1: IsFiring=false
+                    Write<uint8_t>(wctrl + 0x148, 2, so2_task);
                 }
             }
             self.triggerbotShooting = NO;
@@ -1650,9 +1500,8 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
         if (wc > 0x1000000) {
             mach_vm_address_t wctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
             if (wctrl > 0x1000000) {
-                // v0.39.1: IsFiring bool at +0xC1
-                bool isFiring = Read<bool>(wctrl + 0xC1, so2_task);
-                if (!isFiring) {
+                uint8_t isFiringState = Read<uint8_t>(wctrl + 0x148, so2_task);
+                if (isFiringState != 3) {
                     self.aimbotCurrentTarget = 0;
                     return;
                 }
@@ -1674,6 +1523,8 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
             }
         }
     }
+
+    Vector3 cameraPos = GetBonePosition(localPlayer, 6, so2_task);
 
     float cx = w / 2.0f, cy = h / 2.0f;
     float closestDist = FLT_MAX;
@@ -1720,7 +1571,7 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
             if (wc > 0x1000000) {
                 mach_vm_address_t wctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                 if (wctrl > 0x1000000) {
-                    Write<bool>(wctrl + 0xC1, false, so2_task); // v0.39.1: IsFiring=false
+                    Write<uint8_t>(wctrl + 0x148, 2, so2_task);
                 }
             }
             self.triggerbotShooting = NO;
@@ -1738,41 +1589,32 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     mach_vm_address_t aimingData = Read<mach_vm_address_t>(aimController + 0x90, so2_task);
     if (!aimingData || aimingData < 0x1000000) return;
 
-    // Screen-space аимбот: используем WorldToScreen чтобы определить ошибку прицеливания
-    // и корректируем через дельту — не зависит от конвенции знаков
-    Vector3 screenTarget = WorldToScreen(closestBonePos, viewMatrix, (int)w, (int)h);
-    if (screenTarget.z <= 0) return;
-
-    float cx2 = w / 2.0f, cy2 = h / 2.0f;
-    float errX = screenTarget.x - cx2; // пикселей от центра экрана (>0 = враг справа)
-    float errY = screenTarget.y - cy2; // пикселей от центра экрана (>0 = враг ниже)
-
     double now = CACurrentMediaTime();
     self.aimbotLastWriteTime = now;
 
     if (aimbot_enabled) {
-        float curP = Read<float>(aimingData + 0x10, so2_task);
-        float curY = Read<float>(aimingData + 0x14, so2_task);
+        float currentPitch = Read<float>(aimingData + 0x18, so2_task);
+        float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-        // Адаптивный множитель: чем дальше враг от центра, тем больше коррекция
-        // Определяем единицы (радианы vs градусы) по диапазону текущих значений
-        bool isRadians = (fabsf(curP) < 6.5f && fabsf(curY) < 6.5f);
+        float dirX = closestBonePos.x - cameraPos.x;
+        float dirY = closestBonePos.y - cameraPos.y;
+        float dirZ = closestBonePos.z - cameraPos.z;
+        float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
+        if (dist < 0.01f) dist = 0.01f;
 
-        // Конвертируем ошибку в пикселях → единицы поля (радианы или градусы)
-        // FOV ~60°, экран ~w пикселей → 1 пиксель ≈ FOV/w градусов
-        float degPerPx = 60.0f / w;
-        float factor = isRadians ? (degPerPx * M_PI / 180.0f) : degPerPx;
+        float targetPitch = -asinf(dirY / dist) * (180.0f / M_PI);
+        float targetYaw   = atan2f(dirX, dirZ) * (180.0f / M_PI);
 
         float sm = (aimbot_smooth <= 1.0f) ? 1.0f : (1.0f / (1.0f + aimbot_smooth * 0.3f));
         sm = fmaxf(0.05f, fminf(sm, 1.0f));
 
-        // errY>0 = враг ниже → pitch надо увеличить или уменьшить?
-        // Пробуем: errY → pitch, errX → yaw (знак подбираем)
-        float newP = curP + errY * factor * sm;
-        float newY = curY + errX * factor * sm;
+        float newPitch = currentPitch + (targetPitch - currentPitch) * sm;
+        float newYaw   = currentYaw   + (targetYaw   - currentYaw)   * sm;
 
-        Write<float>(aimingData + 0x10, newP, so2_task);
-        Write<float>(aimingData + 0x14, newY, so2_task);
+        Write<float>(aimingData + 0x18, newPitch, so2_task);
+        Write<float>(aimingData + 0x1C, newYaw,   so2_task);
+        Write<float>(aimingData + 0x24, newPitch, so2_task);
+        Write<float>(aimingData + 0x28, newYaw,   so2_task);
     }
 
     if (aimbot_triggerbot) {
@@ -1783,7 +1625,7 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
                 if (wc > 0x1000000) {
                     mach_vm_address_t wctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                     if (wctrl > 0x1000000) {
-                        Write<bool>(wctrl + 0xC1, false, so2_task); // v0.39.1: IsFiring=false
+                        Write<uint8_t>(wctrl + 0x148, 2, so2_task);
                     }
                 }
                 self.triggerbotShooting = NO;
@@ -1802,13 +1644,13 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
 
         if (!self.triggerbotShooting) {
             if (elapsed >= aimbot_trigger_delay) {
-                Write<bool>(wctrl + 0xC1, true, so2_task); // v0.39.1: IsFiring=true
+                Write<uint8_t>(wctrl + 0x148, 3, so2_task);
                 self.triggerbotShooting = YES;
                 self.triggerbotLastShotTime = now;
             }
         } else {
             if (elapsed >= aimbot_trigger_delay) {
-                Write<bool>(wctrl + 0xC1, false, so2_task); // v0.39.1: IsFiring=false
+                Write<uint8_t>(wctrl + 0x148, 2, so2_task);
                 self.triggerbotShooting = NO;
                 self.triggerbotLastShotTime = now;
             }
