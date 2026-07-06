@@ -373,40 +373,49 @@ struct ESPBoxData {
         cached_so2_pid = so2_pid;
         s_pm_scanned_pid = 0;
         s_quick_tried = false;
+        s_quick_chunk = 0;
     }
 
-    // Быстрый старт: читаем 256KB вокруг хинта и ищем PlayerManager
+    // Быстрый старт: ищем PlayerManager в чанках по 64KB вокруг хинта (каждый кадр пока не найдём)
+    static int s_quick_chunk = 0;
     if (cached_unity_base && cached_so2_task && get_scan_phase() != 2 && !s_quick_tried) {
-        s_quick_tried = true;
         const uint64_t HINT = 178356728ULL;
-        const uint64_t QCHUNK = 256 * 1024;
-        uint64_t qstart = HINT > QCHUNK ? HINT - QCHUNK : 0;
-        vm_offset_t qbuf = 0;
-        mach_msg_type_number_t qcnt = 0;
-        if (vm_read(cached_so2_task, cached_unity_base + qstart, QCHUNK * 2, &qbuf, &qcnt) == KERN_SUCCESS) {
-            uint64_t *words = (uint64_t *)qbuf;
-            uint32_t nw = qcnt / 8;
-            for (uint32_t qi = 0; qi < nw; qi++) {
-                uint64_t ti = words[qi];
-                if (ti < 0x1000000 || (ti & 7) != 0) continue;
-                uint64_t namePtr = 0;
-                mach_vm_size_t nsz = 8;
-                if (mach_vm_read_overwrite(cached_so2_task, ti + 0x10, 8, (mach_vm_address_t)&namePtr, &nsz) != KERN_SUCCESS) continue;
-                if (namePtr < 0x1000000) continue;
-                char nbuf[16] = {0};
-                nsz = 14;
-                if (mach_vm_read_overwrite(cached_so2_task, namePtr, 14, (mach_vm_address_t)nbuf, &nsz) != KERN_SUCCESS) continue;
-                if (memcmp(nbuf, "PlayerManager", 13) == 0) {
-                    uint64_t foundOff = qstart + (uint64_t)qi * 8;
-                    s_pm_ti_offset = foundOff;
-                    set_found_class(ti);
-                    set_found_name_off(0x10);
-                    set_scan_phase(2);
-                    break;
+        const uint64_t QCHUNK = 64 * 1024;
+        const int MAX_CHUNKS = 128; // ±4MB покрытие
+        int chunk_i = s_quick_chunk;
+        // Зигзаг: 0, +1, -1, +2, -2, ... чтобы сначала ближе к хинту
+        int64_t delta = (chunk_i % 2 == 0) ? (chunk_i / 2) : -(chunk_i / 2 + 1);
+        uint64_t qoff = (int64_t)HINT + delta * (int64_t)QCHUNK;
+        if (qoff > 0 && qoff < 600ULL * 1024 * 1024) {
+            vm_offset_t qbuf = 0;
+            mach_msg_type_number_t qcnt = 0;
+            if (vm_read(cached_so2_task, cached_unity_base + qoff, QCHUNK, &qbuf, &qcnt) == KERN_SUCCESS) {
+                uint64_t *words = (uint64_t *)qbuf;
+                uint32_t nw = qcnt / 8;
+                for (uint32_t qi = 0; qi < nw; qi++) {
+                    uint64_t ti = words[qi];
+                    if (ti < 0x1000000 || (ti & 7) != 0) continue;
+                    uint64_t namePtr = 0;
+                    mach_vm_size_t nsz = 8;
+                    if (mach_vm_read_overwrite(cached_so2_task, ti + 0x10, 8, (mach_vm_address_t)&namePtr, &nsz) != KERN_SUCCESS) continue;
+                    if (namePtr < 0x1000000) continue;
+                    char nbuf[16] = {0};
+                    nsz = 14;
+                    if (mach_vm_read_overwrite(cached_so2_task, namePtr, 14, (mach_vm_address_t)nbuf, &nsz) != KERN_SUCCESS) continue;
+                    if (memcmp(nbuf, "PlayerManager", 13) == 0) {
+                        uint64_t foundOff = qoff + (uint64_t)qi * 8;
+                        s_pm_ti_offset = foundOff;
+                        set_found_class(ti);
+                        set_found_name_off(0x10);
+                        set_scan_phase(2);
+                        break;
+                    }
                 }
+                vm_deallocate(mach_task_self(), qbuf, qcnt);
             }
-            vm_deallocate(mach_task_self(), qbuf, qcnt);
         }
+        s_quick_chunk++;
+        if (s_quick_chunk >= MAX_CHUNKS) s_quick_tried = true;
     }
 
     // Фоновый скан — только если быстрый старт не помог
@@ -1755,104 +1764,55 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
     if (dist < 0.0001f) return;
 
-    float targetPitch = asinf(dirY / dist) * (180.0f / M_PI);
+    float targetPitch = -asinf(dirY / dist) * (180.0f / M_PI);
     float targetYaw   = atan2f(dirX, dirZ) * (180.0f / M_PI);
 
     double now = CACurrentMediaTime();
     self.aimbotLastWriteTime = now;
 
     if (aimbot_enabled) {
-        // Читаем текущие углы из aimingData.TransformTR
-        float curP = 0, curY = 0;
-        mach_vm_address_t transformTR = Read<mach_vm_address_t>(aimingData + 0x30, so2_task);
-        if (transformTR > 0x1000000) {
-            Vector3 curRot = Read<Vector3>(transformTR + 0x1C, so2_task);
-            curP = curRot.x;
-            curY = curRot.y;
-        } else {
-            curP = Read<float>(aimingData + 0x10, so2_task);
-            curY = Read<float>(aimingData + 0x14, so2_task);
+        // Читаем текущие углы из aimingData
+        float curP = Read<float>(aimingData + 0x10, so2_task);
+        float curY = Read<float>(aimingData + 0x14, so2_task);
+
+        // Определяем знаки: если текущие углы в диапазоне радиан а не градусов
+        bool isRadians = (fabsf(curP) < 4.0f && fabsf(curY) < 7.0f);
+        float tP = targetPitch, tY = targetYaw;
+        if (isRadians) {
+            tP = targetPitch * (M_PI / 180.0f);
+            tY = targetYaw * (M_PI / 180.0f);
         }
 
-        float pitchDelta = targetPitch - curP;
-        float yawDelta = targetYaw - curY;
-        while (yawDelta > 180.0f) yawDelta -= 360.0f;
-        while (yawDelta < -180.0f) yawDelta += 360.0f;
+        float pitchDelta = tP - curP;
+        float yawDelta = tY - curY;
+        float wrapMax = isRadians ? M_PI : 180.0f;
+        while (yawDelta > wrapMax) yawDelta -= wrapMax * 2;
+        while (yawDelta < -wrapMax) yawDelta += wrapMax * 2;
 
         float newP, newY;
         if (aimbot_smooth <= 1.0f) {
-            newP = fmaxf(-89.0f, fminf(89.0f, targetPitch));
-            newY = targetYaw;
+            float clampMax = isRadians ? (89.0f * M_PI / 180.0f) : 89.0f;
+            newP = fmaxf(-clampMax, fminf(clampMax, tP));
+            newY = tY;
         } else {
             float sm = 1.0f / (1.0f + aimbot_smooth * 0.5f);
             sm = fmaxf(0.03f, fminf(sm, 1.0f));
-            newP = fmaxf(-89.0f, fminf(89.0f, curP + pitchDelta * sm));
+            float clampMax = isRadians ? (89.0f * M_PI / 180.0f) : 89.0f;
+            newP = fmaxf(-clampMax, fminf(clampMax, curP + pitchDelta * sm));
             newY = curY + yawDelta * sm;
         }
 
-        // Quaternion из euler
-        float hp = newP * 0.5f * (M_PI / 180.0f);
-        float hy = newY * 0.5f * (M_PI / 180.0f);
-        float shp = sinf(hp), chp = cosf(hp);
-        float shy = sinf(hy), chy = cosf(hy);
-        Vector4 quat;
-        quat.x = chy * shp;
-        quat.y = shy * chp;
-        quat.z = -shy * shp;
-        quat.w = chy * chp;
-
-        // 1) AimController backing fields
-        Write<float>(aimController + 0x1E4, newP, so2_task);
-        Write<float>(aimController + 0x1E8, newY, so2_task);
-
-        // 2) AimController float fields
-        Write<float>(aimController + 0x1F8, newP, so2_task);
-        Write<float>(aimController + 0x1FC, newY, so2_task);
-
-        // 3) AimController quaternion
-        Write<Vector4>(aimController + 0x210, quat, so2_task);
-
-        // 4) aimingData float fields
+        // Пишем ТОЛЬКО в aimingData (минимум полей — без конфликтов)
         Write<float>(aimingData + 0x10, newP, so2_task);
         Write<float>(aimingData + 0x14, newY, so2_task);
 
-        // 5) aimingData Vector3 fields
-        Vector3 aimDir = {newP, newY, 0};
-        Write<Vector3>(aimingData + 0x18, aimDir, so2_task);
-        Write<Vector3>(aimingData + 0x24, aimDir, so2_task);
-
-        // 6) TransformTR rot + quaternion
+        // TransformTR если есть
+        mach_vm_address_t transformTR = Read<mach_vm_address_t>(aimingData + 0x30, so2_task);
         if (transformTR > 0x1000000) {
-            Vector3 eulerRot = {newP, newY, 0};
+            float rotP = isRadians ? (newP * 180.0f / M_PI) : newP;
+            float rotY = isRadians ? (newY * 180.0f / M_PI) : newY;
+            Vector3 eulerRot = {rotP, rotY, 0};
             Write<Vector3>(transformTR + 0x1C, eulerRot, so2_task);
-            Write<Vector4>(transformTR + 0x28, quat, so2_task);
-        }
-
-        // 7) EFHFAEADHEFDHBB (AimController+0xE0) Vector2 at +0x20
-        mach_vm_address_t efh = Read<mach_vm_address_t>(aimController + 0xE0, so2_task);
-        if (efh > 0x1000000) {
-            Write<float>(efh + 0x20, newP, so2_task);
-            Write<float>(efh + 0x24, newY, so2_task);
-            Write<float>(efh + 0x14, newP, so2_task);
-            Write<float>(efh + 0x18, newY, so2_task);
-        }
-
-        // 8) Native Transform quaternion (camTransform + FPSCamera)
-        mach_vm_address_t transforms[] = {
-            camTransform,
-            Read<mach_vm_address_t>(aimController + 0x78, so2_task)
-        };
-        for (int ti = 0; ti < 2; ti++) {
-            if (transforms[ti] < 0x1000000) continue;
-            mach_vm_address_t transObj = Read<mach_vm_address_t>(transforms[ti] + 0x10, so2_task);
-            if (transObj < 0x1000000) continue;
-            mach_vm_address_t matrixPtr = Read<mach_vm_address_t>(transObj + 0x38, so2_task);
-            int tIdx = Read<int>(transObj + 0x40, so2_task);
-            if (matrixPtr < 0x1000000 || tIdx < 0) continue;
-            mach_vm_address_t matList = Read<mach_vm_address_t>(matrixPtr + 0x18, so2_task);
-            if (matList < 0x1000000) continue;
-            mach_vm_address_t tAddr = matList + (mach_vm_address_t)(48 * tIdx);
-            Write<Vector4>(tAddr + 16, quat, so2_task);
         }
     }
 
