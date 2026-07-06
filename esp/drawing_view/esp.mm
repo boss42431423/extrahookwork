@@ -1253,38 +1253,40 @@ struct UnityString32 { uint16_t chars[32]; };
                     }
 
                     if (esp_skeleton_enabled) {
-                        // Скелетон из расчётных позиций (basePos + offsets)
-                        Vector3 head     = {pos.x, pos.y + 1.67f, pos.z};
-                        Vector3 neck     = {pos.x, pos.y + 1.50f, pos.z};
-                        Vector3 chest    = {pos.x, pos.y + 1.20f, pos.z};
-                        Vector3 hip      = {pos.x, pos.y + 0.90f, pos.z};
-                        Vector3 lShldr   = {pos.x - 0.22f, pos.y + 1.45f, pos.z};
-                        Vector3 rShldr   = {pos.x + 0.22f, pos.y + 1.45f, pos.z};
-                        Vector3 lElbow   = {pos.x - 0.40f, pos.y + 1.15f, pos.z};
-                        Vector3 rElbow   = {pos.x + 0.40f, pos.y + 1.15f, pos.z};
-                        Vector3 lHand    = {pos.x - 0.35f, pos.y + 0.90f, pos.z};
-                        Vector3 rHand    = {pos.x + 0.35f, pos.y + 0.90f, pos.z};
-                        Vector3 lKnee    = {pos.x - 0.12f, pos.y + 0.45f, pos.z};
-                        Vector3 rKnee    = {pos.x + 0.12f, pos.y + 0.45f, pos.z};
-                        Vector3 lFoot    = {pos.x - 0.12f, pos.y, pos.z};
-                        Vector3 rFoot    = {pos.x + 0.12f, pos.y, pos.z};
+                        float hx = screenHead.x, hy = screenHead.y;
+                        float fx = screenFoot.x, fy = screenFoot.y;
+                        float bh = fy - hy;
+                        float bw = bh / 2.0f;
+                        if (bh > 5.0f) {
+                            CGPoint sHead   = CGPointMake(hx, hy);
+                            CGPoint sNeck   = CGPointMake(hx, hy + bh * 0.12f);
+                            CGPoint sChest  = CGPointMake(hx, hy + bh * 0.30f);
+                            CGPoint sHip    = CGPointMake(hx, hy + bh * 0.48f);
+                            CGPoint sLShldr = CGPointMake(hx - bw * 0.38f, hy + bh * 0.14f);
+                            CGPoint sRShldr = CGPointMake(hx + bw * 0.38f, hy + bh * 0.14f);
+                            CGPoint sLElbow = CGPointMake(hx - bw * 0.52f, hy + bh * 0.34f);
+                            CGPoint sRElbow = CGPointMake(hx + bw * 0.52f, hy + bh * 0.34f);
+                            CGPoint sLHand  = CGPointMake(hx - bw * 0.40f, hy + bh * 0.52f);
+                            CGPoint sRHand  = CGPointMake(hx + bw * 0.40f, hy + bh * 0.52f);
+                            CGPoint sLKnee  = CGPointMake(hx - bw * 0.16f, hy + bh * 0.75f);
+                            CGPoint sRKnee  = CGPointMake(hx + bw * 0.16f, hy + bh * 0.75f);
+                            CGPoint sLFoot  = CGPointMake(hx - bw * 0.18f, fy);
+                            CGPoint sRFoot  = CGPointMake(hx + bw * 0.18f, fy);
 
-                        Vector3 skelBones[] = {head, neck, chest, hip,
-                            lShldr, lElbow, lHand, rShldr, rElbow, rHand,
-                            lKnee, lFoot, rKnee, rFoot};
-                        int skelLinks[][2] = {
-                            {0,1},{1,2},{2,3},       // head→neck→chest→hip
-                            {1,4},{4,5},{5,6},       // neck→lShldr→lElbow→lHand
-                            {1,7},{7,8},{8,9},       // neck→rShldr→rElbow→rHand
-                            {3,10},{10,11},          // hip→lKnee→lFoot
-                            {3,12},{12,13},          // hip→rKnee→rFoot
-                        };
-                        for (int li = 0; li < 13; li++) {
-                            Vector3 s1 = WorldToScreen(skelBones[skelLinks[li][0]], viewMatrix, w, h);
-                            Vector3 s2 = WorldToScreen(skelBones[skelLinks[li][1]], viewMatrix, w, h);
-                            if (s1.z <= 0 || s2.z <= 0) continue;
-                            [skeletonPath moveToPoint:CGPointMake(s1.x, s1.y)];
-                            [skeletonPath addLineToPoint:CGPointMake(s2.x, s2.y)];
+                            CGPoint pts[] = {sHead, sNeck, sChest, sHip,
+                                sLShldr, sLElbow, sLHand, sRShldr, sRElbow, sRHand,
+                                sLKnee, sLFoot, sRKnee, sRFoot};
+                            int links[][2] = {
+                                {0,1},{1,2},{2,3},
+                                {1,4},{4,5},{5,6},
+                                {1,7},{7,8},{8,9},
+                                {3,10},{10,11},
+                                {3,12},{12,13},
+                            };
+                            for (int li = 0; li < 13; li++) {
+                                [skeletonPath moveToPoint:pts[links[li][0]]];
+                                [skeletonPath addLineToPoint:pts[links[li][1]]];
+                            }
                         }
                     }
                 }
@@ -1353,9 +1355,9 @@ static Vector3 GetBonePosition(mach_vm_address_t player, int boneIdx, task_t tas
         mach_vm_address_t md = Read<mach_vm_address_t>(mc + 0xB0, task);
         if (md > 0x1000000) {
             Vector3 pos = Read<Vector3>(md + 0x44, task);
-            if (boneIdx == 0) pos.y += 1.6f;
-            else if (boneIdx == 1) pos.y += 1.4f;
-            else pos.y += 0.9f;
+            if (boneIdx == 0) pos.y += 1.35f;
+            else if (boneIdx == 1) pos.y += 1.2f;
+            else pos.y += 0.85f;
             return pos;
         }
     }
@@ -1643,7 +1645,7 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     float degPerPx = 0.022f;
 
     float targetDeltaPitch = errY * degPerPx;
-    float targetDeltaYaw   = (errX - 3.0f) * degPerPx;
+    float targetDeltaYaw   = errX * degPerPx;
 
     float newPitch, newYaw;
 
