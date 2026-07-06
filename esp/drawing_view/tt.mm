@@ -233,7 +233,6 @@ extern volatile bool esp_skeleton_enabled;
     CAShapeLayer *_weaponIconCheckmark;
     CAShapeLayer *_platformCheckmark;
     CAShapeLayer *_avatarCheckmark;
-    CAShapeLayer *_skeletonCheckmark;
     CAShapeLayer *_screenshotSafeCheckmark;
 
     UIView *_aimContent;
