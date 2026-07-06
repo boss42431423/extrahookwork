@@ -1434,16 +1434,33 @@ static mach_vm_address_t GetAimBoneOffset(int idx) {
 }
 
 static Vector3 GetBonePosition(mach_vm_address_t player, int boneIdx, task_t task) {
-    mach_vm_address_t characterView = Read<mach_vm_address_t>(player + 0x48, task);
-    if (!characterView || characterView < 0x1000000) return {0,0,0};
-    
-    mach_vm_address_t bipedMap = Read<mach_vm_address_t>(characterView + 0x48, task);
-    if (!bipedMap || bipedMap < 0x1000000) return {0,0,0};
-    
-    mach_vm_address_t boneTransform = Read<mach_vm_address_t>(bipedMap + GetAimBoneOffset(boneIdx), task);
-    if (!boneTransform || boneTransform < 0x1000000) return {0,0,0};
-    
-    return get_position_by_transform(boneTransform, task);
+    int cvOffsets[] = {0xD0, 0x48, 0x50};
+    for (int ci = 0; ci < 3; ci++) {
+        mach_vm_address_t characterView = Read<mach_vm_address_t>(player + cvOffsets[ci], task);
+        if (!characterView || characterView < 0x1000000) continue;
+
+        mach_vm_address_t bipedMap = Read<mach_vm_address_t>(characterView + 0x48, task);
+        if (!bipedMap || bipedMap < 0x1000000) continue;
+
+        mach_vm_address_t boneTransform = Read<mach_vm_address_t>(bipedMap + GetAimBoneOffset(boneIdx), task);
+        if (!boneTransform || boneTransform < 0x1000000) continue;
+
+        Vector3 pos = get_position_by_transform(boneTransform, task);
+        if (pos.x != 0 || pos.y != 0 || pos.z != 0) return pos;
+    }
+
+    mach_vm_address_t mc = Read<mach_vm_address_t>(player + 0x98, task);
+    if (mc > 0x1000000) {
+        mach_vm_address_t md = Read<mach_vm_address_t>(mc + 0xB0, task);
+        if (md > 0x1000000) {
+            Vector3 pos = Read<Vector3>(md + 0x44, task);
+            if (boneIdx == 0) pos.y += 1.6f;
+            else if (boneIdx == 1) pos.y += 1.4f;
+            else pos.y += 0.9f;
+            return pos;
+        }
+    }
+    return {0,0,0};
 }
 
 static int GetPlayerTeamAim(mach_vm_address_t player, task_t task) {
@@ -1764,6 +1781,8 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     self.aimbotLastWriteTime = now;
 
     if (aimbot_enabled) {
+        Write<float>(aimingData + 0x10, newPitch, so2_task);
+        Write<float>(aimingData + 0x14, newYaw,   so2_task);
         Write<float>(aimingData + 0x18, newPitch, so2_task);
         Write<float>(aimingData + 0x1C, newYaw,   so2_task);
         Write<float>(aimingData + 0x24, newPitch, so2_task);
