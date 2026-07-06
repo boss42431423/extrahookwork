@@ -377,59 +377,54 @@ struct ESPBoxData {
         s_quick_chunk = 0;
     }
 
-    // Быстрый старт: ищем PlayerManager в чанках по 64KB вокруг хинта (каждый кадр пока не найдём)
+    // Мгновенный старт: пробуем хинт + ±1024 байт каждый кадр
     if (cached_unity_base && cached_so2_task && get_scan_phase() != 2 && !s_quick_tried) {
         const uint64_t HINT = 178356728ULL;
-        const uint64_t QCHUNK = 64 * 1024;
-        const int MAX_CHUNKS = 128; // ±4MB покрытие
-        int chunk_i = s_quick_chunk;
-        // Зигзаг: 0, +1, -1, +2, -2, ... чтобы сначала ближе к хинту
-        int64_t delta = (chunk_i % 2 == 0) ? (chunk_i / 2) : -(chunk_i / 2 + 1);
-        uint64_t qoff = (int64_t)HINT + delta * (int64_t)QCHUNK;
-        if (qoff > 0 && qoff < 600ULL * 1024 * 1024) {
-            vm_offset_t qbuf = 0;
-            mach_msg_type_number_t qcnt = 0;
-            if (vm_read(cached_so2_task, cached_unity_base + qoff, QCHUNK, &qbuf, &qcnt) == KERN_SUCCESS) {
-                uint64_t *words = (uint64_t *)qbuf;
-                uint32_t nw = qcnt / 8;
-                for (uint32_t qi = 0; qi < nw; qi++) {
-                    uint64_t ti = words[qi];
-                    if (ti < 0x1000000 || (ti & 7) != 0) continue;
-                    uint64_t namePtr = 0;
-                    mach_vm_size_t nsz = 8;
-                    if (mach_vm_read_overwrite(cached_so2_task, ti + 0x10, 8, (mach_vm_address_t)&namePtr, &nsz) != KERN_SUCCESS) continue;
-                    if (namePtr < 0x1000000) continue;
-                    char nbuf[16] = {0};
-                    nsz = 14;
-                    if (mach_vm_read_overwrite(cached_so2_task, namePtr, 14, (mach_vm_address_t)nbuf, &nsz) != KERN_SUCCESS) continue;
+        // Зигзаг: 0, +8, -8, +16, -16, ... до ±1024
+        int64_t delta = (s_quick_chunk == 0) ? 0 : ((s_quick_chunk % 2 == 1) ? ((s_quick_chunk/2+1)*8) : (-(s_quick_chunk/2)*8));
+        uint64_t tryOff = (int64_t)HINT + delta;
+        uint64_t ti = Read<uint64_t>(cached_unity_base + tryOff, cached_so2_task);
+        if (ti > 0x1000000 && (ti & 7) == 0) {
+            uint64_t namePtr = Read<uint64_t>(ti + 0x10, cached_so2_task);
+            if (namePtr > 0x1000000) {
+                char nbuf[16] = {0};
+                mach_vm_size_t nsz = 14;
+                if (mach_vm_read_overwrite(cached_so2_task, namePtr, 14, (mach_vm_address_t)nbuf, &nsz) == KERN_SUCCESS) {
                     if (memcmp(nbuf, "PlayerManager", 13) == 0) {
-                        uint64_t foundOff = qoff + (uint64_t)qi * 8;
-                        s_pm_ti_offset = foundOff;
+                        s_pm_ti_offset = tryOff;
                         set_found_class(ti);
                         set_found_name_off(0x10);
                         set_scan_phase(2);
-                        break;
                     }
                 }
-                vm_deallocate(mach_task_self(), qbuf, qcnt);
             }
         }
         s_quick_chunk++;
-        if (s_quick_chunk >= MAX_CHUNKS) s_quick_tried = true;
+        if (s_quick_chunk >= 256) s_quick_tried = true; // ±1024 байт покрыто
     }
 
-    // Фоновый скан — только если быстрый старт не помог
+    // Фоновый скан — запускаем СРАЗУ параллельно с быстрым стартом
     static double s_last_scan_time = 0;
     if (cached_unity_base && cached_so2_task && !s_pm_scanning && get_scan_phase() != 2) {
-        if (s_pm_scanned_pid != so2_pid || get_scan_phase() == -1) {
+        if (s_pm_scanned_pid != so2_pid) {
+            s_pm_scanning    = true;
+            s_pm_scanned_pid = so2_pid;
+            s_last_scan_time = CACurrentMediaTime();
+            task_t           scan_task = cached_so2_task;
+            mach_vm_address_t scan_base = cached_unity_base;
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                uint64_t found = find_pm_typeinfo_offset(scan_task, scan_base);
+                if (found != 0) s_pm_ti_offset = found;
+                s_pm_scanning = false;
+            });
+        } else if (get_scan_phase() == -1) {
             double now = CACurrentMediaTime();
-            if (now - s_last_scan_time > 5.0) {
-                s_pm_scanning    = true;
-                s_pm_scanned_pid = so2_pid;
+            if (now - s_last_scan_time > 3.0) {
+                s_pm_scanning = true;
                 s_last_scan_time = now;
-                task_t           scan_task = cached_so2_task;
+                task_t scan_task = cached_so2_task;
                 mach_vm_address_t scan_base = cached_unity_base;
-                dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
                     uint64_t found = find_pm_typeinfo_offset(scan_task, scan_base);
                     if (found != 0) s_pm_ti_offset = found;
                     s_pm_scanning = false;
@@ -1743,77 +1738,41 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     mach_vm_address_t aimingData = Read<mach_vm_address_t>(aimController + 0x90, so2_task);
     if (!aimingData || aimingData < 0x1000000) return;
 
-    mach_vm_address_t camTransform = Read<mach_vm_address_t>(aimController + 0x80, so2_task);
-    Vector3 cameraPos = {0,0,0};
-    if (camTransform && camTransform > 0x1000000) {
-        cameraPos = get_position_by_transform(camTransform, so2_task);
-    }
-    if (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0) {
-        mach_vm_address_t mv = Read<mach_vm_address_t>(localPlayer + 0x98, so2_task);
-        if (mv > 0x1000000) {
-            mach_vm_address_t md = Read<mach_vm_address_t>(mv + 0xB0, so2_task);
-            if (md > 0x1000000) {
-                cameraPos = Read<Vector3>(md + 0x44, so2_task);
-            }
-        }
-    }
+    // Screen-space аимбот: используем WorldToScreen чтобы определить ошибку прицеливания
+    // и корректируем через дельту — не зависит от конвенции знаков
+    Vector3 screenTarget = WorldToScreen(closestBonePos, viewMatrix, (int)w, (int)h);
+    if (screenTarget.z <= 0) return;
 
-    float dirX = closestBonePos.x - cameraPos.x;
-    float dirY = closestBonePos.y - cameraPos.y;
-    float dirZ = closestBonePos.z - cameraPos.z;
-    float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
-    if (dist < 0.0001f) return;
-
-    float targetPitch = -asinf(dirY / dist) * (180.0f / M_PI);
-    float targetYaw   = atan2f(dirX, dirZ) * (180.0f / M_PI);
+    float cx2 = w / 2.0f, cy2 = h / 2.0f;
+    float errX = screenTarget.x - cx2; // пикселей от центра экрана (>0 = враг справа)
+    float errY = screenTarget.y - cy2; // пикселей от центра экрана (>0 = враг ниже)
 
     double now = CACurrentMediaTime();
     self.aimbotLastWriteTime = now;
 
     if (aimbot_enabled) {
-        // Читаем текущие углы из aimingData
         float curP = Read<float>(aimingData + 0x10, so2_task);
         float curY = Read<float>(aimingData + 0x14, so2_task);
 
-        // Определяем знаки: если текущие углы в диапазоне радиан а не градусов
-        bool isRadians = (fabsf(curP) < 4.0f && fabsf(curY) < 7.0f);
-        float tP = targetPitch, tY = targetYaw;
-        if (isRadians) {
-            tP = targetPitch * (M_PI / 180.0f);
-            tY = targetYaw * (M_PI / 180.0f);
-        }
+        // Адаптивный множитель: чем дальше враг от центра, тем больше коррекция
+        // Определяем единицы (радианы vs градусы) по диапазону текущих значений
+        bool isRadians = (fabsf(curP) < 6.5f && fabsf(curY) < 6.5f);
 
-        float pitchDelta = tP - curP;
-        float yawDelta = tY - curY;
-        float wrapMax = isRadians ? M_PI : 180.0f;
-        while (yawDelta > wrapMax) yawDelta -= wrapMax * 2;
-        while (yawDelta < -wrapMax) yawDelta += wrapMax * 2;
+        // Конвертируем ошибку в пикселях → единицы поля (радианы или градусы)
+        // FOV ~60°, экран ~w пикселей → 1 пиксель ≈ FOV/w градусов
+        float degPerPx = 60.0f / w;
+        float factor = isRadians ? (degPerPx * M_PI / 180.0f) : degPerPx;
 
-        float newP, newY;
-        if (aimbot_smooth <= 1.0f) {
-            float clampMax = isRadians ? (89.0f * M_PI / 180.0f) : 89.0f;
-            newP = fmaxf(-clampMax, fminf(clampMax, tP));
-            newY = tY;
-        } else {
-            float sm = 1.0f / (1.0f + aimbot_smooth * 0.5f);
-            sm = fmaxf(0.03f, fminf(sm, 1.0f));
-            float clampMax = isRadians ? (89.0f * M_PI / 180.0f) : 89.0f;
-            newP = fmaxf(-clampMax, fminf(clampMax, curP + pitchDelta * sm));
-            newY = curY + yawDelta * sm;
-        }
+        float sm = (aimbot_smooth <= 1.0f) ? 1.0f : (1.0f / (1.0f + aimbot_smooth * 0.3f));
+        sm = fmaxf(0.05f, fminf(sm, 1.0f));
 
-        // Пишем ТОЛЬКО в aimingData (минимум полей — без конфликтов)
+        // errY>0 = враг ниже → pitch надо увеличить или уменьшить?
+        // Пробуем: errY → pitch, errX → yaw (знак подбираем)
+        float newP = curP + errY * factor * sm;
+        float newY = curY + errX * factor * sm;
+
         Write<float>(aimingData + 0x10, newP, so2_task);
         Write<float>(aimingData + 0x14, newY, so2_task);
-
-        // TransformTR если есть
-        mach_vm_address_t transformTR = Read<mach_vm_address_t>(aimingData + 0x30, so2_task);
-        if (transformTR > 0x1000000) {
-            float rotP = isRadians ? (newP * 180.0f / M_PI) : newP;
-            float rotY = isRadians ? (newY * 180.0f / M_PI) : newY;
-            Vector3 eulerRot = {rotP, rotY, 0};
-            Write<Vector3>(transformTR + 0x1C, eulerRot, so2_task);
-        }
     }
 
     if (aimbot_triggerbot) {
