@@ -777,11 +777,43 @@ struct ESPBoxData {
 
             SO2_Matrix viewMatrix = {0};
             bool matrixFound = false;
-            static int cam_bad_frames = 0;
-            // Глобально запомненные оффсеты (переживают сброс cam_off_cache)
             static int last_good_cam = -1, last_good_p1 = -1, last_good_p2 = -1, last_good_m = -1;
+            CGFloat sw = self.bounds.size.width, sh = self.bounds.size.height;
 
-            // Быстрый путь: кэшированная цепочка + валидация
+            // Найти позицию первого врага для валидации матрицы
+            Vector3 valPos = {0,0,0};
+            {
+                mach_vm_address_t tdict = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
+                if (tdict > 0x1000000) {
+                    mach_vm_address_t tarr = Read<mach_vm_address_t>(tdict + 0x18, so2_task);
+                    if (tarr > 0x1000000) {
+                        for (int ti = 0; ti < 10; ti++) {
+                            mach_vm_address_t tp = Read<mach_vm_address_t>(tarr + 0x20 + ti * 0x18 + 0x10, so2_task);
+                            if (tp < 0x1000000 || tp == localPlayer) continue;
+                            mach_vm_address_t mc = Read<mach_vm_address_t>(tp + 0x98, so2_task);
+                            if (mc < 0x1000000) continue;
+                            mach_vm_address_t md = Read<mach_vm_address_t>(mc + 0xB0, so2_task);
+                            if (md < 0x1000000) continue;
+                            valPos = Read<Vector3>(md + 0x44, so2_task);
+                            if (valPos.x != 0 || valPos.y != 0 || valPos.z != 0) break;
+                        }
+                    }
+                }
+            }
+
+            // Проверка матрицы: диагональ + WorldToScreen если есть враг
+            auto validateMatrix = [&](SO2_Matrix &m) -> bool {
+                if (fabsf(m.m11) < 0.01f || fabsf(m.m22) < 0.01f || fabsf(m.m33) < 0.01f) return false;
+                if (fabsf(m.m11) > 10.0f || fabsf(m.m22) > 10.0f || fabsf(m.m33) > 10.0f) return false;
+                if (valPos.x != 0 || valPos.y != 0 || valPos.z != 0) {
+                    Vector3 sc = WorldToScreen(valPos, m, sw, sh);
+                    if (sc.z < 0.001f) return false;
+                    if (sc.x < -sw || sc.x > sw * 2 || sc.y < -sh || sc.y > sh * 2) return false;
+                }
+                return true;
+            };
+
+            // Быстрый путь: кэшированная цепочка
             if (localPlayer > 0x1000000 && cam_off_cache >= 0) {
                 mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + cam_off_cache, so2_task);
                 if (v1 > 0x1000000) {
@@ -790,11 +822,9 @@ struct ESPBoxData {
                         mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + cam_p2_cache, so2_task);
                         if (v3 > 0x1000000) {
                             SO2_Matrix m = Read<SO2_Matrix>(v3 + cam_m_cache, so2_task);
-                            if (fabsf(m.m11) > 0.01f && fabsf(m.m22) > 0.01f && fabsf(m.m33) > 0.01f &&
-                                fabsf(m.m11) < 10.0f && fabsf(m.m22) < 10.0f && fabsf(m.m33) < 10.0f) {
+                            if (validateMatrix(m)) {
                                 viewMatrix = m;
                                 matrixFound = true;
-                                cam_bad_frames = 0;
                                 last_good_cam = cam_off_cache;
                                 last_good_p1 = cam_p1_cache;
                                 last_good_p2 = cam_p2_cache;
@@ -804,16 +834,12 @@ struct ESPBoxData {
                     }
                 }
                 if (!matrixFound) {
-                    cam_bad_frames++;
-                    if (cam_bad_frames > 10) {
-                        cam_off_cache = -1;
-                        cam_bad_frames = 0;
-                    }
+                    cam_off_cache = -1;
                 }
             }
 
-            // После сброса: сразу попробовать последние рабочие оффсеты (без полного перебора)
-            if (localPlayer > 0x1000000 && cam_off_cache < 0 && last_good_cam >= 0 && !matrixFound) {
+            // Быстрый fallback: последние рабочие оффсеты
+            if (localPlayer > 0x1000000 && !matrixFound && last_good_cam >= 0) {
                 mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + last_good_cam, so2_task);
                 if (v1 > 0x1000000) {
                     mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + last_good_p1, so2_task);
@@ -821,8 +847,7 @@ struct ESPBoxData {
                         mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + last_good_p2, so2_task);
                         if (v3 > 0x1000000) {
                             SO2_Matrix m = Read<SO2_Matrix>(v3 + last_good_m, so2_task);
-                            if (fabsf(m.m11) > 0.01f && fabsf(m.m22) > 0.01f && fabsf(m.m33) > 0.01f &&
-                                fabsf(m.m11) < 10.0f && fabsf(m.m22) < 10.0f && fabsf(m.m33) < 10.0f) {
+                            if (validateMatrix(m)) {
                                 viewMatrix = m;
                                 matrixFound = true;
                                 cam_off_cache = last_good_cam;
@@ -836,27 +861,7 @@ struct ESPBoxData {
             }
 
             if (localPlayer > 0x1000000 && !matrixFound) {
-                CGFloat sw = self.bounds.size.width, sh = self.bounds.size.height;
-                // Найти позицию первого видимого врага для валидации
-                Vector3 testPos = {0,0,0};
-                {
-                    mach_vm_address_t tdict = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
-                    if (tdict > 0x1000000) {
-                        mach_vm_address_t tarr = Read<mach_vm_address_t>(tdict + 0x18, so2_task);
-                        if (tarr > 0x1000000) {
-                            for (int ti = 0; ti < 10; ti++) {
-                                mach_vm_address_t tp = Read<mach_vm_address_t>(tarr + 0x20 + ti * 0x18 + 0x10, so2_task);
-                                if (tp < 0x1000000 || tp == localPlayer) continue;
-                                mach_vm_address_t mc = Read<mach_vm_address_t>(tp + 0x98, so2_task);
-                                if (mc < 0x1000000) continue;
-                                mach_vm_address_t md = Read<mach_vm_address_t>(mc + 0xB0, so2_task);
-                                if (md < 0x1000000) continue;
-                                testPos = Read<Vector3>(md + 0x44, so2_task);
-                                if (testPos.x != 0 || testPos.y != 0 || testPos.z != 0) break;
-                            }
-                        }
-                    }
-                }
+                Vector3 testPos = valPos;
 
                 int camOffs[] = {0xE8, 0xE0, 0xF0, 0xD8, 0xD0, 0xF8, 0x100, 0x108, 0x110, 0x118, 0x120};
                 int p1s[] = {0x20, 0x18, 0x28, 0x10, 0x30};
@@ -1513,7 +1518,35 @@ static int GetPlayerPlatform(mach_vm_address_t player, task_t task) {
 }
 
 static int GetPlayerHealthAim(mach_vm_address_t player, task_t task) {
-    (void)player; (void)task;
+    if (!player || player < 0x1000000) return 100;
+
+    mach_vm_address_t photonPlayer = Read<mach_vm_address_t>(player + 0x160, task);
+    if (!photonPlayer || photonPlayer < 0x1000000) return 100;
+
+    mach_vm_address_t props = Read<mach_vm_address_t>(photonPlayer + 0x38, task);
+    if (!props || props < 0x1000000) return 100;
+
+    int size = Read<int>(props + 0x20, task);
+    mach_vm_address_t entries = Read<mach_vm_address_t>(props + 0x18, task);
+    if (!entries || entries < 0x1000000 || size <= 0 || size > 64) return 100;
+
+    for (int i = 0; i < size; i++) {
+        mach_vm_address_t propkey = Read<mach_vm_address_t>(entries + 0x20 + 0x18 * i + 0x8, task);
+        mach_vm_address_t propval = Read<mach_vm_address_t>(entries + 0x20 + 0x18 * i + 0x10, task);
+        if (!propkey || !propval || propkey < 0x1000000 || propval < 0x1000000) continue;
+
+        int strLen = Read<int>(propkey + 0x10, task);
+        if (strLen == 6) {
+            uint64_t part1 = Read<uint64_t>(propkey + 0x14, task);
+            if (part1 == 0x006C006100650068ULL) { // "heal" UTF-16 LE
+                uint32_t part2 = Read<uint32_t>(propkey + 0x1C, task);
+                if (part2 == 0x00680074) { // "th" UTF-16 LE
+                    int hp = Read<int>(propval + 0x10, task);
+                    if (hp >= 0 && hp <= 200) return hp;
+                }
+            }
+        }
+    }
     return 100;
 }
 
