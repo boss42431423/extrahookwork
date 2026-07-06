@@ -1321,19 +1321,6 @@ CLEAR_BOXES:
     self.noPlayersLabel.hidden      = YES;
 }
 
-static Vector3 GetBoneByOffset(mach_vm_address_t bipedMap, int off, task_t task) {
-    mach_vm_address_t t = Read<mach_vm_address_t>(bipedMap + off, task);
-    if (!t || t < 0x1000000) return {0,0,0};
-    return get_position_by_transform(t, task);
-}
-
-// BipedMap offsets from dump.cs:
-// Head=0x20, Neck=0x28, Spine=0x30, Spine1=0x38, Spine2=0x40
-// LeftShoulder=0x48, LeftUpperarm=0x50, LeftForearm=0x58, LeftHand=0x60
-// RightShoulder=0x68, RightUpperarm=0x70, RightForearm=0x78, RightHand=0x80
-// Hip=0x88, LeftUpLeg=0x90, LeftLeg=0x98, LeftFoot=0xA0
-// RightUpLeg=0xB0, RightLeg=0xB8, RightFoot=0xC0
-
 static mach_vm_address_t GetAimBoneOffset(int idx) {
     switch(idx) {
         case 0: return 0x20; // Head
@@ -1344,20 +1331,6 @@ static mach_vm_address_t GetAimBoneOffset(int idx) {
     }
 }
 
-static mach_vm_address_t FindBipedMap(mach_vm_address_t player, task_t task) {
-    int cvOffsets[] = {0xD0, 0x48, 0x50};
-    for (int ci = 0; ci < 3; ci++) {
-        mach_vm_address_t cv = Read<mach_vm_address_t>(player + cvOffsets[ci], task);
-        if (cv < 0x1000000) continue;
-        mach_vm_address_t bm = Read<mach_vm_address_t>(cv + 0x48, task);
-        if (bm > 0x1000000) {
-            // Валидация: head transform должен быть валидный
-            mach_vm_address_t headT = Read<mach_vm_address_t>(bm + 0x20, task);
-            if (headT > 0x1000000) return bm;
-        }
-    }
-    return 0;
-}
 
 static Vector3 GetBonePosition(mach_vm_address_t player, int boneIdx, task_t task) {
     int cvOffsets[] = {0xD0, 0x48, 0x50};
