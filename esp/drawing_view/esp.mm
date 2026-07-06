@@ -333,10 +333,11 @@ struct ESPBoxData {
     static pid_t cached_so2_pid = 0;
     static task_t cached_so2_task = 0;
     static mach_vm_address_t cached_unity_base = 0;
-    // Atomic offset: starts with last-known value, updated by background scanner
     static std::atomic<uint64_t> s_pm_ti_offset{178356728ULL};
     static std::atomic<bool>     s_pm_scanning{false};
     static std::atomic<pid_t>    s_pm_scanned_pid{0};
+    static bool s_quick_tried = false;
+    static pid_t s_quick_pid = 0;
 
     pid_t so2_pid = get_pid_by_name("Standoff2");
 
@@ -371,33 +372,55 @@ struct ESPBoxData {
             cached_unity_base = get_image_base_address(cached_so2_task, "UnityFramework");
 
         cached_so2_pid = so2_pid;
-        // Reset scanner for new process
         s_pm_scanned_pid = 0;
+        s_quick_tried = false;
+        s_quick_pid = 0;
     }
 
-    // Launch background scanner — retry every 5 sec if failed
-    static double s_last_scan_time = 0;
-    bool shouldScan = false;
-    if (cached_unity_base && cached_so2_task && !s_pm_scanning) {
-        if (s_pm_scanned_pid != so2_pid) {
-            shouldScan = true;
-        } else if (get_scan_phase() == -1) {
-            double now = CACurrentMediaTime();
-            if (now - s_last_scan_time > 5.0) shouldScan = true;
+    // Быстрый старт: пробуем известные оффсеты синхронно (без долгого скана)
+    if (cached_unity_base && cached_so2_task && s_quick_pid != so2_pid && !s_quick_tried) {
+        s_quick_pid = so2_pid;
+        s_quick_tried = true;
+        uint64_t hints[] = {178356728ULL, 178356720ULL, 178356736ULL, 178356712ULL, 178356744ULL};
+        for (int hi = 0; hi < 5; hi++) {
+            uint64_t ti = Read<uint64_t>(cached_unity_base + hints[hi], cached_so2_task);
+            if (ti > 0x1000000 && (ti & 7) == 0) {
+                uint64_t namePtr = Read<uint64_t>(ti + 0x10, cached_so2_task);
+                if (namePtr > 0x1000000) {
+                    char nbuf[16] = {0};
+                    mach_vm_size_t nsz = 14;
+                    if (mach_vm_read_overwrite(cached_so2_task, namePtr, 14, (mach_vm_address_t)nbuf, &nsz) == KERN_SUCCESS) {
+                        if (memcmp(nbuf, "PlayerManager", 13) == 0) {
+                            s_pm_ti_offset = hints[hi];
+                            set_found_class(ti);
+                            set_found_name_off(0x10);
+                            set_scan_phase(2);
+                            break;
+                        }
+                    }
+                }
+            }
         }
     }
-    if (shouldScan) {
-        s_pm_scanning    = true;
-        s_pm_scanned_pid = so2_pid;
-        s_last_scan_time = CACurrentMediaTime();
-        task_t           scan_task = cached_so2_task;
-        mach_vm_address_t scan_base = cached_unity_base;
 
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-            uint64_t found = find_pm_typeinfo_offset(scan_task, scan_base);
-            if (found != 0) s_pm_ti_offset = found;
-            s_pm_scanning = false;
-        });
+    // Фоновый скан — только если быстрый старт не помог
+    static double s_last_scan_time = 0;
+    if (cached_unity_base && cached_so2_task && !s_pm_scanning && get_scan_phase() != 2) {
+        if (s_pm_scanned_pid != so2_pid || get_scan_phase() == -1) {
+            double now = CACurrentMediaTime();
+            if (now - s_last_scan_time > 5.0) {
+                s_pm_scanning    = true;
+                s_pm_scanned_pid = so2_pid;
+                s_last_scan_time = now;
+                task_t           scan_task = cached_so2_task;
+                mach_vm_address_t scan_base = cached_unity_base;
+                dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                    uint64_t found = find_pm_typeinfo_offset(scan_task, scan_base);
+                    if (found != 0) s_pm_ti_offset = found;
+                    s_pm_scanning = false;
+                });
+            }
+        }
     }
 
     task_t so2_task = cached_so2_task;
@@ -437,11 +460,9 @@ struct ESPBoxData {
         {
             int phase = get_scan_phase();
             if (phase != 2) {
-                if (phase == 1) {
+                if (s_pm_scanning) {
                     self.watermarkLabel.text = [NSString stringWithFormat:
                         @"SCANNING %llu/%llu...", get_scan_progress(), get_scan_total()];
-                } else if (phase == -1) {
-                    self.watermarkLabel.text = @"NOT FOUND";
                 } else {
                     self.watermarkLabel.text = @"Waiting...";
                 }
@@ -817,8 +838,30 @@ struct ESPBoxData {
                 return true;
             };
 
-            // Быстрый путь: кэшированная цепочка
-            if (localPlayer > 0x1000000 && cam_off_cache >= 0) {
+            // Приоритет 1: известная рабочая цепочка 0xE8→0x20→0x10→0xF0
+            if (localPlayer > 0x1000000 && !matrixFound) {
+                mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + 0xE8, so2_task);
+                if (v1 > 0x1000000) {
+                    mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + 0x20, so2_task);
+                    if (v2 > 0x1000000) {
+                        mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + 0x10, so2_task);
+                        if (v3 > 0x1000000) {
+                            SO2_Matrix m = Read<SO2_Matrix>(v3 + 0xF0, so2_task);
+                            if (validateMatrix(m)) {
+                                viewMatrix = m;
+                                matrixFound = true;
+                                cam_off_cache = 0xE8;
+                                cam_p1_cache = 0x20;
+                                cam_p2_cache = 0x10;
+                                cam_m_cache = 0xF0;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Приоритет 2: кэшированная цепочка (если отличается от основной)
+            if (localPlayer > 0x1000000 && !matrixFound && cam_off_cache >= 0) {
                 mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + cam_off_cache, so2_task);
                 if (v1 > 0x1000000) {
                     mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + cam_p1_cache, so2_task);
@@ -833,49 +876,26 @@ struct ESPBoxData {
                         }
                     }
                 }
-                if (!matrixFound) {
-                    cam_off_cache = -1;
-                }
+                if (!matrixFound) cam_off_cache = -1;
             }
 
-            // Быстрый fallback: последние рабочие оффсеты
-            if (localPlayer > 0x1000000 && !matrixFound && last_good_cam >= 0) {
-                mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + last_good_cam, so2_task);
-                if (v1 > 0x1000000) {
-                    mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + last_good_p1, so2_task);
-                    if (v2 > 0x1000000) {
-                        mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + last_good_p2, so2_task);
-                        if (v3 > 0x1000000) {
-                            SO2_Matrix m = Read<SO2_Matrix>(v3 + last_good_m, so2_task);
-                            if (validateMatrix(m)) {
-                                viewMatrix = m;
-                                matrixFound = true;
-                                cam_off_cache = last_good_cam;
-                                cam_p1_cache = last_good_p1;
-                                cam_p2_cache = last_good_p2;
-                                cam_m_cache = last_good_m;
-                            }
-                        }
-                    }
-                }
-            }
+            // Приоритет 3: полный скан (только если есть враги для валидации)
+            if (localPlayer > 0x1000000 && !matrixFound && valCount > 0) {
+                int camOffs[] = {0xE8, 0xE0, 0xF0, 0xD8, 0xD0};
+                int p1s[] = {0x20, 0x18, 0x28, 0x10};
+                int p2s[] = {0x10, 0x18, 0x08};
+                int moffs[] = {0x100, 0xF0, 0xE0, 0xD0, 0xC0};
 
-            if (localPlayer > 0x1000000 && !matrixFound) {
-                int camOffs[] = {0xE8, 0xE0, 0xF0, 0xD8, 0xD0, 0xF8, 0x100, 0x108, 0x110, 0x118, 0x120};
-                int p1s[] = {0x20, 0x18, 0x28, 0x10, 0x30};
-                int p2s[] = {0x10, 0x18, 0x08, 0x20};
-                int moffs[] = {0x100, 0xF0, 0xE0, 0xD0, 0xC0, 0x110, 0x120, 0xB0, 0xA0};
-
-                for (int ci = 0; ci < 11 && !matrixFound; ci++) {
+                for (int ci = 0; ci < 5 && !matrixFound; ci++) {
                     mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + camOffs[ci], so2_task);
                     if (v1 < 0x1000000) continue;
-                    for (int pi = 0; pi < 5 && !matrixFound; pi++) {
+                    for (int pi = 0; pi < 4 && !matrixFound; pi++) {
                         mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + p1s[pi], so2_task);
                         if (v2 < 0x1000000) continue;
-                        for (int qi = 0; qi < 4 && !matrixFound; qi++) {
+                        for (int qi = 0; qi < 3 && !matrixFound; qi++) {
                             mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + p2s[qi], so2_task);
                             if (v3 < 0x1000000) continue;
-                            for (int mi = 0; mi < 9 && !matrixFound; mi++) {
+                            for (int mi = 0; mi < 5 && !matrixFound; mi++) {
                                 SO2_Matrix m = Read<SO2_Matrix>(v3 + moffs[mi], so2_task);
                                 if (validateMatrix(m)) {
                                     viewMatrix = m;
@@ -884,10 +904,6 @@ struct ESPBoxData {
                                     cam_p1_cache = p1s[pi];
                                     cam_p2_cache = p2s[qi];
                                     cam_m_cache = moffs[mi];
-                                    last_good_cam = camOffs[ci];
-                                    last_good_p1 = p1s[pi];
-                                    last_good_p2 = p2s[qi];
-                                    last_good_m = moffs[mi];
                                 }
                             }
                         }

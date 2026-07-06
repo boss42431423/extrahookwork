@@ -234,17 +234,20 @@ static uint64_t _safe64(task_t task, uint64_t addr) {
     return val;
 }
 
-static std::atomic<int> s_scan_phase{0};
-static std::atomic<uint64_t> s_scan_progress{0};
-static std::atomic<uint64_t> s_scan_total{0};
-static std::atomic<uint64_t> s_found_class_addr{0};
-static std::atomic<int> s_found_name_off{0};
+std::atomic<int> s_scan_phase{0};
+std::atomic<uint64_t> s_scan_progress{0};
+std::atomic<uint64_t> s_scan_total{0};
+std::atomic<uint64_t> s_found_class_addr{0};
+std::atomic<int> s_found_name_off{0};
 
 int get_scan_phase(void)    { return s_scan_phase.load(); }
 uint64_t get_scan_progress(void) { return s_scan_progress.load(); }
 uint64_t get_scan_total(void)    { return s_scan_total.load(); }
 uint64_t get_found_class(void)   { return s_found_class_addr.load(); }
 int get_found_name_off(void)     { return s_found_name_off.load(); }
+void set_scan_phase(int v)       { s_scan_phase = v; }
+void set_found_class(uint64_t v) { s_found_class_addr = v; }
+void set_found_name_off(int v)   { s_found_name_off = v; }
 
 static bool _check_name(task_t task, uint64_t cls_ptr, const char *target, int *out_name_off) {
     int name_offsets[] = {0x10, 0x08, 0x18, 0x20, 0x28, 0x30, 0x38, 0x40, 0x48};

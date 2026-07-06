@@ -116,6 +116,9 @@ uint64_t get_scan_progress(void);
 uint64_t get_scan_total(void);
 uint64_t get_found_class(void);
 int get_found_name_off(void);
+void set_scan_phase(int v);
+void set_found_class(uint64_t v);
+void set_found_name_off(int v);
 
 template<typename T>
 T Read(uintptr_t address, task_t task)
