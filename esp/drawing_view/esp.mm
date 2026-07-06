@@ -1253,39 +1253,79 @@ struct UnityString32 { uint16_t chars[32]; };
                     }
 
                     if (esp_skeleton_enabled) {
-                        float hx = screenHead.x, hy = screenHead.y;
-                        float fx = screenFoot.x, fy = screenFoot.y;
-                        float bh = fy - hy;
-                        float bw = bh / 2.0f;
-                        if (bh > 5.0f) {
-                            CGPoint sHead   = CGPointMake(hx, hy);
-                            CGPoint sNeck   = CGPointMake(hx, hy + bh * 0.12f);
-                            CGPoint sChest  = CGPointMake(hx, hy + bh * 0.30f);
-                            CGPoint sHip    = CGPointMake(hx, hy + bh * 0.48f);
-                            CGPoint sLShldr = CGPointMake(hx - bw * 0.38f, hy + bh * 0.14f);
-                            CGPoint sRShldr = CGPointMake(hx + bw * 0.38f, hy + bh * 0.14f);
-                            CGPoint sLElbow = CGPointMake(hx - bw * 0.52f, hy + bh * 0.34f);
-                            CGPoint sRElbow = CGPointMake(hx + bw * 0.52f, hy + bh * 0.34f);
-                            CGPoint sLHand  = CGPointMake(hx - bw * 0.40f, hy + bh * 0.52f);
-                            CGPoint sRHand  = CGPointMake(hx + bw * 0.40f, hy + bh * 0.52f);
-                            CGPoint sLKnee  = CGPointMake(hx - bw * 0.16f, hy + bh * 0.75f);
-                            CGPoint sRKnee  = CGPointMake(hx + bw * 0.16f, hy + bh * 0.75f);
-                            CGPoint sLFoot  = CGPointMake(hx - bw * 0.18f, fy);
-                            CGPoint sRFoot  = CGPointMake(hx + bw * 0.18f, fy);
+                        mach_vm_address_t bm = FindBipedMapCached(player, so2_task);
+                        bool usedRealBones = false;
 
-                            CGPoint pts[] = {sHead, sNeck, sChest, sHip,
-                                sLShldr, sLElbow, sLHand, sRShldr, sRElbow, sRHand,
-                                sLKnee, sLFoot, sRKnee, sRFoot};
-                            int links[][2] = {
-                                {0,1},{1,2},{2,3},
-                                {1,4},{4,5},{5,6},
-                                {1,7},{7,8},{8,9},
-                                {3,10},{10,11},
-                                {3,12},{12,13},
+                        if (bm) {
+                            int boneOffsets[] = {
+                                0x20, 0x28, 0x40, 0x88,
+                                0x48, 0x50, 0x58, 0x60,
+                                0x68, 0x70, 0x78, 0x80,
+                                0x90, 0x98, 0xA0,
+                                0xB0, 0xB8, 0xC0
                             };
-                            for (int li = 0; li < 13; li++) {
-                                [skeletonPath moveToPoint:pts[links[li][0]]];
-                                [skeletonPath addLineToPoint:pts[links[li][1]]];
+                            Vector3 bones[18];
+                            int validCount = 0;
+                            for (int bi = 0; bi < 18; bi++) {
+                                bones[bi] = GetBoneWorldPos(bm, boneOffsets[bi], so2_task);
+                                if (bones[bi].x != 0 || bones[bi].y != 0 || bones[bi].z != 0) validCount++;
+                            }
+                            if (validCount >= 10) {
+                                usedRealBones = true;
+                                int skelLinks[][2] = {
+                                    {0,1},{1,2},{2,3},
+                                    {1,4},{4,5},{5,6},{6,7},
+                                    {1,8},{8,9},{9,10},{10,11},
+                                    {3,12},{12,13},{13,14},
+                                    {3,15},{15,16},{16,17},
+                                };
+                                for (int li = 0; li < 17; li++) {
+                                    Vector3 b1 = bones[skelLinks[li][0]];
+                                    Vector3 b2 = bones[skelLinks[li][1]];
+                                    if ((b1.x == 0 && b1.y == 0 && b1.z == 0) ||
+                                        (b2.x == 0 && b2.y == 0 && b2.z == 0)) continue;
+                                    Vector3 s1 = WorldToScreen(b1, viewMatrix, w, h);
+                                    Vector3 s2 = WorldToScreen(b2, viewMatrix, w, h);
+                                    if (s1.z <= 0 || s2.z <= 0) continue;
+                                    [skeletonPath moveToPoint:CGPointMake(s1.x, s1.y)];
+                                    [skeletonPath addLineToPoint:CGPointMake(s2.x, s2.y)];
+                                }
+                            }
+                        }
+
+                        if (!usedRealBones) {
+                            float hx = screenHead.x, hy = screenHead.y;
+                            float fy = screenFoot.y;
+                            float bh = fy - hy;
+                            float bw = bh / 2.0f;
+                            if (bh > 5.0f) {
+                                CGPoint pts[] = {
+                                    CGPointMake(hx, hy),
+                                    CGPointMake(hx, hy + bh * 0.12f),
+                                    CGPointMake(hx, hy + bh * 0.30f),
+                                    CGPointMake(hx, hy + bh * 0.48f),
+                                    CGPointMake(hx - bw * 0.38f, hy + bh * 0.14f),
+                                    CGPointMake(hx - bw * 0.52f, hy + bh * 0.34f),
+                                    CGPointMake(hx - bw * 0.40f, hy + bh * 0.52f),
+                                    CGPointMake(hx + bw * 0.38f, hy + bh * 0.14f),
+                                    CGPointMake(hx + bw * 0.52f, hy + bh * 0.34f),
+                                    CGPointMake(hx + bw * 0.40f, hy + bh * 0.52f),
+                                    CGPointMake(hx - bw * 0.16f, hy + bh * 0.75f),
+                                    CGPointMake(hx - bw * 0.18f, fy),
+                                    CGPointMake(hx + bw * 0.16f, hy + bh * 0.75f),
+                                    CGPointMake(hx + bw * 0.18f, fy),
+                                };
+                                int links[][2] = {
+                                    {0,1},{1,2},{2,3},
+                                    {1,4},{4,5},{5,6},
+                                    {1,7},{7,8},{8,9},
+                                    {3,10},{10,11},
+                                    {3,12},{12,13},
+                                };
+                                for (int li = 0; li < 13; li++) {
+                                    [skeletonPath moveToPoint:pts[links[li][0]]];
+                                    [skeletonPath addLineToPoint:pts[links[li][1]]];
+                                }
                             }
                         }
                     }
@@ -1334,19 +1374,35 @@ static mach_vm_address_t GetAimBoneOffset(int idx) {
 }
 
 
+static mach_vm_address_t FindBipedMapCached(mach_vm_address_t player, task_t task) {
+    int cvOffsets[] = {0xD0, 0x48, 0x50, 0x58, 0xC8, 0xD8, 0xE0};
+    int bmOffsets[] = {0x48, 0x50, 0x40, 0x58};
+    for (int ci = 0; ci < 7; ci++) {
+        mach_vm_address_t cv = Read<mach_vm_address_t>(player + cvOffsets[ci], task);
+        if (cv < 0x1000000) continue;
+        for (int bi = 0; bi < 4; bi++) {
+            mach_vm_address_t bm = Read<mach_vm_address_t>(cv + bmOffsets[bi], task);
+            if (bm < 0x1000000) continue;
+            mach_vm_address_t headT = Read<mach_vm_address_t>(bm + 0x20, task);
+            if (headT < 0x1000000) continue;
+            Vector3 hp = get_position_by_transform(headT, task);
+            if (hp.x != 0 || hp.y != 0 || hp.z != 0) return bm;
+        }
+    }
+    return 0;
+}
+
+static Vector3 GetBoneWorldPos(mach_vm_address_t bipedMap, int boneOffset, task_t task) {
+    if (!bipedMap) return {0,0,0};
+    mach_vm_address_t t = Read<mach_vm_address_t>(bipedMap + boneOffset, task);
+    if (t < 0x1000000) return {0,0,0};
+    return get_position_by_transform(t, task);
+}
+
 static Vector3 GetBonePosition(mach_vm_address_t player, int boneIdx, task_t task) {
-    int cvOffsets[] = {0xD0, 0x48, 0x50};
-    for (int ci = 0; ci < 3; ci++) {
-        mach_vm_address_t characterView = Read<mach_vm_address_t>(player + cvOffsets[ci], task);
-        if (!characterView || characterView < 0x1000000) continue;
-
-        mach_vm_address_t bipedMap = Read<mach_vm_address_t>(characterView + 0x48, task);
-        if (!bipedMap || bipedMap < 0x1000000) continue;
-
-        mach_vm_address_t boneTransform = Read<mach_vm_address_t>(bipedMap + GetAimBoneOffset(boneIdx), task);
-        if (!boneTransform || boneTransform < 0x1000000) continue;
-
-        Vector3 pos = get_position_by_transform(boneTransform, task);
+    mach_vm_address_t bm = FindBipedMapCached(player, task);
+    if (bm) {
+        Vector3 pos = GetBoneWorldPos(bm, GetAimBoneOffset(boneIdx), task);
         if (pos.x != 0 || pos.y != 0 || pos.z != 0) return pos;
     }
 
@@ -1635,42 +1691,67 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     float currentPitch = Read<float>(aimingData + 0x18, so2_task);
     float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-    // Позиция камеры из moveData локального игрока + высота глаз
     Vector3 camPos = {0,0,0};
-    mach_vm_address_t lmc = Read<mach_vm_address_t>(localPlayer + 0x98, so2_task);
-    if (lmc > 0x1000000) {
-        mach_vm_address_t lmd = Read<mach_vm_address_t>(lmc + 0xB0, so2_task);
-        if (lmd > 0x1000000) {
-            camPos = Read<Vector3>(lmd + 0x44, so2_task);
-            camPos.y += 1.45f;
+    bool hasCamPos = false;
+
+    mach_vm_address_t camTransform = Read<mach_vm_address_t>(aimController + 0x80, so2_task);
+    if (camTransform > 0x1000000) {
+        camPos = get_position_by_transform(camTransform, so2_task);
+        if (camPos.x != 0 || camPos.y != 0 || camPos.z != 0) hasCamPos = true;
+    }
+    if (!hasCamPos) {
+        camTransform = Read<mach_vm_address_t>(aimController + 0x78, so2_task);
+        if (camTransform > 0x1000000) {
+            camPos = get_position_by_transform(camTransform, so2_task);
+            if (camPos.x != 0 || camPos.y != 0 || camPos.z != 0) hasCamPos = true;
         }
     }
-    if (camPos.x == 0 && camPos.y == 0 && camPos.z == 0) return;
-
-    float dx = closestBonePos.x - camPos.x;
-    float dy = closestBonePos.y - camPos.y;
-    float dz = closestBonePos.z - camPos.z;
-    float horizDist = sqrtf(dx * dx + dz * dz);
-    if (horizDist < 0.01f) return;
-
-    float targetPitch = -atan2f(dy, horizDist) * (180.0f / M_PI);
-    float targetYaw   =  atan2f(dx, dz) * (180.0f / M_PI);
-
-    float diffYaw = targetYaw - currentYaw;
-    while (diffYaw > 180.0f)  diffYaw -= 360.0f;
-    while (diffYaw < -180.0f) diffYaw += 360.0f;
-    float diffPitch = targetPitch - currentPitch;
 
     float newPitch, newYaw;
 
-    if (aimbot_smooth <= 1.0f) {
-        newPitch = targetPitch;
-        newYaw   = currentYaw + diffYaw;
+    if (hasCamPos) {
+        float dx = closestBonePos.x - camPos.x;
+        float dy = closestBonePos.y - camPos.y;
+        float dz = closestBonePos.z - camPos.z;
+        float horizDist = sqrtf(dx * dx + dz * dz);
+        if (horizDist < 0.01f) return;
+
+        float targetPitch = -atan2f(dy, horizDist) * (180.0f / M_PI);
+        float targetYaw   =  atan2f(dx, dz) * (180.0f / M_PI);
+
+        float diffYaw = targetYaw - currentYaw;
+        while (diffYaw > 180.0f)  diffYaw -= 360.0f;
+        while (diffYaw < -180.0f) diffYaw += 360.0f;
+
+        if (aimbot_smooth <= 1.0f) {
+            newPitch = targetPitch;
+            newYaw   = currentYaw + diffYaw;
+        } else {
+            float t = 1.0f / (1.0f + aimbot_smooth * 0.5f);
+            t = fmaxf(0.05f, fminf(t, 1.0f));
+            newPitch = currentPitch + (targetPitch - currentPitch) * t;
+            newYaw   = currentYaw   + diffYaw * t;
+        }
     } else {
-        float t = 1.0f / (1.0f + aimbot_smooth * 0.5f);
-        t = fmaxf(0.05f, fminf(t, 1.0f));
-        newPitch = currentPitch + diffPitch * t;
-        newYaw   = currentYaw   + diffYaw   * t;
+        Vector3 screenTarget = WorldToScreen(closestBonePos, viewMatrix, (int)w, (int)h);
+        if (screenTarget.z <= 0) return;
+
+        float cx2 = w / 2.0f, cy2 = h / 2.0f;
+        float errX = screenTarget.x - cx2;
+        float errY = screenTarget.y - cy2;
+
+        float degPerPxX = 0.045f;
+        float degPerPxY = 0.055f;
+
+        if (aimbot_smooth <= 1.0f) {
+            newPitch = currentPitch + errY * degPerPxY;
+            newYaw   = currentYaw   + errX * degPerPxX;
+        } else {
+            float t = 1.0f / (1.0f + aimbot_smooth * 0.5f);
+            t = fmaxf(0.05f, fminf(t, 1.0f));
+            newPitch = currentPitch + errY * degPerPxY * t;
+            newYaw   = currentYaw   + errX * degPerPxX * t;
+        }
     }
 
     newPitch = fmaxf(-89.0f, fminf(89.0f, newPitch));
