@@ -337,6 +337,7 @@ struct ESPBoxData {
     static std::atomic<bool>     s_pm_scanning{false};
     static std::atomic<pid_t>    s_pm_scanned_pid{0};
     static bool s_quick_tried = false;
+    static int s_quick_chunk = 0;
 
     pid_t so2_pid = get_pid_by_name("Standoff2");
 
@@ -377,7 +378,6 @@ struct ESPBoxData {
     }
 
     // Быстрый старт: ищем PlayerManager в чанках по 64KB вокруг хинта (каждый кадр пока не найдём)
-    static int s_quick_chunk = 0;
     if (cached_unity_base && cached_so2_task && get_scan_phase() != 2 && !s_quick_tried) {
         const uint64_t HINT = 178356728ULL;
         const uint64_t QCHUNK = 64 * 1024;
