@@ -118,6 +118,7 @@ volatile float viewmodel_z        = 0.0f;
 
 volatile bool esp_auto_load = false;
 volatile bool esp_skeleton_enabled = true;
+volatile bool esp_hitbox_enabled = false;
 NSString *esp_selected_config = nil;
 
 @interface UIWindow (Private)
@@ -158,6 +159,7 @@ struct ESPBoxData {
 @property (nonatomic, strong) CAShapeLayer      *espHealthBarOutlineLayer;
 @property (nonatomic, strong) CAShapeLayer      *espLineOutlineLayer;
 @property (nonatomic, strong) CAShapeLayer      *espSkeletonLayer;
+@property (nonatomic, strong) CAShapeLayer      *espHitboxLayer;
 @property (nonatomic, strong) UILabel           *watermarkLabel;
 @property (nonatomic, strong) CAShapeLayer      *fovCircleLayer;
 @property (nonatomic, strong) CAShapeLayer      *fovCircleOutlineLayer;
@@ -226,6 +228,13 @@ struct ESPBoxData {
     self.espSkeletonLayer.lineWidth   = 2.0;
     self.espSkeletonLayer.zPosition   = 100;
     [self.layer addSublayer:self.espSkeletonLayer];
+
+    self.espHitboxLayer = [CAShapeLayer layer];
+    self.espHitboxLayer.strokeColor = [UIColor colorWithRed:1.0 green:0.4 blue:0.0 alpha:0.7].CGColor;
+    self.espHitboxLayer.fillColor   = [UIColor clearColor].CGColor;
+    self.espHitboxLayer.lineWidth   = 1.5;
+    self.espHitboxLayer.zPosition   = 99;
+    [self.layer addSublayer:self.espHitboxLayer];
 
     self.fovCircleOutlineLayer = [CAShapeLayer layer];
     self.fovCircleOutlineLayer.fillColor   = [UIColor clearColor].CGColor;
@@ -320,6 +329,7 @@ struct ESPBoxData {
     self.espHealthBarLayer.path  = nil;
     self.espHealthBarOutlineLayer.path = nil;
     self.espSkeletonLayer.path        = nil;
+    self.espHitboxLayer.path          = nil;
     self.fovCircleLayer.hidden        = YES;
     self.fovCircleOutlineLayer.hidden = YES;
     for (UILabel *lbl in self.nameLabelPool) lbl.hidden = YES;
@@ -331,7 +341,7 @@ struct ESPBoxData {
 }
 
 - (void)update_data {
-    if (!esp_box_enabled && !esp_box_3d && !esp_box_corner && !esp_line_enabled && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled && !esp_skeleton_enabled) {
+    if (!esp_box_enabled && !esp_box_3d && !esp_box_corner && !esp_line_enabled && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled && !esp_skeleton_enabled && !esp_hitbox_enabled) {
         [self clearAllBoxes];
         self.watermarkLabel.text = @(OBF("t.me/projectios"));
         [self.watermarkLabel sizeToFit];
@@ -791,7 +801,7 @@ struct ESPBoxData {
             BOOL drawBoxes = esp_box_enabled || esp_box_3d || esp_box_fill || esp_box_corner;
             BOOL drawLines = esp_line_enabled;
 
-            if (!drawBoxes && !drawLines && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled && !esp_weapon_icon_enabled && !esp_platform_enabled && !esp_skeleton_enabled) {
+            if (!drawBoxes && !drawLines && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled && !esp_weapon_icon_enabled && !esp_platform_enabled && !esp_skeleton_enabled && !esp_hitbox_enabled) {
                 [self clearAllBoxes];
                 self.watermarkLabel.text = @"t.me/projectios";
                 [self.watermarkLabel sizeToFit];
@@ -826,6 +836,7 @@ struct ESPBoxData {
             UIBezierPath *healthBarPath   = [UIBezierPath bezierPath];
             UIBezierPath *healthBarOutlinePath = [UIBezierPath bezierPath];
             UIBezierPath *skeletonPath    = [UIBezierPath bezierPath];
+            UIBezierPath *hitboxPath      = [UIBezierPath bezierPath];
 
             // Direct read: PlayerController+0x79 → team byte (новые офсеты)
             int localTeam = 0;
@@ -1252,40 +1263,91 @@ struct UnityString32 { uint16_t chars[32]; };
                         plLbl.hidden = NO;
                     }
 
-                    if (esp_skeleton_enabled) {
-                        mach_vm_address_t bm = FindBipedMapCached(player, so2_task);
-                        if (bm) {
-                            int boneOffsets[] = {
-                                0x20, 0x28, 0x40, 0x88,
-                                0x48, 0x50, 0x58, 0x60,
-                                0x68, 0x70, 0x78, 0x80,
-                                0x90, 0x98, 0xA0,
-                                0xB0, 0xB8, 0xC0
-                            };
-                            Vector3 bones[18];
-                            int validCount = 0;
-                            for (int bi = 0; bi < 18; bi++) {
-                                bones[bi] = GetBoneWorldPos(bm, boneOffsets[bi], so2_task);
-                                if (bones[bi].x != 0 || bones[bi].y != 0 || bones[bi].z != 0) validCount++;
+                    if (esp_skeleton_enabled || esp_hitbox_enabled) {
+                        float enemyYaw = 0;
+                        mach_vm_address_t eAim = Read<mach_vm_address_t>(player + 0x80, so2_task);
+                        if (eAim > 0x1000000) {
+                            mach_vm_address_t eAimData = Read<mach_vm_address_t>(eAim + 0x90, so2_task);
+                            if (eAimData > 0x1000000) {
+                                enemyYaw = Read<float>(eAimData + 0x1C, so2_task);
                             }
-                            if (validCount >= 6) {
-                                int skelLinks[][2] = {
-                                    {0,1},{1,2},{2,3},
-                                    {1,4},{4,5},{5,6},{6,7},
-                                    {1,8},{8,9},{9,10},{10,11},
-                                    {3,12},{12,13},{13,14},
-                                    {3,15},{15,16},{16,17},
-                                };
-                                for (int li = 0; li < 17; li++) {
-                                    Vector3 b1 = bones[skelLinks[li][0]];
-                                    Vector3 b2 = bones[skelLinks[li][1]];
-                                    if ((b1.x == 0 && b1.y == 0 && b1.z == 0) ||
-                                        (b2.x == 0 && b2.y == 0 && b2.z == 0)) continue;
-                                    Vector3 s1 = WorldToScreen(b1, viewMatrix, w, h);
-                                    Vector3 s2 = WorldToScreen(b2, viewMatrix, w, h);
-                                    if (s1.z <= 0 || s2.z <= 0) continue;
+                        }
+
+                        float yawRad = enemyYaw * (float)M_PI / 180.0f;
+                        float rX = cosf(yawRad);
+                        float rZ = -sinf(yawRad);
+
+                        float pH = 1.67f;
+                        float sw2 = 0.22f;
+                        float hw2 = 0.12f;
+
+                        Vector3 bHead  = {pos.x, pos.y + pH, pos.z};
+                        Vector3 bNeck  = {pos.x, pos.y + 1.50f, pos.z};
+                        Vector3 bChest = {pos.x, pos.y + 1.30f, pos.z};
+                        Vector3 bSpine = {pos.x, pos.y + 1.05f, pos.z};
+                        Vector3 bHip   = {pos.x, pos.y + 0.90f, pos.z};
+
+                        Vector3 bLS = {bChest.x + rX*sw2, bChest.y + 0.10f, bChest.z + rZ*sw2};
+                        Vector3 bRS = {bChest.x - rX*sw2, bChest.y + 0.10f, bChest.z - rZ*sw2};
+                        Vector3 bLE = {bLS.x + rX*0.05f, bLS.y - 0.28f, bLS.z + rZ*0.05f};
+                        Vector3 bRE = {bRS.x - rX*0.05f, bRS.y - 0.28f, bRS.z - rZ*0.05f};
+                        Vector3 bLH = {bLE.x + rX*0.03f, bLE.y - 0.28f, bLE.z + rZ*0.03f};
+                        Vector3 bRH = {bRE.x - rX*0.03f, bRE.y - 0.28f, bRE.z - rZ*0.03f};
+                        Vector3 bLHip = {bHip.x + rX*hw2, bHip.y, bHip.z + rZ*hw2};
+                        Vector3 bRHip = {bHip.x - rX*hw2, bHip.y, bHip.z - rZ*hw2};
+                        Vector3 bLK = {bLHip.x, pos.y + 0.45f, bLHip.z};
+                        Vector3 bRK = {bRHip.x, pos.y + 0.45f, bRHip.z};
+                        Vector3 bLF = {bLK.x, pos.y, bLK.z};
+                        Vector3 bRF = {bRK.x, pos.y, bRK.z};
+
+                        if (esp_skeleton_enabled) {
+                            Vector3 sb[] = {bHead,bNeck,bChest,bSpine,bHip,bLS,bLE,bLH,bRS,bRE,bRH,bLHip,bLK,bLF,bRHip,bRK,bRF};
+                            int sl[][2] = {{0,1},{1,2},{2,3},{3,4},{2,5},{5,6},{6,7},{2,8},{8,9},{9,10},{4,11},{11,12},{12,13},{4,14},{14,15},{15,16}};
+                            for (int li = 0; li < 16; li++) {
+                                Vector3 s1 = WorldToScreen(sb[sl[li][0]], viewMatrix, w, h);
+                                Vector3 s2 = WorldToScreen(sb[sl[li][1]], viewMatrix, w, h);
+                                if (s1.z > 0 && s2.z > 0) {
                                     [skeletonPath moveToPoint:CGPointMake(s1.x, s1.y)];
                                     [skeletonPath addLineToPoint:CGPointMake(s2.x, s2.y)];
+                                }
+                            }
+                        }
+
+                        if (esp_hitbox_enabled) {
+                            float fX2 = sinf(yawRad);
+                            float fZ2 = cosf(yawRad);
+                            struct OBBDef { Vector3 center; float hw; float hh; float hd; };
+                            OBBDef obbs[] = {
+                                {{pos.x, pos.y + 1.58f, pos.z}, 0.10f, 0.09f, 0.10f},
+                                {{pos.x, pos.y + 1.20f, pos.z}, 0.20f, 0.30f, 0.12f},
+                                {{pos.x, pos.y + 0.45f, pos.z}, 0.12f, 0.45f, 0.10f},
+                            };
+                            for (int oi = 0; oi < 3; oi++) {
+                                Vector3 c = obbs[oi].center;
+                                float ohw = obbs[oi].hw, ohh = obbs[oi].hh, ohd = obbs[oi].hd;
+                                Vector3 corners[8];
+                                for (int ci2 = 0; ci2 < 8; ci2++) {
+                                    float sx2 = (ci2 & 1) ? ohw : -ohw;
+                                    float sy2 = (ci2 & 2) ? ohh : -ohh;
+                                    float sz2 = (ci2 & 4) ? ohd : -ohd;
+                                    corners[ci2] = {
+                                        c.x + rX * sx2 + fX2 * sz2,
+                                        c.y + sy2,
+                                        c.z + rZ * sx2 + fZ2 * sz2
+                                    };
+                                }
+                                Vector3 sc[8];
+                                bool allOk = true;
+                                for (int ci2 = 0; ci2 < 8; ci2++) {
+                                    sc[ci2] = WorldToScreen(corners[ci2], viewMatrix, w, h);
+                                    if (sc[ci2].z <= 0) allOk = false;
+                                }
+                                if (allOk) {
+                                    int edges[][2] = {{0,1},{2,3},{4,5},{6,7},{0,2},{1,3},{4,6},{5,7},{0,4},{1,5},{2,6},{3,7}};
+                                    for (int ei = 0; ei < 12; ei++) {
+                                        [hitboxPath moveToPoint:CGPointMake(sc[edges[ei][0]].x, sc[edges[ei][0]].y)];
+                                        [hitboxPath addLineToPoint:CGPointMake(sc[edges[ei][1]].x, sc[edges[ei][1]].y)];
+                                    }
                                 }
                             }
                         }
@@ -1307,6 +1369,7 @@ struct UnityString32 { uint16_t chars[32]; };
             self.espHealthBarLayer.path = esp_health_bar_enabled ? healthBarPath.CGPath : nil;
             self.espHealthBarOutlineLayer.path = (esp_health_bar_enabled && esp_health_bar_outline) ? healthBarOutlinePath.CGPath : nil;
             self.espSkeletonLayer.path = esp_skeleton_enabled ? skeletonPath.CGPath : nil;
+            self.espHitboxLayer.path = esp_hitbox_enabled ? hitboxPath.CGPath : nil;
             [CATransaction commit];
             [CATransaction flush];
 
@@ -1659,9 +1722,11 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     float errX = screenTarget.x - cx2;
     float errY = screenTarget.y - cy2;
 
-    // w,h в поинтах UIKit (не пикселях), degPerPt = FOV / screenPoints
-    float degPerPtY = 0.15f;
-    float degPerPtX = 0.12f;
+    // degPerPt из VP матрицы: |row_y| = cot(vFOV/2), degPerPt = 360/(PI*h*f)
+    float fY = sqrtf(viewMatrix.m12*viewMatrix.m12 + viewMatrix.m22*viewMatrix.m22 + viewMatrix.m32*viewMatrix.m32);
+    float fX = sqrtf(viewMatrix.m11*viewMatrix.m11 + viewMatrix.m21*viewMatrix.m21 + viewMatrix.m31*viewMatrix.m31);
+    float degPerPtY = (fY > 0.01f) ? (360.0f / ((float)M_PI * (float)h * fY)) : 0.10f;
+    float degPerPtX = (fX > 0.01f) ? (360.0f / ((float)M_PI * (float)w * fX)) : 0.08f;
 
     float pitchDelta = errY * degPerPtY;
     float yawDelta   = errX * degPerPtX;
@@ -1669,8 +1734,9 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     float newPitch, newYaw;
 
     if (aimbot_smooth <= 1.0f) {
-        newPitch = fmaxf(-89.0f, fminf(89.0f, currentPitch + pitchDelta));
-        newYaw   = currentYaw + yawDelta;
+        float snap = 0.85f;
+        newPitch = fmaxf(-89.0f, fminf(89.0f, currentPitch + pitchDelta * snap));
+        newYaw   = currentYaw + yawDelta * snap;
     } else {
         float smooth = 1.0f / (1.0f + aimbot_smooth * 0.5f);
         smooth = fmaxf(0.03f, fminf(smooth, 1.0f));

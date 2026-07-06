@@ -9,6 +9,7 @@
 
 extern volatile bool esp_screenshot_safe;
 extern volatile bool esp_skeleton_enabled;
+extern volatile bool esp_hitbox_enabled;
 
 @interface CustomSliderView : UIView
 @property (nonatomic, assign) float value;
@@ -214,6 +215,7 @@ extern volatile bool esp_skeleton_enabled;
     CAShapeLayer *_lineCheckmark;
     CAShapeLayer *_lineOutlineCheckmark;
     CAShapeLayer *_skeletonCheckmark;
+    CAShapeLayer *_hitboxCheckmark;
     CAShapeLayer *_teamCheckmark;
     CAShapeLayer *_nameCheckmark;
     CAShapeLayer *_nameOutlineCheckmark;
@@ -494,6 +496,8 @@ extern volatile bool esp_skeleton_enabled;
         yOffset += 32;
         _skeletonCheckmark = [self addToggle:@(OBF("Skeleton")) atY:yOffset action:@selector(skeletonTapped) enabled:esp_skeleton_enabled];
         yOffset += 32;
+        _hitboxCheckmark = [self addToggle:@(OBF("Hitbox OBB")) atY:yOffset action:@selector(hitboxTapped) enabled:esp_hitbox_enabled];
+        yOffset += 32;
         _teamCheckmark = [self addToggle:@(OBF("Team Check")) atY:yOffset action:@selector(teamTapped) enabled:esp_team_check];
         yOffset += 32;
 
@@ -771,6 +775,11 @@ extern volatile bool esp_skeleton_enabled;
 - (void)skeletonTapped {
     esp_skeleton_enabled = !esp_skeleton_enabled;
     [self animateCheckmark:_skeletonCheckmark show:esp_skeleton_enabled];
+}
+
+- (void)hitboxTapped {
+    esp_hitbox_enabled = !esp_hitbox_enabled;
+    [self animateCheckmark:_hitboxCheckmark show:esp_hitbox_enabled];
 }
 
 - (void)nameTapped {

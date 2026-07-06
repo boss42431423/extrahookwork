@@ -4,6 +4,7 @@
 
 extern volatile bool esp_screenshot_safe;
 extern volatile bool esp_skeleton_enabled;
+extern volatile bool esp_hitbox_enabled;
 
 NSString *cfg_get_dir() {
     NSString *docs = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
@@ -38,6 +39,7 @@ void cfg_create(NSString *name) {
     dict[@(OBF("esp_line_enabled"))] = @(esp_line_enabled);
     dict[@(OBF("esp_line_outline"))] = @(esp_line_outline);
     dict[@(OBF("esp_skeleton_enabled"))] = @(esp_skeleton_enabled);
+    dict[@(OBF("esp_hitbox_enabled"))] = @(esp_hitbox_enabled);
     dict[@(OBF("esp_invisible"))] = @(esp_invisible);
     dict[@(OBF("esp_addscore"))] = @(esp_addscore);
     dict[@(OBF("esp_inf_ammo"))] = @(esp_inf_ammo);
@@ -101,6 +103,7 @@ void cfg_load(NSString *name) {
     if (dict[@(OBF("esp_line_enabled"))]) esp_line_enabled = [dict[@(OBF("esp_line_enabled"))] boolValue];
     if (dict[@(OBF("esp_line_outline"))]) esp_line_outline = [dict[@(OBF("esp_line_outline"))] boolValue];
     if (dict[@(OBF("esp_skeleton_enabled"))]) esp_skeleton_enabled = [dict[@(OBF("esp_skeleton_enabled"))] boolValue];
+    if (dict[@(OBF("esp_hitbox_enabled"))]) esp_hitbox_enabled = [dict[@(OBF("esp_hitbox_enabled"))] boolValue];
     if (dict[@(OBF("esp_invisible"))]) esp_invisible = [dict[@(OBF("esp_invisible"))] boolValue];
     if (dict[@(OBF("esp_addscore"))]) esp_addscore = [dict[@(OBF("esp_addscore"))] boolValue];
     if (dict[@(OBF("esp_inf_ammo"))]) esp_inf_ammo = [dict[@(OBF("esp_inf_ammo"))] boolValue];
