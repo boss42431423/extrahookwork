@@ -423,8 +423,6 @@ struct ESPBoxData {
         static pid_t cached_chain_pid = 0;
         static int dbg_frame = 0;
         static int cam_off_cache = -1, cam_p1_cache = -1, cam_p2_cache = -1, cam_m_cache = -1;
-        static SO2_Matrix prevValidMatrix = {0};
-        static bool hasPrevMatrix = false;
         if (cached_chain_pid != so2_pid) {
             cached_s_off = -1;
             cached_s_src = -1;
@@ -585,7 +583,6 @@ struct ESPBoxData {
                 static mach_vm_address_t prev_lp = 0;
                 if (localPlayer != prev_lp && localPlayer > 0x1000000) {
                     cam_off_cache = -1;
-                    hasPrevMatrix = false;
                     prev_lp = localPlayer;
                 }
             }
@@ -806,25 +803,16 @@ struct ESPBoxData {
                 }
             }
 
-            auto validateMatrix = [&](SO2_Matrix &m, bool strict) -> bool {
+            auto validateMatrix = [&](SO2_Matrix &m) -> bool {
                 if (fabsf(m.m11) < 0.01f || fabsf(m.m22) < 0.01f || fabsf(m.m33) < 0.01f) return false;
                 if (fabsf(m.m11) > 10.0f || fabsf(m.m22) > 10.0f || fabsf(m.m33) > 10.0f) return false;
-                if (fabsf(m.m44) < 0.5f || fabsf(m.m44) > 1.5f) return false;
                 if (valCount > 0) {
-                    int passed = 0;
                     for (int vi = 0; vi < valCount; vi++) {
                         Vector3 sc = WorldToScreen(valPositions[vi], m, sw, sh);
-                        if (sc.z > 0.001f && sc.x > -sw * 0.5f && sc.x < sw * 1.5f && sc.y > -sh * 0.5f && sc.y < sh * 1.5f)
-                            passed++;
+                        if (sc.z > 0.001f && sc.x > -sw && sc.x < sw * 2 && sc.y > -sh && sc.y < sh * 2)
+                            return true;
                     }
-                    if (strict && passed < valCount) return false;
-                    if (passed == 0) return false;
-                }
-                if (hasPrevMatrix) {
-                    float diff = fabsf(m.m11 - prevValidMatrix.m11) + fabsf(m.m22 - prevValidMatrix.m22)
-                               + fabsf(m.m33 - prevValidMatrix.m33) + fabsf(m.m14 - prevValidMatrix.m14)
-                               + fabsf(m.m24 - prevValidMatrix.m24) + fabsf(m.m34 - prevValidMatrix.m34);
-                    if (diff > 50.0f) return false;
+                    return false;
                 }
                 return true;
             };
@@ -838,7 +826,7 @@ struct ESPBoxData {
                         mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + cam_p2_cache, so2_task);
                         if (v3 > 0x1000000) {
                             SO2_Matrix m = Read<SO2_Matrix>(v3 + cam_m_cache, so2_task);
-                            if (validateMatrix(m, true)) {
+                            if (validateMatrix(m)) {
                                 viewMatrix = m;
                                 matrixFound = true;
                             }
@@ -859,7 +847,7 @@ struct ESPBoxData {
                         mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + last_good_p2, so2_task);
                         if (v3 > 0x1000000) {
                             SO2_Matrix m = Read<SO2_Matrix>(v3 + last_good_m, so2_task);
-                            if (validateMatrix(m, true)) {
+                            if (validateMatrix(m)) {
                                 viewMatrix = m;
                                 matrixFound = true;
                                 cam_off_cache = last_good_cam;
@@ -872,35 +860,26 @@ struct ESPBoxData {
                 }
             }
 
-            // Если кэш не сработал — используем предыдущую матрицу пока ищем
-            if (!matrixFound && hasPrevMatrix) {
-                viewMatrix = prevValidMatrix;
-                matrixFound = true;
-            }
-
-            // Полный скан оффсетов (без блокировки отрисовки)
-            if (localPlayer > 0x1000000 && cam_off_cache < 0) {
+            if (localPlayer > 0x1000000 && !matrixFound) {
                 int camOffs[] = {0xE8, 0xE0, 0xF0, 0xD8, 0xD0, 0xF8, 0x100, 0x108, 0x110, 0x118, 0x120};
                 int p1s[] = {0x20, 0x18, 0x28, 0x10, 0x30};
                 int p2s[] = {0x10, 0x18, 0x08, 0x20};
                 int moffs[] = {0x100, 0xF0, 0xE0, 0xD0, 0xC0, 0x110, 0x120, 0xB0, 0xA0};
-                bool scanFound = false;
 
-                for (int ci = 0; ci < 11 && !scanFound; ci++) {
+                for (int ci = 0; ci < 11 && !matrixFound; ci++) {
                     mach_vm_address_t v1 = Read<mach_vm_address_t>(localPlayer + camOffs[ci], so2_task);
                     if (v1 < 0x1000000) continue;
-                    for (int pi = 0; pi < 5 && !scanFound; pi++) {
+                    for (int pi = 0; pi < 5 && !matrixFound; pi++) {
                         mach_vm_address_t v2 = Read<mach_vm_address_t>(v1 + p1s[pi], so2_task);
                         if (v2 < 0x1000000) continue;
-                        for (int qi = 0; qi < 4 && !scanFound; qi++) {
+                        for (int qi = 0; qi < 4 && !matrixFound; qi++) {
                             mach_vm_address_t v3 = Read<mach_vm_address_t>(v2 + p2s[qi], so2_task);
                             if (v3 < 0x1000000) continue;
-                            for (int mi = 0; mi < 9 && !scanFound; mi++) {
+                            for (int mi = 0; mi < 9 && !matrixFound; mi++) {
                                 SO2_Matrix m = Read<SO2_Matrix>(v3 + moffs[mi], so2_task);
-                                if (validateMatrix(m, false)) {
+                                if (validateMatrix(m)) {
                                     viewMatrix = m;
                                     matrixFound = true;
-                                    scanFound = true;
                                     cam_off_cache = camOffs[ci];
                                     cam_p1_cache = p1s[pi];
                                     cam_p2_cache = p2s[qi];
@@ -916,10 +895,7 @@ struct ESPBoxData {
                 }
             }
 
-            if (matrixFound) {
-                prevValidMatrix = viewMatrix;
-                hasPrevMatrix = true;
-            }
+            if (!matrixFound) goto CLEAR_BOXES;
 
             {
                 int localTeamAim = GetPlayerTeamAim(localPlayer, so2_task);
@@ -1758,44 +1734,45 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
         }
     }
 
-    float currentPitch = Read<float>(aimingData + 0x18, so2_task);
-    float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
-
     float dirX = closestBonePos.x - cameraPos.x;
     float dirY = closestBonePos.y - cameraPos.y;
     float dirZ = closestBonePos.z - cameraPos.z;
     float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
     if (dist < 0.0001f) return;
 
-    float targetPitch = -asinf(dirY / dist) * (180.0f / M_PI);
+    float targetPitch = asinf(dirY / dist) * (180.0f / M_PI);
     float targetYaw   = atan2f(dirX, dirZ) * (180.0f / M_PI);
-
-    float pitchDelta = targetPitch - currentPitch;
-    float yawDelta   = targetYaw - currentYaw;
-    while (yawDelta > 180.0f) yawDelta -= 360.0f;
-    while (yawDelta < -180.0f) yawDelta += 360.0f;
-
-    float newPitch, newYaw;
-
-    if (aimbot_smooth <= 1.0f) {
-        newPitch = fmaxf(-89.0f, fminf(89.0f, targetPitch));
-        newYaw   = targetYaw;
-    } else {
-        float smooth = 1.0f / (1.0f + aimbot_smooth * 0.5f);
-        smooth = fmaxf(0.03f, fminf(smooth, 1.0f));
-        
-        newPitch = fmaxf(-89.0f, fminf(89.0f, currentPitch + pitchDelta * smooth));
-        newYaw   = currentYaw + yawDelta * smooth;
-    }
 
     double now = CACurrentMediaTime();
     self.aimbotLastWriteTime = now;
 
     if (aimbot_enabled) {
+        float currentPitch = Read<float>(aimingData + 0x18, so2_task);
+        float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
+
+        float pitchDelta = targetPitch - currentPitch;
+        float yawDelta   = targetYaw - currentYaw;
+        while (yawDelta > 180.0f) yawDelta -= 360.0f;
+        while (yawDelta < -180.0f) yawDelta += 360.0f;
+
+        float newPitch, newYaw;
+        if (aimbot_smooth <= 1.0f) {
+            newPitch = fmaxf(-89.0f, fminf(89.0f, targetPitch));
+            newYaw   = targetYaw;
+        } else {
+            float smooth = 1.0f / (1.0f + aimbot_smooth * 0.5f);
+            smooth = fmaxf(0.03f, fminf(smooth, 1.0f));
+            newPitch = fmaxf(-89.0f, fminf(89.0f, currentPitch + pitchDelta * smooth));
+            newYaw   = currentYaw + yawDelta * smooth;
+        }
+
         Write<float>(aimingData + 0x18, newPitch, so2_task);
         Write<float>(aimingData + 0x1C, newYaw,   so2_task);
         Write<float>(aimingData + 0x24, newPitch, so2_task);
         Write<float>(aimingData + 0x28, newYaw,   so2_task);
+
+        Write<float>(aimController + 0x1E4, newPitch, so2_task);
+        Write<float>(aimController + 0x1E8, newYaw,   so2_task);
     }
 
     if (aimbot_triggerbot) {
