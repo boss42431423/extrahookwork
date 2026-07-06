@@ -330,7 +330,7 @@ struct ESPBoxData {
 }
 
 - (void)update_data {
-    if (!esp_box_enabled && !esp_box_3d && !esp_box_corner && !esp_line_enabled && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled) {
+    if (!esp_box_enabled && !esp_box_3d && !esp_box_corner && !esp_line_enabled && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled && !esp_skeleton_enabled) {
         [self clearAllBoxes];
         self.watermarkLabel.text = @(OBF("t.me/projectios"));
         [self.watermarkLabel sizeToFit];
@@ -790,7 +790,7 @@ struct ESPBoxData {
             BOOL drawBoxes = esp_box_enabled || esp_box_3d || esp_box_fill || esp_box_corner;
             BOOL drawLines = esp_line_enabled;
 
-            if (!drawBoxes && !drawLines && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled && !esp_weapon_icon_enabled && !esp_platform_enabled) {
+            if (!drawBoxes && !drawLines && !esp_name_enabled && !esp_health_enabled && !esp_health_bar_enabled && !esp_weapon_enabled && !esp_weapon_icon_enabled && !esp_platform_enabled && !esp_skeleton_enabled) {
                 [self clearAllBoxes];
                 self.watermarkLabel.text = @"t.me/projectios";
                 [self.watermarkLabel sizeToFit];
@@ -1664,20 +1664,14 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
         float currentPitch = Read<float>(aimingData + 0x18, so2_task);
         float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-        // Вычисляем углы к цели через VP матрицу (точно, без угадывания FOV)
-        // errX/errY в пикселях от центра, нормализуем к [-1,1]
-        float ndcX = errX / (w * 0.5f);  // -1..1
-        float ndcY = errY / (h * 0.5f);  // -1..1
-
-        // Угол через atan — учитывает реальный FOV камеры
-        float angleX = atanf(ndcX) * (180.0f / M_PI);
-        float angleY = atanf(ndcY) * (180.0f / M_PI);
-
         float sm = (aimbot_smooth <= 1.0f) ? 1.0f : (1.0f / (1.0f + aimbot_smooth * 0.3f));
         sm = fmaxf(0.05f, fminf(sm, 1.0f));
 
-        float newPitch = currentPitch + angleY * sm;
-        float newYaw   = currentYaw   + angleX * sm;
+        // errX>0 = враг правее центра → yaw увеличивается
+        // errY>0 = враг ниже центра → pitch увеличивается (вниз)
+        float sens = 0.022f;
+        float newYaw   = currentYaw   + errX * sens * sm;
+        float newPitch = currentPitch + errY * sens * sm;
 
         Write<float>(aimingData + 0x18, newPitch, so2_task);
         Write<float>(aimingData + 0x1C, newYaw,   so2_task);
