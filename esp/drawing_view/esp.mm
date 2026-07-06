@@ -1650,29 +1650,54 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     mach_vm_address_t aimingData = Read<mach_vm_address_t>(aimController + 0x90, so2_task);
     if (!aimingData || aimingData < 0x1000000) return;
 
-    Vector3 screenTarget = WorldToScreen(closestBonePos, viewMatrix, (int)w, (int)h);
-    if (screenTarget.z <= 0) return;
+    mach_vm_address_t camTransform = Read<mach_vm_address_t>(aimController + 0x80, so2_task);
+    Vector3 cameraPos = {0,0,0};
+    if (camTransform && camTransform > 0x1000000) {
+        cameraPos = get_position_by_transform(camTransform, so2_task);
+    }
+    if (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0) {
+        mach_vm_address_t mv = Read<mach_vm_address_t>(localPlayer + 0x98, so2_task);
+        if (mv > 0x1000000) {
+            mach_vm_address_t md = Read<mach_vm_address_t>(mv + 0xB0, so2_task);
+            if (md > 0x1000000) {
+                cameraPos = Read<Vector3>(md + 0x44, so2_task);
+            }
+        }
+    }
 
-    float cx2 = w / 2.0f, cy2 = h / 2.0f;
-    float errX = screenTarget.x - cx2;
-    float errY = screenTarget.y - cy2;
+    float currentPitch = Read<float>(aimingData + 0x18, so2_task);
+    float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
+
+    float dirX = closestBonePos.x - cameraPos.x;
+    float dirY = closestBonePos.y - cameraPos.y;
+    float dirZ = closestBonePos.z - cameraPos.z;
+    float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
+    if (dist < 0.0001f) return;
+
+    float targetPitch = -asinf(dirY / dist) * (180.0f / M_PI);
+    float targetYaw   = atan2f(dirX, dirZ) * (180.0f / M_PI);
+
+    float pitchDelta = targetPitch - currentPitch;
+    float yawDelta   = targetYaw - currentYaw;
+    while (yawDelta > 180.0f) yawDelta -= 360.0f;
+    while (yawDelta < -180.0f) yawDelta += 360.0f;
+
+    float newPitch, newYaw;
+
+    if (aimbot_smooth <= 1.0f) {
+        newPitch = fmaxf(-89.0f, fminf(89.0f, targetPitch));
+        newYaw   = targetYaw;
+    } else {
+        float smooth = 1.0f / (1.0f + aimbot_smooth * 0.5f);
+        smooth = fmaxf(0.03f, fminf(smooth, 1.0f));
+        newPitch = fmaxf(-89.0f, fminf(89.0f, currentPitch + pitchDelta * smooth));
+        newYaw   = currentYaw + yawDelta * smooth;
+    }
 
     double now = CACurrentMediaTime();
     self.aimbotLastWriteTime = now;
 
     if (aimbot_enabled) {
-        float currentPitch = Read<float>(aimingData + 0x18, so2_task);
-        float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
-
-        float sm = (aimbot_smooth <= 1.0f) ? 1.0f : (1.0f / (1.0f + aimbot_smooth * 0.3f));
-        sm = fmaxf(0.05f, fminf(sm, 1.0f));
-
-        // errX>0 = враг правее центра → yaw увеличивается
-        // errY>0 = враг ниже центра → pitch увеличивается (вниз)
-        float sens = 0.022f;
-        float newYaw   = currentYaw   + errX * sens * sm;
-        float newPitch = currentPitch + errY * sens * sm;
-
         Write<float>(aimingData + 0x18, newPitch, so2_task);
         Write<float>(aimingData + 0x1C, newYaw,   so2_task);
         Write<float>(aimingData + 0x24, newPitch, so2_task);
