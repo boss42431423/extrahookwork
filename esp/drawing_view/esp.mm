@@ -117,6 +117,7 @@ volatile float viewmodel_y        = 0.0f;
 volatile float viewmodel_z        = 0.0f;
 
 volatile bool esp_auto_load = false;
+volatile bool esp_skeleton_enabled = false;
 NSString *esp_selected_config = nil;
 
 @interface UIWindow (Private)
@@ -156,6 +157,7 @@ struct ESPBoxData {
 @property (nonatomic, strong) CAShapeLayer      *espHealthBarLayer;
 @property (nonatomic, strong) CAShapeLayer      *espHealthBarOutlineLayer;
 @property (nonatomic, strong) CAShapeLayer      *espLineOutlineLayer;
+@property (nonatomic, strong) CAShapeLayer      *espSkeletonLayer;
 @property (nonatomic, strong) UILabel           *watermarkLabel;
 @property (nonatomic, strong) CAShapeLayer      *fovCircleLayer;
 @property (nonatomic, strong) CAShapeLayer      *fovCircleOutlineLayer;
@@ -217,6 +219,12 @@ struct ESPBoxData {
     self.espLineLayer.fillColor   = [UIColor clearColor].CGColor;
     self.espLineLayer.lineWidth   = 1.0;
     [self.layer addSublayer:self.espLineLayer];
+
+    self.espSkeletonLayer = [CAShapeLayer layer];
+    self.espSkeletonLayer.strokeColor = [UIColor cyanColor].CGColor;
+    self.espSkeletonLayer.fillColor   = [UIColor clearColor].CGColor;
+    self.espSkeletonLayer.lineWidth   = 1.5;
+    [self.layer addSublayer:self.espSkeletonLayer];
 
     self.fovCircleOutlineLayer = [CAShapeLayer layer];
     self.fovCircleOutlineLayer.fillColor   = [UIColor clearColor].CGColor;
@@ -310,6 +318,7 @@ struct ESPBoxData {
     self.espLineOutlineLayer.path = nil;
     self.espHealthBarLayer.path  = nil;
     self.espHealthBarOutlineLayer.path = nil;
+    self.espSkeletonLayer.path        = nil;
     self.fovCircleLayer.hidden        = YES;
     self.fovCircleOutlineLayer.hidden = YES;
     for (UILabel *lbl in self.nameLabelPool) lbl.hidden = YES;
@@ -815,6 +824,7 @@ struct ESPBoxData {
             UIBezierPath *lineOutlinePath = [UIBezierPath bezierPath];
             UIBezierPath *healthBarPath   = [UIBezierPath bezierPath];
             UIBezierPath *healthBarOutlinePath = [UIBezierPath bezierPath];
+            UIBezierPath *skeletonPath    = [UIBezierPath bezierPath];
 
             // Direct read: PlayerController+0x79 → team byte (новые офсеты)
             int localTeam = 0;
@@ -1240,6 +1250,56 @@ struct UnityString32 { uint16_t chars[32]; };
                         plLbl.center = CGPointMake(screenHead.x + bw/2.0f + plLbl.frame.size.width/2.0f + 4, screenHead.y + plLbl.frame.size.height/2.0f);
                         plLbl.hidden = NO;
                     }
+
+                    if (esp_skeleton_enabled) {
+                        int cvOffsets[] = {0xD0, 0x48, 0x50};
+                        mach_vm_address_t bMap = 0;
+                        for (int ci = 0; ci < 3 && !bMap; ci++) {
+                            mach_vm_address_t cv = Read<mach_vm_address_t>(player + cvOffsets[ci], so2_task);
+                            if (cv > 0x1000000) {
+                                mach_vm_address_t bm = Read<mach_vm_address_t>(cv + 0x48, so2_task);
+                                if (bm > 0x1000000) bMap = bm;
+                            }
+                        }
+                        if (bMap) {
+                            // BipedMap offsets: 0x20=head, 0x28=neck, 0x30=spine2, 0x38=spine1, 0x40=spine
+                            // 0x48=hips, 0x50=leftUpperArm, 0x58=leftLowerArm, 0x60=leftHand
+                            // 0x68=rightUpperArm, 0x70=rightLowerArm, 0x78=rightHand
+                            // 0x80=leftUpperLeg, 0x88=leftLowerLeg, 0x90=leftFoot
+                            // 0x98=rightUpperLeg, 0xA0=rightLowerLeg, 0xA8=rightFoot
+                            struct BoneConn { int from; int to; };
+                            BoneConn conns[] = {
+                                {0x20, 0x28}, // head → neck
+                                {0x28, 0x30}, // neck → spine2
+                                {0x30, 0x38}, // spine2 → spine1
+                                {0x38, 0x40}, // spine1 → spine
+                                {0x40, 0x48}, // spine → hips
+                                {0x28, 0x50}, // neck → leftUpperArm
+                                {0x50, 0x58}, // leftUpperArm → leftLowerArm
+                                {0x58, 0x60}, // leftLowerArm → leftHand
+                                {0x28, 0x68}, // neck → rightUpperArm
+                                {0x68, 0x70}, // rightUpperArm → rightLowerArm
+                                {0x70, 0x78}, // rightLowerArm → rightHand
+                                {0x48, 0x80}, // hips → leftUpperLeg
+                                {0x80, 0x88}, // leftUpperLeg → leftLowerLeg
+                                {0x88, 0x90}, // leftLowerLeg → leftFoot
+                                {0x48, 0x98}, // hips → rightUpperLeg
+                                {0x98, 0xA0}, // rightUpperLeg → rightLowerLeg
+                                {0xA0, 0xA8}, // rightLowerLeg → rightFoot
+                            };
+                            for (int bi = 0; bi < 17; bi++) {
+                                Vector3 p1 = GetBoneByOffset(bMap, conns[bi].from, so2_task);
+                                Vector3 p2 = GetBoneByOffset(bMap, conns[bi].to, so2_task);
+                                if ((p1.x == 0 && p1.y == 0 && p1.z == 0) ||
+                                    (p2.x == 0 && p2.y == 0 && p2.z == 0)) continue;
+                                Vector3 s1 = WorldToScreen(p1, viewMatrix, w, h);
+                                Vector3 s2 = WorldToScreen(p2, viewMatrix, w, h);
+                                if (s1.z <= 0 || s2.z <= 0) continue;
+                                [skeletonPath moveToPoint:CGPointMake(s1.x, s1.y)];
+                                [skeletonPath addLineToPoint:CGPointMake(s2.x, s2.y)];
+                            }
+                        }
+                    }
                 }
             }
             self.playerCountLabel.text = [NSString stringWithFormat:@"PastaWare | Players: %d", (int)validPlayers];
@@ -1256,6 +1316,7 @@ struct UnityString32 { uint16_t chars[32]; };
             self.espLineOutlineLayer.path = (drawLines && esp_line_outline) ? lineOutlinePath.CGPath : nil;
             self.espHealthBarLayer.path = esp_health_bar_enabled ? healthBarPath.CGPath : nil;
             self.espHealthBarOutlineLayer.path = (esp_health_bar_enabled && esp_health_bar_outline) ? healthBarOutlinePath.CGPath : nil;
+            self.espSkeletonLayer.path = esp_skeleton_enabled ? skeletonPath.CGPath : nil;
             [CATransaction commit];
             [CATransaction flush];
 
@@ -1271,6 +1332,12 @@ CLEAR_BOXES:
     self.playerCountLabel.text      = @"PLAYERS: 0";
     self.playerCountLabel.hidden    = !self.isESPCountEnabled;
     self.noPlayersLabel.hidden      = YES;
+}
+
+static Vector3 GetBoneByOffset(mach_vm_address_t bipedMap, int off, task_t task) {
+    mach_vm_address_t t = Read<mach_vm_address_t>(bipedMap + off, task);
+    if (!t || t < 0x1000000) return {0,0,0};
+    return get_position_by_transform(t, task);
 }
 
 static mach_vm_address_t GetAimBoneOffset(int idx) {
@@ -1602,7 +1669,7 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
         float sm = (aimbot_smooth <= 1.0f) ? 1.0f : (1.0f / (1.0f + aimbot_smooth * 0.3f));
         sm = fmaxf(0.05f, fminf(sm, 1.0f));
 
-        float newPitch = currentPitch - errY * degPerPxY * sm;
+        float newPitch = currentPitch + errY * degPerPxY * sm;
         float newYaw   = currentYaw   + errX * degPerPxX * sm;
 
         Write<float>(aimingData + 0x18, newPitch, so2_task);

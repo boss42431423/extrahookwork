@@ -8,6 +8,7 @@
 #import "../../sources/UIView+SecureView.h"
 
 extern volatile bool esp_screenshot_safe;
+extern volatile bool esp_skeleton_enabled;
 
 @interface CustomSliderView : UIView
 @property (nonatomic, assign) float value;
@@ -212,6 +213,7 @@ extern volatile bool esp_screenshot_safe;
     CAShapeLayer *_box3DCheckmark;
     CAShapeLayer *_lineCheckmark;
     CAShapeLayer *_lineOutlineCheckmark;
+    CAShapeLayer *_skeletonCheckmark;
     CAShapeLayer *_teamCheckmark;
     CAShapeLayer *_nameCheckmark;
     CAShapeLayer *_nameOutlineCheckmark;
@@ -491,6 +493,8 @@ extern volatile bool esp_screenshot_safe;
         yOffset += 32;
         _lineOutlineCheckmark = [self addToggle:@(OBF("Line Outline")) atY:yOffset action:@selector(lineOutlineTapped) enabled:esp_line_outline];
         yOffset += 32;
+        _skeletonCheckmark = [self addToggle:@(OBF("Skeleton")) atY:yOffset action:@selector(skeletonTapped) enabled:esp_skeleton_enabled];
+        yOffset += 32;
         _teamCheckmark = [self addToggle:@(OBF("Team Check")) atY:yOffset action:@selector(teamTapped) enabled:esp_team_check];
         yOffset += 32;
 
@@ -763,6 +767,11 @@ extern volatile bool esp_screenshot_safe;
 - (void)lineOutlineTapped {
     esp_line_outline = !esp_line_outline;
     [self animateCheckmark:_lineOutlineCheckmark show:esp_line_outline];
+}
+
+- (void)skeletonTapped {
+    esp_skeleton_enabled = !esp_skeleton_enabled;
+    [self animateCheckmark:_skeletonCheckmark show:esp_skeleton_enabled];
 }
 
 - (void)nameTapped {
