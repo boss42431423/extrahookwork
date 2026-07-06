@@ -1252,42 +1252,16 @@ struct UnityString32 { uint16_t chars[32]; };
                     }
 
                     if (esp_skeleton_enabled) {
-                        int cvOffsets[] = {0xD0, 0x48, 0x50};
-                        mach_vm_address_t bMap = 0;
-                        for (int ci = 0; ci < 3 && !bMap; ci++) {
-                            mach_vm_address_t cv = Read<mach_vm_address_t>(player + cvOffsets[ci], so2_task);
-                            if (cv > 0x1000000) {
-                                mach_vm_address_t bm = Read<mach_vm_address_t>(cv + 0x48, so2_task);
-                                if (bm > 0x1000000) bMap = bm;
-                            }
-                        }
+                        mach_vm_address_t bMap = FindBipedMap(player, so2_task);
                         if (bMap) {
-                            // BipedMap offsets: 0x20=head, 0x28=neck, 0x30=spine2, 0x38=spine1, 0x40=spine
-                            // 0x48=hips, 0x50=leftUpperArm, 0x58=leftLowerArm, 0x60=leftHand
-                            // 0x68=rightUpperArm, 0x70=rightLowerArm, 0x78=rightHand
-                            // 0x80=leftUpperLeg, 0x88=leftLowerLeg, 0x90=leftFoot
-                            // 0x98=rightUpperLeg, 0xA0=rightLowerLeg, 0xA8=rightFoot
                             struct BoneConn { int from; int to; };
                             BoneConn conns[] = {
-                                {0x20, 0x28}, // Head → Neck
-                                {0x28, 0x40}, // Neck → Spine2
-                                {0x40, 0x38}, // Spine2 → Spine1
-                                {0x38, 0x30}, // Spine1 → Spine
-                                {0x30, 0x88}, // Spine → Hip
-                                {0x28, 0x48}, // Neck → LeftShoulder
-                                {0x48, 0x50}, // LeftShoulder → LeftUpperarm
-                                {0x50, 0x58}, // LeftUpperarm → LeftForearm
-                                {0x58, 0x60}, // LeftForearm → LeftHand
-                                {0x28, 0x68}, // Neck → RightShoulder
-                                {0x68, 0x70}, // RightShoulder → RightUpperarm
-                                {0x70, 0x78}, // RightUpperarm → RightForearm
-                                {0x78, 0x80}, // RightForearm → RightHand
-                                {0x88, 0x90}, // Hip → LeftUpLeg
-                                {0x90, 0x98}, // LeftUpLeg → LeftLeg
-                                {0x98, 0xA0}, // LeftLeg → LeftFoot
-                                {0x88, 0xB0}, // Hip → RightUpLeg
-                                {0xB0, 0xB8}, // RightUpLeg → RightLeg
-                                {0xB8, 0xC0}, // RightLeg → RightFoot
+                                {0x20, 0x28}, {0x28, 0x40}, {0x40, 0x38},
+                                {0x38, 0x30}, {0x30, 0x88},
+                                {0x28, 0x48}, {0x48, 0x50}, {0x50, 0x58}, {0x58, 0x60},
+                                {0x28, 0x68}, {0x68, 0x70}, {0x70, 0x78}, {0x78, 0x80},
+                                {0x88, 0x90}, {0x90, 0x98}, {0x98, 0xA0},
+                                {0x88, 0xB0}, {0xB0, 0xB8}, {0xB8, 0xC0},
                             };
                             for (int bi = 0; bi < 19; bi++) {
                                 Vector3 p1 = GetBoneByOffset(bMap, conns[bi].from, so2_task);
@@ -1342,14 +1316,36 @@ static Vector3 GetBoneByOffset(mach_vm_address_t bipedMap, int off, task_t task)
     return get_position_by_transform(t, task);
 }
 
+// BipedMap offsets from dump.cs:
+// Head=0x20, Neck=0x28, Spine=0x30, Spine1=0x38, Spine2=0x40
+// LeftShoulder=0x48, LeftUpperarm=0x50, LeftForearm=0x58, LeftHand=0x60
+// RightShoulder=0x68, RightUpperarm=0x70, RightForearm=0x78, RightHand=0x80
+// Hip=0x88, LeftUpLeg=0x90, LeftLeg=0x98, LeftFoot=0xA0
+// RightUpLeg=0xB0, RightLeg=0xB8, RightFoot=0xC0
+
 static mach_vm_address_t GetAimBoneOffset(int idx) {
     switch(idx) {
-        case 0: return 0x20;
-        case 1: return 0x28;
-        case 2: return 0x40;
-        case 3: return 0x88;
+        case 0: return 0x20; // Head
+        case 1: return 0x28; // Neck
+        case 2: return 0x40; // Spine2
+        case 3: return 0x88; // Hip
         default: return 0x20;
     }
+}
+
+static mach_vm_address_t FindBipedMap(mach_vm_address_t player, task_t task) {
+    int cvOffsets[] = {0xD0, 0x48, 0x50};
+    for (int ci = 0; ci < 3; ci++) {
+        mach_vm_address_t cv = Read<mach_vm_address_t>(player + cvOffsets[ci], task);
+        if (cv < 0x1000000) continue;
+        mach_vm_address_t bm = Read<mach_vm_address_t>(cv + 0x48, task);
+        if (bm > 0x1000000) {
+            // Валидация: head transform должен быть валидный
+            mach_vm_address_t headT = Read<mach_vm_address_t>(bm + 0x20, task);
+            if (headT > 0x1000000) return bm;
+        }
+    }
+    return 0;
 }
 
 static Vector3 GetBonePosition(mach_vm_address_t player, int boneIdx, task_t task) {
@@ -1650,49 +1646,41 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     mach_vm_address_t aimingData = Read<mach_vm_address_t>(aimController + 0x90, so2_task);
     if (!aimingData || aimingData < 0x1000000) return;
 
-    mach_vm_address_t camTransform = Read<mach_vm_address_t>(aimController + 0x80, so2_task);
-    Vector3 cameraPos = {0,0,0};
-    if (camTransform && camTransform > 0x1000000) {
-        cameraPos = get_position_by_transform(camTransform, so2_task);
-    }
-    if (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0) {
-        mach_vm_address_t mv = Read<mach_vm_address_t>(localPlayer + 0x98, so2_task);
-        if (mv > 0x1000000) {
-            mach_vm_address_t md = Read<mach_vm_address_t>(mv + 0xB0, so2_task);
-            if (md > 0x1000000) {
-                cameraPos = Read<Vector3>(md + 0x44, so2_task);
-            }
-        }
-    }
+    Vector3 screenTarget = WorldToScreen(closestBonePos, viewMatrix, (int)w, (int)h);
+    if (screenTarget.z <= 0) return;
+
+    float cx2 = w / 2.0f, cy2 = h / 2.0f;
+    float errX = screenTarget.x - cx2;
+    float errY = screenTarget.y - cy2;
 
     float currentPitch = Read<float>(aimingData + 0x18, so2_task);
     float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-    float dirX = closestBonePos.x - cameraPos.x;
-    float dirY = closestBonePos.y - cameraPos.y;
-    float dirZ = closestBonePos.z - cameraPos.z;
-    float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
-    if (dist < 0.0001f) return;
+    // Извлекаем FOV из VP матрицы
+    float vfov = 2.0f * atanf(1.0f / fabsf(viewMatrix.m22)) * (180.0f / M_PI);
+    float hfov = 2.0f * atanf(1.0f / fabsf(viewMatrix.m11)) * (180.0f / M_PI);
+    if (vfov < 10.0f || vfov > 170.0f) vfov = 70.0f;
+    if (hfov < 10.0f || hfov > 170.0f) hfov = 70.0f;
 
-    float targetPitch = -asinf(dirY / dist) * (180.0f / M_PI);
-    float targetYaw   = atan2f(dirX, dirZ) * (180.0f / M_PI);
+    float degPerPxY = vfov / h;
+    float degPerPxX = hfov / w;
 
-    float pitchDelta = targetPitch - currentPitch;
-    float yawDelta   = targetYaw - currentYaw;
-    while (yawDelta > 180.0f) yawDelta -= 360.0f;
-    while (yawDelta < -180.0f) yawDelta += 360.0f;
+    float targetDeltaPitch = errY * degPerPxY;
+    float targetDeltaYaw   = errX * degPerPxX;
 
     float newPitch, newYaw;
 
     if (aimbot_smooth <= 1.0f) {
-        newPitch = fmaxf(-89.0f, fminf(89.0f, targetPitch));
-        newYaw   = targetYaw;
+        newPitch = currentPitch + targetDeltaPitch;
+        newYaw   = currentYaw   + targetDeltaYaw;
     } else {
         float smooth = 1.0f / (1.0f + aimbot_smooth * 0.5f);
         smooth = fmaxf(0.03f, fminf(smooth, 1.0f));
-        newPitch = fmaxf(-89.0f, fminf(89.0f, currentPitch + pitchDelta * smooth));
-        newYaw   = currentYaw + yawDelta * smooth;
+        newPitch = currentPitch + targetDeltaPitch * smooth;
+        newYaw   = currentYaw   + targetDeltaYaw   * smooth;
     }
+
+    newPitch = fmaxf(-89.0f, fminf(89.0f, newPitch));
 
     double now = CACurrentMediaTime();
     self.aimbotLastWriteTime = now;
