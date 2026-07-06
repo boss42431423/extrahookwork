@@ -678,16 +678,12 @@ struct ESPBoxData {
             }
 
             auto validateMatrix = [&](SO2_Matrix &m) -> bool {
-                if (fabsf(m.m11) < 0.01f || fabsf(m.m22) < 0.01f || fabsf(m.m33) < 0.01f) return false;
-                if (fabsf(m.m11) > 10.0f || fabsf(m.m22) > 10.0f || fabsf(m.m33) > 10.0f) return false;
-                if (valCount > 0) {
-                    for (int vi = 0; vi < valCount; vi++) {
-                        Vector3 sc = WorldToScreen(valPositions[vi], m, sw, sh);
-                        if (sc.z > 0.001f && sc.x > -sw && sc.x < sw * 2 && sc.y > -sh && sc.y < sh * 2)
-                            return true;
-                    }
-                    return false;
-                }
+                if (fabsf(m.m11) < 0.001f || fabsf(m.m22) < 0.001f || fabsf(m.m33) < 0.001f) return false;
+                if (fabsf(m.m11) > 100.0f || fabsf(m.m22) > 100.0f || fabsf(m.m33) > 100.0f) return false;
+                float det = m.m11 * (m.m22 * m.m33 - m.m23 * m.m32)
+                          - m.m12 * (m.m21 * m.m33 - m.m23 * m.m31)
+                          + m.m13 * (m.m21 * m.m32 - m.m22 * m.m31);
+                if (fabsf(det) < 0.0001f) return false;
                 return true;
             };
 
@@ -1597,7 +1593,7 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
         float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
         float dirX = closestBonePos.x - cameraPos.x;
-        float dirY = closestBonePos.y - cameraPos.y;
+        float dirY = (closestBonePos.y - 0.1f) - cameraPos.y;
         float dirZ = closestBonePos.z - cameraPos.z;
         float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
         if (dist < 0.01f) dist = 0.01f;
