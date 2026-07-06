@@ -1649,10 +1649,19 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     mach_vm_address_t aimingData = Read<mach_vm_address_t>(aimController + 0x90, so2_task);
     if (!aimingData || aimingData < 0x1000000) return;
 
-    mach_vm_address_t camTransform = Read<mach_vm_address_t>(aimController + 0x80, so2_task);
     Vector3 cameraPos = {0,0,0};
-    if (camTransform && camTransform > 0x1000000) {
-        cameraPos = get_position_by_transform(camTransform, so2_task);
+    int camOffsets[] = {0x80, 0x78, 0x68, 0x70};
+    for (int ci = 0; ci < 4 && (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0); ci++) {
+        mach_vm_address_t ct = Read<mach_vm_address_t>(aimController + camOffsets[ci], so2_task);
+        if (ct > 0x1000000) {
+            cameraPos = get_position_by_transform(ct, so2_task);
+        }
+    }
+    if (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0) {
+        mach_vm_address_t ct = Read<mach_vm_address_t>(localPlayer + 0x28, so2_task);
+        if (ct > 0x1000000) {
+            cameraPos = get_position_by_transform(ct, so2_task);
+        }
     }
     if (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0) {
         mach_vm_address_t mv = Read<mach_vm_address_t>(localPlayer + 0x98, so2_task);
@@ -1660,6 +1669,7 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
             mach_vm_address_t md = Read<mach_vm_address_t>(mv + 0xB0, so2_task);
             if (md > 0x1000000) {
                 cameraPos = Read<Vector3>(md + 0x44, so2_task);
+                cameraPos.y += 1.5f;
             }
         }
     }
