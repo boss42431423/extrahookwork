@@ -1649,53 +1649,28 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     mach_vm_address_t aimingData = Read<mach_vm_address_t>(aimController + 0x90, so2_task);
     if (!aimingData || aimingData < 0x1000000) return;
 
-    Vector3 cameraPos = {0,0,0};
-    int camOffsets[] = {0x80, 0x78, 0x68, 0x70};
-    for (int ci = 0; ci < 4 && (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0); ci++) {
-        mach_vm_address_t ct = Read<mach_vm_address_t>(aimController + camOffsets[ci], so2_task);
-        if (ct > 0x1000000) {
-            cameraPos = get_position_by_transform(ct, so2_task);
-        }
-    }
-    if (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0) {
-        mach_vm_address_t ct = Read<mach_vm_address_t>(localPlayer + 0x28, so2_task);
-        if (ct > 0x1000000) {
-            cameraPos = get_position_by_transform(ct, so2_task);
-        }
-    }
-    if (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0) {
-        mach_vm_address_t mv = Read<mach_vm_address_t>(localPlayer + 0x98, so2_task);
-        if (mv > 0x1000000) {
-            mach_vm_address_t md = Read<mach_vm_address_t>(mv + 0xB0, so2_task);
-            if (md > 0x1000000) {
-                cameraPos = Read<Vector3>(md + 0x44, so2_task);
-                cameraPos.y += 1.5f;
-            }
-        }
-    }
-
     float currentPitch = Read<float>(aimingData + 0x18, so2_task);
     float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-    float dirX = closestBonePos.x - cameraPos.x;
-    float dirY = closestBonePos.y - cameraPos.y;
-    float dirZ = closestBonePos.z - cameraPos.z;
-    float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
-    if (dist < 0.0001f) return;
+    Vector3 screenTarget = WorldToScreen(closestBonePos, viewMatrix, (int)w, (int)h);
+    if (screenTarget.z <= 0) return;
 
-    float targetPitch = -asinf(dirY / dist) * (180.0f / M_PI);
-    float targetYaw   = atan2f(dirX, dirZ) * (180.0f / M_PI);
+    float cx2 = w / 2.0f, cy2 = h / 2.0f;
+    float errX = screenTarget.x - cx2;
+    float errY = screenTarget.y - cy2;
 
-    float pitchDelta = targetPitch - currentPitch;
-    float yawDelta   = targetYaw - currentYaw;
-    while (yawDelta > 180.0f) yawDelta -= 360.0f;
-    while (yawDelta < -180.0f) yawDelta += 360.0f;
+    // w,h в поинтах UIKit (не пикселях), degPerPt = FOV / screenPoints
+    float degPerPtY = 0.15f;
+    float degPerPtX = 0.12f;
+
+    float pitchDelta = errY * degPerPtY;
+    float yawDelta   = errX * degPerPtX;
 
     float newPitch, newYaw;
 
     if (aimbot_smooth <= 1.0f) {
-        newPitch = fmaxf(-89.0f, fminf(89.0f, targetPitch));
-        newYaw   = targetYaw;
+        newPitch = fmaxf(-89.0f, fminf(89.0f, currentPitch + pitchDelta));
+        newYaw   = currentYaw + yawDelta;
     } else {
         float smooth = 1.0f / (1.0f + aimbot_smooth * 0.5f);
         smooth = fmaxf(0.03f, fminf(smooth, 1.0f));
