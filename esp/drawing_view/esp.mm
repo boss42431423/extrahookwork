@@ -1649,50 +1649,49 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     mach_vm_address_t aimingData = Read<mach_vm_address_t>(aimController + 0x90, so2_task);
     if (!aimingData || aimingData < 0x1000000) return;
 
+    mach_vm_address_t camTransform = Read<mach_vm_address_t>(aimController + 0x80, so2_task);
+    Vector3 cameraPos = {0,0,0};
+    if (camTransform && camTransform > 0x1000000) {
+        cameraPos = get_position_by_transform(camTransform, so2_task);
+    }
+    if (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0) {
+        mach_vm_address_t mv = Read<mach_vm_address_t>(localPlayer + 0x98, so2_task);
+        if (mv > 0x1000000) {
+            mach_vm_address_t md = Read<mach_vm_address_t>(mv + 0xB0, so2_task);
+            if (md > 0x1000000) {
+                cameraPos = Read<Vector3>(md + 0x44, so2_task);
+            }
+        }
+    }
+
     float currentPitch = Read<float>(aimingData + 0x18, so2_task);
     float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-    // Извлекаем позицию камеры из VP матрицы (Cramer's rule)
-    float a11 = viewMatrix.m11, a12 = viewMatrix.m21, a13 = viewMatrix.m31;
-    float a21 = viewMatrix.m12, a22 = viewMatrix.m22, a23 = viewMatrix.m32;
-    float a31 = viewMatrix.m14, a32 = viewMatrix.m24, a33 = viewMatrix.m34;
-    float b1 = -viewMatrix.m41, b2 = -viewMatrix.m42, b3 = -viewMatrix.m44;
+    float dirX = closestBonePos.x - cameraPos.x;
+    float dirY = closestBonePos.y - cameraPos.y;
+    float dirZ = closestBonePos.z - cameraPos.z;
+    float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
+    if (dist < 0.0001f) return;
 
-    float det = a11*(a22*a33 - a23*a32) - a12*(a21*a33 - a23*a31) + a13*(a21*a32 - a22*a31);
-    if (fabsf(det) < 1e-6f) return;
+    float targetPitch = -asinf(dirY / dist) * (180.0f / M_PI);
+    float targetYaw   = atan2f(dirX, dirZ) * (180.0f / M_PI);
 
-    float invDet = 1.0f / det;
-    Vector3 camPos;
-    camPos.x = (b1*(a22*a33 - a23*a32) - a12*(b2*a33 - a23*b3) + a13*(b2*a32 - a22*b3)) * invDet;
-    camPos.y = (a11*(b2*a33 - a23*b3) - b1*(a21*a33 - a23*a31) + a13*(a21*b3 - b2*a31)) * invDet;
-    camPos.z = (a11*(a22*b3 - b2*a32) - a12*(a21*b3 - b2*a31) + b1*(a21*a32 - a22*a31)) * invDet;
-
-    float dx = closestBonePos.x - camPos.x;
-    float dy = closestBonePos.y - camPos.y;
-    float dz = closestBonePos.z - camPos.z;
-    float horizDist = sqrtf(dx * dx + dz * dz);
-    if (horizDist < 0.01f) return;
-
-    float targetPitch = -atan2f(dy, horizDist) * (180.0f / M_PI);
-    float targetYaw   =  atan2f(dx, dz) * (180.0f / M_PI);
-
-    float diffYaw = targetYaw - currentYaw;
-    while (diffYaw > 180.0f)  diffYaw -= 360.0f;
-    while (diffYaw < -180.0f) diffYaw += 360.0f;
+    float pitchDelta = targetPitch - currentPitch;
+    float yawDelta   = targetYaw - currentYaw;
+    while (yawDelta > 180.0f) yawDelta -= 360.0f;
+    while (yawDelta < -180.0f) yawDelta += 360.0f;
 
     float newPitch, newYaw;
 
     if (aimbot_smooth <= 1.0f) {
-        newPitch = targetPitch;
-        newYaw   = currentYaw + diffYaw;
+        newPitch = fmaxf(-89.0f, fminf(89.0f, targetPitch));
+        newYaw   = targetYaw;
     } else {
-        float t = 1.0f / (1.0f + aimbot_smooth * 0.5f);
-        t = fmaxf(0.05f, fminf(t, 1.0f));
-        newPitch = currentPitch + (targetPitch - currentPitch) * t;
-        newYaw   = currentYaw   + diffYaw * t;
+        float smooth = 1.0f / (1.0f + aimbot_smooth * 0.5f);
+        smooth = fmaxf(0.03f, fminf(smooth, 1.0f));
+        newPitch = fmaxf(-89.0f, fminf(89.0f, currentPitch + pitchDelta * smooth));
+        newYaw   = currentYaw + yawDelta * smooth;
     }
-
-    newPitch = fmaxf(-89.0f, fminf(89.0f, newPitch));
 
     double now = CACurrentMediaTime();
     self.aimbotLastWriteTime = now;
