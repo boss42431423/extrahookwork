@@ -1264,35 +1264,47 @@ struct UnityString32 { uint16_t chars[32]; };
                     }
 
                     if (esp_skeleton_enabled || esp_hitbox_enabled) {
-                        float enemyYaw = 0;
+                        float enemyYaw = 0, enemyPitch = 0;
                         mach_vm_address_t eAim = Read<mach_vm_address_t>(player + 0x80, so2_task);
                         if (eAim > 0x1000000) {
                             mach_vm_address_t eAimData = Read<mach_vm_address_t>(eAim + 0x90, so2_task);
                             if (eAimData > 0x1000000) {
+                                enemyPitch = Read<float>(eAimData + 0x18, so2_task);
                                 enemyYaw = Read<float>(eAimData + 0x1C, so2_task);
                             }
                         }
 
+                        bool isCrouching = false;
+                        if (moveData > 0x1000000) {
+                            isCrouching = Read<bool>(moveData + 0xB0, so2_task);
+                        }
+
                         float yawRad = enemyYaw * (float)M_PI / 180.0f;
+                        float pitchRad = enemyPitch * (float)M_PI / 180.0f;
                         float rX = cosf(yawRad);
                         float rZ = -sinf(yawRad);
+                        float fwX = sinf(yawRad);
+                        float fwZ = cosf(yawRad);
 
-                        float pH = 1.67f;
-                        float sw2 = 0.22f;
-                        float hw2 = 0.12f;
+                        float cf = isCrouching ? 0.65f : 1.0f;
+                        float pH = 1.67f * cf;
 
-                        Vector3 bHead  = {pos.x, pos.y + pH, pos.z};
-                        Vector3 bNeck  = {pos.x, pos.y + 1.50f, pos.z};
-                        Vector3 bChest = {pos.x, pos.y + 1.30f, pos.z};
-                        Vector3 bSpine = {pos.x, pos.y + 1.05f, pos.z};
-                        Vector3 bHip   = {pos.x, pos.y + 0.90f, pos.z};
+                        float headFwd = sinf(pitchRad) * 0.12f;
+                        float headDip = (1.0f - cosf(pitchRad)) * 0.08f;
 
-                        Vector3 bLS = {bChest.x + rX*sw2, bChest.y + 0.10f, bChest.z + rZ*sw2};
-                        Vector3 bRS = {bChest.x - rX*sw2, bChest.y + 0.10f, bChest.z - rZ*sw2};
-                        Vector3 bLE = {bLS.x + rX*0.05f, bLS.y - 0.28f, bLS.z + rZ*0.05f};
-                        Vector3 bRE = {bRS.x - rX*0.05f, bRS.y - 0.28f, bRS.z - rZ*0.05f};
-                        Vector3 bLH = {bLE.x + rX*0.03f, bLE.y - 0.28f, bLE.z + rZ*0.03f};
-                        Vector3 bRH = {bRE.x - rX*0.03f, bRE.y - 0.28f, bRE.z - rZ*0.03f};
+                        Vector3 bHead  = {pos.x + fwX*headFwd, pos.y + pH - headDip, pos.z + fwZ*headFwd};
+                        Vector3 bNeck  = {pos.x + fwX*headFwd*0.5f, pos.y + 1.50f*cf - headDip*0.5f, pos.z + fwZ*headFwd*0.5f};
+                        Vector3 bChest = {pos.x, pos.y + 1.30f * cf, pos.z};
+                        Vector3 bSpine = {pos.x, pos.y + 1.05f * cf, pos.z};
+                        Vector3 bHip   = {pos.x, pos.y + 0.90f * cf, pos.z};
+
+                        float sw2 = 0.22f, hw2 = 0.12f;
+                        Vector3 bLS = {bChest.x + rX*sw2, bChest.y + 0.10f*cf, bChest.z + rZ*sw2};
+                        Vector3 bRS = {bChest.x - rX*sw2, bChest.y + 0.10f*cf, bChest.z - rZ*sw2};
+                        Vector3 bLE = {bLS.x + rX*0.05f, bLS.y - 0.28f*cf, bLS.z + rZ*0.05f};
+                        Vector3 bRE = {bRS.x - rX*0.05f, bRS.y - 0.28f*cf, bRS.z - rZ*0.05f};
+                        Vector3 bLH = {bLE.x + rX*0.03f, bLE.y - 0.28f*cf, bLE.z + rZ*0.03f};
+                        Vector3 bRH = {bRE.x - rX*0.03f, bRE.y - 0.28f*cf, bRE.z - rZ*0.03f};
                         Vector3 bLHip = {bHip.x + rX*hw2, bHip.y, bHip.z + rZ*hw2};
                         Vector3 bRHip = {bHip.x - rX*hw2, bHip.y, bHip.z - rZ*hw2};
                         Vector3 bLK = {bLHip.x, pos.y + 0.45f, bLHip.z};
@@ -1314,12 +1326,10 @@ struct UnityString32 { uint16_t chars[32]; };
                         }
 
                         if (esp_hitbox_enabled) {
-                            float fX2 = sinf(yawRad);
-                            float fZ2 = cosf(yawRad);
                             struct OBBDef { Vector3 center; float hw; float hh; float hd; };
                             OBBDef obbs[] = {
-                                {{pos.x, pos.y + 1.58f, pos.z}, 0.10f, 0.09f, 0.10f},
-                                {{pos.x, pos.y + 1.20f, pos.z}, 0.20f, 0.30f, 0.12f},
+                                {bHead, 0.10f, 0.09f, 0.10f},
+                                {{pos.x, pos.y + 1.20f*cf, pos.z}, 0.20f, 0.30f*cf, 0.12f},
                                 {{pos.x, pos.y + 0.45f, pos.z}, 0.12f, 0.45f, 0.10f},
                             };
                             for (int oi = 0; oi < 3; oi++) {
@@ -1331,9 +1341,9 @@ struct UnityString32 { uint16_t chars[32]; };
                                     float sy2 = (ci2 & 2) ? ohh : -ohh;
                                     float sz2 = (ci2 & 4) ? ohd : -ohd;
                                     corners[ci2] = {
-                                        c.x + rX * sx2 + fX2 * sz2,
+                                        c.x + rX * sx2 + fwX * sz2,
                                         c.y + sy2,
-                                        c.z + rZ * sx2 + fZ2 * sz2
+                                        c.z + rZ * sx2 + fwZ * sz2
                                     };
                                 }
                                 Vector3 sc[8];
@@ -1712,31 +1722,50 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     mach_vm_address_t aimingData = Read<mach_vm_address_t>(aimController + 0x90, so2_task);
     if (!aimingData || aimingData < 0x1000000) return;
 
+    // Позиция камеры: mainCameraHolder → camTransform → moveData
+    Vector3 cameraPos = {0,0,0};
+    mach_vm_address_t cameraHolder = Read<mach_vm_address_t>(localPlayer + 0x28, so2_task);
+    if (cameraHolder > 0x1000000) {
+        cameraPos = get_position_by_transform(cameraHolder, so2_task);
+    }
+    if (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0) {
+        mach_vm_address_t camTransform = Read<mach_vm_address_t>(aimController + 0x80, so2_task);
+        if (camTransform && camTransform > 0x1000000) {
+            cameraPos = get_position_by_transform(camTransform, so2_task);
+        }
+    }
+    if (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0) {
+        mach_vm_address_t mv = Read<mach_vm_address_t>(localPlayer + 0x98, so2_task);
+        if (mv > 0x1000000) {
+            mach_vm_address_t md = Read<mach_vm_address_t>(mv + 0xB0, so2_task);
+            if (md > 0x1000000) {
+                cameraPos = Read<Vector3>(md + 0x44, so2_task);
+            }
+        }
+    }
+
     float currentPitch = Read<float>(aimingData + 0x18, so2_task);
     float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-    Vector3 screenTarget = WorldToScreen(closestBonePos, viewMatrix, (int)w, (int)h);
-    if (screenTarget.z <= 0) return;
+    float dirX = closestBonePos.x - cameraPos.x;
+    float dirY = closestBonePos.y - cameraPos.y;
+    float dirZ = closestBonePos.z - cameraPos.z;
+    float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
+    if (dist < 0.0001f) return;
 
-    float cx2 = w / 2.0f, cy2 = h / 2.0f;
-    float errX = screenTarget.x - cx2;
-    float errY = screenTarget.y - cy2;
+    float targetPitch = -asinf(dirY / dist) * (180.0f / (float)M_PI);
+    float targetYaw   = atan2f(dirX, dirZ) * (180.0f / (float)M_PI);
 
-    // degPerPt из VP матрицы: |row_y| = cot(vFOV/2), degPerPt = 360/(PI*h*f)
-    float fY = sqrtf(viewMatrix.m12*viewMatrix.m12 + viewMatrix.m22*viewMatrix.m22 + viewMatrix.m32*viewMatrix.m32);
-    float fX = sqrtf(viewMatrix.m11*viewMatrix.m11 + viewMatrix.m21*viewMatrix.m21 + viewMatrix.m31*viewMatrix.m31);
-    float degPerPtY = (fY > 0.01f) ? (360.0f / ((float)M_PI * (float)h * fY)) : 0.10f;
-    float degPerPtX = (fX > 0.01f) ? (360.0f / ((float)M_PI * (float)w * fX)) : 0.08f;
-
-    float pitchDelta = errY * degPerPtY;
-    float yawDelta   = errX * degPerPtX;
+    float pitchDelta = targetPitch - currentPitch;
+    float yawDelta   = targetYaw - currentYaw;
+    while (yawDelta > 180.0f) yawDelta -= 360.0f;
+    while (yawDelta < -180.0f) yawDelta += 360.0f;
 
     float newPitch, newYaw;
 
     if (aimbot_smooth <= 1.0f) {
-        float snap = 0.85f;
-        newPitch = fmaxf(-89.0f, fminf(89.0f, currentPitch + pitchDelta * snap));
-        newYaw   = currentYaw + yawDelta * snap;
+        newPitch = fmaxf(-89.0f, fminf(89.0f, targetPitch));
+        newYaw   = targetYaw;
     } else {
         float smooth = 1.0f / (1.0f + aimbot_smooth * 0.5f);
         smooth = fmaxf(0.03f, fminf(smooth, 1.0f));
