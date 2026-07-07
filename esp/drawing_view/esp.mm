@@ -1328,11 +1328,35 @@ struct UnityString32 { uint16_t chars[32]; };
                         if (esp_hitbox_enabled) {
                             struct OBBDef { Vector3 center; float hw; float hh; float hd; };
                             OBBDef obbs[] = {
-                                {bHead, 0.10f, 0.09f, 0.10f},
-                                {{pos.x, pos.y + 1.20f*cf, pos.z}, 0.20f, 0.30f*cf, 0.12f},
-                                {{pos.x, pos.y + 0.45f, pos.z}, 0.12f, 0.45f, 0.10f},
+                                // head (capsule approximated as box)
+                                {bHead, 0.10f, 0.10f, 0.10f},
+                                // neck
+                                {bNeck, 0.06f, 0.05f, 0.06f},
+                                // chest
+                                {{pos.x, pos.y + 1.30f*cf, pos.z}, 0.18f, 0.15f*cf, 0.10f},
+                                // spine/stomach
+                                {{pos.x, pos.y + 1.05f*cf, pos.z}, 0.16f, 0.12f*cf, 0.09f},
+                                // pelvis
+                                {bHip, 0.14f, 0.08f*cf, 0.09f},
+                                // left upper arm
+                                {{bLS.x + rX*0.02f, (bLS.y + bLE.y)*0.5f, bLS.z + rZ*0.02f}, 0.05f, 0.14f*cf, 0.05f},
+                                // right upper arm
+                                {{bRS.x - rX*0.02f, (bRS.y + bRE.y)*0.5f, bRS.z - rZ*0.02f}, 0.05f, 0.14f*cf, 0.05f},
+                                // left forearm
+                                {{bLE.x + rX*0.015f, (bLE.y + bLH.y)*0.5f, bLE.z + rZ*0.015f}, 0.04f, 0.14f*cf, 0.04f},
+                                // right forearm
+                                {{bRE.x - rX*0.015f, (bRE.y + bRH.y)*0.5f, bRE.z - rZ*0.015f}, 0.04f, 0.14f*cf, 0.04f},
+                                // left thigh
+                                {{bLHip.x, (bLHip.y + bLK.y)*0.5f, bLHip.z}, 0.06f, 0.22f, 0.06f},
+                                // right thigh
+                                {{bRHip.x, (bRHip.y + bRK.y)*0.5f, bRHip.z}, 0.06f, 0.22f, 0.06f},
+                                // left shin
+                                {{bLK.x, (bLK.y + bLF.y)*0.5f, bLK.z}, 0.05f, 0.22f, 0.05f},
+                                // right shin
+                                {{bRK.x, (bRK.y + bRF.y)*0.5f, bRK.z}, 0.05f, 0.22f, 0.05f},
                             };
-                            for (int oi = 0; oi < 3; oi++) {
+                            int numObbs = 13;
+                            for (int oi = 0; oi < numObbs; oi++) {
                                 Vector3 c = obbs[oi].center;
                                 float ohw = obbs[oi].hw, ohh = obbs[oi].hh, ohd = obbs[oi].hd;
                                 Vector3 corners[8];
@@ -1445,9 +1469,11 @@ static Vector3 GetBonePosition(mach_vm_address_t player, int boneIdx, task_t tas
         mach_vm_address_t md = Read<mach_vm_address_t>(mc + 0xB0, task);
         if (md > 0x1000000) {
             Vector3 pos = Read<Vector3>(md + 0x44, task);
-            if (boneIdx == 0) pos.y += 1.35f;
-            else if (boneIdx == 1) pos.y += 1.2f;
-            else pos.y += 0.85f;
+            bool crouching = Read<bool>(md + 0xB0, task);
+            float cf = crouching ? 0.65f : 1.0f;
+            if (boneIdx == 0) pos.y += 1.58f * cf;
+            else if (boneIdx == 1) pos.y += 1.40f * cf;
+            else pos.y += 0.90f * cf;
             return pos;
         }
     }
@@ -1722,17 +1748,17 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     mach_vm_address_t aimingData = Read<mach_vm_address_t>(aimController + 0x90, so2_task);
     if (!aimingData || aimingData < 0x1000000) return;
 
-    // Позиция камеры: mainCameraHolder → camTransform → moveData
+    // Позиция камеры из VP-матрицы (Cramer): VP * [cx,cy,cz,1] = [0,0,z,0]
+    float a11=viewMatrix.m11, a12=viewMatrix.m21, a13=viewMatrix.m31, b1=-viewMatrix.m41;
+    float a21=viewMatrix.m12, a22=viewMatrix.m22, a23=viewMatrix.m32, b2=-viewMatrix.m42;
+    float a31=viewMatrix.m14, a32=viewMatrix.m24, a33=viewMatrix.m34, b3=-viewMatrix.m44;
+    float det = a11*(a22*a33 - a23*a32) - a12*(a21*a33 - a23*a31) + a13*(a21*a32 - a22*a31);
     Vector3 cameraPos = {0,0,0};
-    mach_vm_address_t cameraHolder = Read<mach_vm_address_t>(localPlayer + 0x28, so2_task);
-    if (cameraHolder > 0x1000000) {
-        cameraPos = get_position_by_transform(cameraHolder, so2_task);
-    }
-    if (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0) {
-        mach_vm_address_t camTransform = Read<mach_vm_address_t>(aimController + 0x80, so2_task);
-        if (camTransform && camTransform > 0x1000000) {
-            cameraPos = get_position_by_transform(camTransform, so2_task);
-        }
+    if (fabsf(det) > 0.0001f) {
+        float invDet = 1.0f / det;
+        cameraPos.x = (b1*(a22*a33 - a23*a32) - a12*(b2*a33 - a23*b3) + a13*(b2*a32 - a22*b3)) * invDet;
+        cameraPos.y = (a11*(b2*a33 - a23*b3) - b1*(a21*a33 - a23*a31) + a13*(a21*b3 - b2*a31)) * invDet;
+        cameraPos.z = (a11*(a22*b3 - b2*a32) - a12*(a21*b3 - b2*a31) + b1*(a21*a32 - a22*a31)) * invDet;
     }
     if (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0) {
         mach_vm_address_t mv = Read<mach_vm_address_t>(localPlayer + 0x98, so2_task);
@@ -1740,6 +1766,7 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
             mach_vm_address_t md = Read<mach_vm_address_t>(mv + 0xB0, so2_task);
             if (md > 0x1000000) {
                 cameraPos = Read<Vector3>(md + 0x44, so2_task);
+                cameraPos.y += 1.55f;
             }
         }
     }
@@ -1750,11 +1777,12 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     float dirX = closestBonePos.x - cameraPos.x;
     float dirY = closestBonePos.y - cameraPos.y;
     float dirZ = closestBonePos.z - cameraPos.z;
-    float dist = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
+    float distH = sqrtf(dirX*dirX + dirZ*dirZ);
+    float dist  = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
     if (dist < 0.0001f) return;
 
-    float targetPitch = -asinf(dirY / dist) * (180.0f / (float)M_PI);
-    float targetYaw   = atan2f(dirX, dirZ) * (180.0f / (float)M_PI);
+    float targetPitch = -atan2f(dirY, distH) * (180.0f / (float)M_PI);
+    float targetYaw   =  atan2f(dirX, dirZ)  * (180.0f / (float)M_PI);
 
     float pitchDelta = targetPitch - currentPitch;
     float yawDelta   = targetYaw - currentYaw;
@@ -1779,8 +1807,6 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     if (aimbot_enabled) {
         Write<float>(aimingData + 0x18, newPitch, so2_task);
         Write<float>(aimingData + 0x1C, newYaw,   so2_task);
-        Write<float>(aimingData + 0x24, newPitch, so2_task);
-        Write<float>(aimingData + 0x28, newYaw,   so2_task);
     }
 
     if (aimbot_triggerbot) {
