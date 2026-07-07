@@ -1274,32 +1274,6 @@ struct UnityString32 { uint16_t chars[32]; };
                             }
                         }
 
-                        bool isCrouching = false;
-                        if (moveData > 0x1000000) {
-                            isCrouching = Read<bool>(moveData + 0xB0, so2_task);
-                        }
-
-                        // Реальная высота из CharacterColliderParameters
-                        float charHeight = 1.8f;
-                        float charCenterY = 0.9f;
-                        mach_vm_address_t moveCtrlE = Read<mach_vm_address_t>(player + 0x98, so2_task);
-                        if (moveCtrlE > 0x1000000) {
-                            mach_vm_address_t transParams = Read<mach_vm_address_t>(moveCtrlE + 0xA8, so2_task);
-                            if (transParams > 0x1000000) {
-                                mach_vm_address_t collParams = Read<mach_vm_address_t>(transParams + 0x58, so2_task);
-                                if (collParams > 0x1000000) {
-                                    float hStand = Read<float>(collParams + 0x1C, so2_task);
-                                    float hCrouch = Read<float>(collParams + 0x2C, so2_task);
-                                    Vector3 cStand = Read<Vector3>(collParams + 0x10, so2_task);
-                                    Vector3 cCrouch = Read<Vector3>(collParams + 0x20, so2_task);
-                                    if (hStand > 0.5f && hStand < 4.0f) {
-                                        charHeight = isCrouching ? hCrouch : hStand;
-                                        charCenterY = isCrouching ? cCrouch.y : cStand.y;
-                                    }
-                                }
-                            }
-                        }
-
                         float yawRad = enemyYaw * (float)M_PI / 180.0f;
                         float pitchRad = enemyPitch * (float)M_PI / 180.0f;
                         float rX = cosf(yawRad);
@@ -1307,35 +1281,30 @@ struct UnityString32 { uint16_t chars[32]; };
                         float fwX = sinf(yawRad);
                         float fwZ = cosf(yawRad);
 
-                        float collTop = pos.y + charCenterY + charHeight * 0.5f;
-                        float collBot = pos.y + charCenterY - charHeight * 0.5f;
-                        float pH = collTop - pos.y;
+                        float pH = 1.67f;
 
                         float headFwd = sinf(pitchRad) * 0.12f;
                         float headDip = (1.0f - cosf(pitchRad)) * 0.08f;
 
-                        // Кости по реальной высоте коллайдера (collBot..collTop)
-                        float cH = charHeight;
-                        Vector3 bHead  = {pos.x + fwX*headFwd, collTop - cH*0.02f - headDip, pos.z + fwZ*headFwd};
-                        Vector3 bNeck  = {pos.x + fwX*headFwd*0.5f, collTop - cH*0.10f - headDip*0.5f, pos.z + fwZ*headFwd*0.5f};
-                        Vector3 bChest = {pos.x, collTop - cH*0.22f, pos.z};
-                        Vector3 bSpine = {pos.x, collTop - cH*0.35f, pos.z};
-                        Vector3 bHip   = {pos.x, collTop - cH*0.46f, pos.z};
+                        Vector3 bHead  = {pos.x + fwX*headFwd, pos.y + pH - headDip, pos.z + fwZ*headFwd};
+                        Vector3 bNeck  = {pos.x + fwX*headFwd*0.5f, pos.y + pH*0.90f - headDip*0.5f, pos.z + fwZ*headFwd*0.5f};
+                        Vector3 bChest = {pos.x, pos.y + pH*0.78f, pos.z};
+                        Vector3 bSpine = {pos.x, pos.y + pH*0.64f, pos.z};
+                        Vector3 bHip   = {pos.x, pos.y + pH*0.53f, pos.z};
 
                         float sw2 = 0.24f, hw2 = 0.13f;
                         Vector3 bLS = {bChest.x + rX*sw2, bChest.y + 0.05f, bChest.z + rZ*sw2};
                         Vector3 bRS = {bChest.x - rX*sw2, bChest.y + 0.05f, bChest.z - rZ*sw2};
-                        Vector3 bLE = {bLS.x + rX*0.05f, bLS.y - cH*0.16f, bLS.z + rZ*0.05f};
-                        Vector3 bRE = {bRS.x - rX*0.05f, bRS.y - cH*0.16f, bRS.z - rZ*0.05f};
-                        Vector3 bLH = {bLE.x + rX*0.03f, bLE.y - cH*0.16f, bLE.z + rZ*0.03f};
-                        Vector3 bRH = {bRE.x - rX*0.03f, bRE.y - cH*0.16f, bRE.z - rZ*0.03f};
+                        Vector3 bLE = {bLS.x + rX*0.05f, bLS.y - pH*0.16f, bLS.z + rZ*0.05f};
+                        Vector3 bRE = {bRS.x - rX*0.05f, bRS.y - pH*0.16f, bRS.z - rZ*0.05f};
+                        Vector3 bLH = {bLE.x + rX*0.03f, bLE.y - pH*0.16f, bLE.z + rZ*0.03f};
+                        Vector3 bRH = {bRE.x - rX*0.03f, bRE.y - pH*0.16f, bRE.z - rZ*0.03f};
                         Vector3 bLHip = {bHip.x + rX*hw2, bHip.y, bHip.z + rZ*hw2};
                         Vector3 bRHip = {bHip.x - rX*hw2, bHip.y, bHip.z - rZ*hw2};
-                        float kneeY = collBot + (collTop - collBot) * 0.27f;
-                        Vector3 bLK = {bLHip.x, kneeY, bLHip.z};
-                        Vector3 bRK = {bRHip.x, kneeY, bRHip.z};
-                        Vector3 bLF = {bLK.x, collBot, bLK.z};
-                        Vector3 bRF = {bRK.x, collBot, bRK.z};
+                        Vector3 bLK = {bLHip.x, pos.y + pH*0.27f, bLHip.z};
+                        Vector3 bRK = {bRHip.x, pos.y + pH*0.27f, bRHip.z};
+                        Vector3 bLF = {bLK.x, pos.y, bLK.z};
+                        Vector3 bRF = {bRK.x, pos.y, bRK.z};
 
                         if (esp_skeleton_enabled) {
                             Vector3 sb[] = {bHead,bNeck,bChest,bSpine,bHip,bLS,bLE,bLH,bRS,bRE,bRH,bLHip,bLK,bLF,bRHip,bRK,bRF};
@@ -1353,15 +1322,15 @@ struct UnityString32 { uint16_t chars[32]; };
                         if (esp_hitbox_enabled) {
                             struct OBBDef { Vector3 center; float hw; float hh; float hd; };
                             OBBDef obbs[] = {
-                                {bHead, 0.13f, cH*0.06f, 0.13f},
-                                {bNeck, 0.09f, cH*0.04f, 0.09f},
-                                {bChest, 0.26f, cH*0.11f, 0.16f},
-                                {bSpine, 0.24f, cH*0.10f, 0.14f},
-                                {bHip, 0.22f, cH*0.08f, 0.14f},
-                                {{(bLS.x+bLE.x)*0.5f, (bLS.y+bLE.y)*0.5f, (bLS.z+bLE.z)*0.5f}, 0.07f, cH*0.09f, 0.07f},
-                                {{(bRS.x+bRE.x)*0.5f, (bRS.y+bRE.y)*0.5f, (bRS.z+bRE.z)*0.5f}, 0.07f, cH*0.09f, 0.07f},
-                                {{(bLE.x+bLH.x)*0.5f, (bLE.y+bLH.y)*0.5f, (bLE.z+bLH.z)*0.5f}, 0.06f, cH*0.09f, 0.06f},
-                                {{(bRE.x+bRH.x)*0.5f, (bRE.y+bRH.y)*0.5f, (bRE.z+bRH.z)*0.5f}, 0.06f, cH*0.09f, 0.06f},
+                                {bHead, 0.13f, pH*0.06f, 0.13f},
+                                {bNeck, 0.09f, pH*0.04f, 0.09f},
+                                {bChest, 0.26f, pH*0.11f, 0.16f},
+                                {bSpine, 0.24f, pH*0.10f, 0.14f},
+                                {bHip, 0.22f, pH*0.08f, 0.14f},
+                                {{(bLS.x+bLE.x)*0.5f, (bLS.y+bLE.y)*0.5f, (bLS.z+bLE.z)*0.5f}, 0.07f, pH*0.09f, 0.07f},
+                                {{(bRS.x+bRE.x)*0.5f, (bRS.y+bRE.y)*0.5f, (bRS.z+bRE.z)*0.5f}, 0.07f, pH*0.09f, 0.07f},
+                                {{(bLE.x+bLH.x)*0.5f, (bLE.y+bLH.y)*0.5f, (bLE.z+bLH.z)*0.5f}, 0.06f, pH*0.09f, 0.06f},
+                                {{(bRE.x+bRH.x)*0.5f, (bRE.y+bRH.y)*0.5f, (bRE.z+bRH.z)*0.5f}, 0.06f, pH*0.09f, 0.06f},
                                 {{bLHip.x, (bLHip.y+bLK.y)*0.5f, bLHip.z}, 0.08f, (bLHip.y-bLK.y)*0.5f, 0.08f},
                                 {{bRHip.x, (bRHip.y+bRK.y)*0.5f, bRHip.z}, 0.08f, (bRHip.y-bRK.y)*0.5f, 0.08f},
                                 {{bLK.x, (bLK.y+bLF.y)*0.5f, bLK.z}, 0.06f, (bLK.y-bLF.y)*0.5f, 0.06f},
@@ -1481,27 +1450,9 @@ static Vector3 GetBonePosition(mach_vm_address_t player, int boneIdx, task_t tas
         mach_vm_address_t md = Read<mach_vm_address_t>(mc + 0xB0, task);
         if (md > 0x1000000) {
             Vector3 pos = Read<Vector3>(md + 0x44, task);
-            bool crouching = Read<bool>(md + 0xB0, task);
-
-            float charH = 1.8f, charCY = 0.9f;
-            mach_vm_address_t tp = Read<mach_vm_address_t>(mc + 0xA8, task);
-            if (tp > 0x1000000) {
-                mach_vm_address_t cp = Read<mach_vm_address_t>(tp + 0x58, task);
-                if (cp > 0x1000000) {
-                    float hs = Read<float>(cp + 0x1C, task);
-                    float hc = Read<float>(cp + 0x2C, task);
-                    Vector3 cs = Read<Vector3>(cp + 0x10, task);
-                    Vector3 cc = Read<Vector3>(cp + 0x20, task);
-                    if (hs > 0.5f && hs < 4.0f) {
-                        charH = crouching ? hc : hs;
-                        charCY = crouching ? cc.y : cs.y;
-                    }
-                }
-            }
-            float top = pos.y + charCY + charH * 0.5f;
-            if (boneIdx == 0) pos.y = top - charH * 0.02f;
-            else if (boneIdx == 1) pos.y = top - charH * 0.10f;
-            else pos.y = top - charH * 0.35f;
+            if (boneIdx == 0) pos.y += 1.60f;
+            else if (boneIdx == 1) pos.y += 1.50f;
+            else pos.y += 1.07f;
             return pos;
         }
     }
@@ -1823,6 +1774,8 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     if (aimbot_enabled) {
         Write<float>(aimingData + 0x18, newPitch, so2_task);
         Write<float>(aimingData + 0x1C, newYaw,   so2_task);
+        Write<float>(aimingData + 0x24, newPitch, so2_task);
+        Write<float>(aimingData + 0x28, newYaw,   so2_task);
     }
 
     if (aimbot_triggerbot) {
