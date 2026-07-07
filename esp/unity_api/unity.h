@@ -24,9 +24,9 @@ struct Vector4
 
 struct TMatrix
 {
-    Vector4 position;
     Vector4 rotation;
-    Vector4 scale;
+    Vector3 position;
+    Vector3 scale;
 };
 
 struct c_matrix

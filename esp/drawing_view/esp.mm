@@ -1264,56 +1264,71 @@ struct UnityString32 { uint16_t chars[32]; };
                     }
 
                     if (esp_skeleton_enabled || esp_hitbox_enabled) {
-                        float enemyYaw = 0, enemyPitch = 0;
-                        mach_vm_address_t eAim = Read<mach_vm_address_t>(player + 0x80, so2_task);
-                        if (eAim > 0x1000000) {
-                            mach_vm_address_t eAimData = Read<mach_vm_address_t>(eAim + 0x90, so2_task);
-                            if (eAimData > 0x1000000) {
-                                enemyPitch = Read<float>(eAimData + 0x18, so2_task);
-                                enemyYaw = Read<float>(eAimData + 0x1C, so2_task);
+                        // BipedMap bone offsets
+                        int boneOff[] = {0x20,0x28,0x40,0x38,0x88,0x48,0x58,0x60,0x68,0x78,0x80,0x90,0x98,0xA0,0xB0,0xB8,0xC0};
+                        // 0=Head,1=Neck,2=Spine2(chest),3=Spine1,4=Hip,5=LShoulder,6=LForearm,7=LHand,
+                        // 8=RShoulder,9=RForearm,10=RHand,11=LUpLeg,12=LLeg,13=LFoot,14=RUpLeg,15=RLeg,16=RFoot
+                        int numBones = 17;
+                        Vector3 sb[17];
+                        bool usedReal = false;
+
+                        mach_vm_address_t bm = GetBipedMap(player, so2_task);
+                        if (bm) {
+                            Vector3 testBone = ReadBonePos(bm, 0x20, so2_task);
+                            if (testBone.x != 0 || testBone.y != 0 || testBone.z != 0) {
+                                usedReal = true;
+                                for (int bi = 0; bi < numBones; bi++) {
+                                    sb[bi] = ReadBonePos(bm, boneOff[bi], so2_task);
+                                }
                             }
                         }
 
-                        // Приседание
-                        bool isCrouching = false;
-                        if (moveData > 0x1000000) {
-                            isCrouching = Read<bool>(moveData + 0xB0, so2_task);
+                        float enemyYaw = 0;
+                        if (!usedReal) {
+                            float enemyPitch = 0;
+                            mach_vm_address_t eAim = Read<mach_vm_address_t>(player + 0x80, so2_task);
+                            if (eAim > 0x1000000) {
+                                mach_vm_address_t eAimData = Read<mach_vm_address_t>(eAim + 0x90, so2_task);
+                                if (eAimData > 0x1000000) {
+                                    enemyPitch = Read<float>(eAimData + 0x18, so2_task);
+                                    enemyYaw = Read<float>(eAimData + 0x1C, so2_task);
+                                }
+                            }
+
+                            bool isCrouching = false;
+                            if (moveData > 0x1000000) isCrouching = Read<bool>(moveData + 0xB0, so2_task);
+
+                            float yawRad = enemyYaw * (float)M_PI / 180.0f;
+                            float pitchRad = enemyPitch * (float)M_PI / 180.0f;
+                            float rX = cosf(yawRad);
+                            float rZ = -sinf(yawRad);
+                            float fwX = sinf(yawRad);
+                            float fwZ = cosf(yawRad);
+                            float pH = isCrouching ? 1.10f : 1.67f;
+                            float headFwd = sinf(pitchRad) * 0.12f;
+                            float headDip = (1.0f - cosf(pitchRad)) * 0.08f;
+
+                            sb[0] = {pos.x + fwX*headFwd, pos.y + pH*0.95f - headDip, pos.z + fwZ*headFwd};
+                            sb[1] = {pos.x + fwX*headFwd*0.5f, pos.y + pH*0.87f - headDip*0.5f, pos.z + fwZ*headFwd*0.5f};
+                            sb[2] = {pos.x, pos.y + pH*0.75f, pos.z};
+                            sb[3] = {pos.x, pos.y + pH*0.62f, pos.z};
+                            sb[4] = {pos.x, pos.y + pH*0.50f, pos.z};
+                            float sw2 = 0.24f, hw2 = 0.13f;
+                            sb[5] = {sb[2].x + rX*sw2, sb[2].y + 0.05f, sb[2].z + rZ*sw2};
+                            sb[6] = {sb[5].x + rX*0.05f, sb[5].y - pH*0.16f, sb[5].z + rZ*0.05f};
+                            sb[7] = {sb[6].x + rX*0.03f, sb[6].y - pH*0.16f, sb[6].z + rZ*0.03f};
+                            sb[8] = {sb[2].x - rX*sw2, sb[2].y + 0.05f, sb[2].z - rZ*sw2};
+                            sb[9] = {sb[8].x - rX*0.05f, sb[8].y - pH*0.16f, sb[8].z - rZ*0.05f};
+                            sb[10] = {sb[9].x - rX*0.03f, sb[9].y - pH*0.16f, sb[9].z - rZ*0.03f};
+                            sb[11] = {sb[4].x + rX*hw2, sb[4].y, sb[4].z + rZ*hw2};
+                            sb[12] = {sb[11].x, pos.y + pH*0.27f, sb[11].z};
+                            sb[13] = {sb[12].x, pos.y, sb[12].z};
+                            sb[14] = {sb[4].x - rX*hw2, sb[4].y, sb[4].z - rZ*hw2};
+                            sb[15] = {sb[14].x, pos.y + pH*0.27f, sb[14].z};
+                            sb[16] = {sb[15].x, pos.y, sb[15].z};
                         }
 
-                        float yawRad = enemyYaw * (float)M_PI / 180.0f;
-                        float pitchRad = enemyPitch * (float)M_PI / 180.0f;
-                        float rX = cosf(yawRad);
-                        float rZ = -sinf(yawRad);
-                        float fwX = sinf(yawRad);
-                        float fwZ = cosf(yawRad);
-
-                        float pH = isCrouching ? 1.10f : 1.67f;
-
-                        float headFwd = sinf(pitchRad) * 0.12f;
-                        float headDip = (1.0f - cosf(pitchRad)) * 0.08f;
-
-                        Vector3 bHead  = {pos.x + fwX*headFwd, pos.y + pH*0.95f - headDip, pos.z + fwZ*headFwd};
-                        Vector3 bNeck  = {pos.x + fwX*headFwd*0.5f, pos.y + pH*0.87f - headDip*0.5f, pos.z + fwZ*headFwd*0.5f};
-                        Vector3 bChest = {pos.x, pos.y + pH*0.75f, pos.z};
-                        Vector3 bSpine = {pos.x, pos.y + pH*0.62f, pos.z};
-                        Vector3 bHip   = {pos.x, pos.y + pH*0.50f, pos.z};
-
-                        float sw2 = 0.24f, hw2 = 0.13f;
-                        Vector3 bLS = {bChest.x + rX*sw2, bChest.y + 0.05f, bChest.z + rZ*sw2};
-                        Vector3 bRS = {bChest.x - rX*sw2, bChest.y + 0.05f, bChest.z - rZ*sw2};
-                        Vector3 bLE = {bLS.x + rX*0.05f, bLS.y - pH*0.16f, bLS.z + rZ*0.05f};
-                        Vector3 bRE = {bRS.x - rX*0.05f, bRS.y - pH*0.16f, bRS.z - rZ*0.05f};
-                        Vector3 bLH = {bLE.x + rX*0.03f, bLE.y - pH*0.16f, bLE.z + rZ*0.03f};
-                        Vector3 bRH = {bRE.x - rX*0.03f, bRE.y - pH*0.16f, bRE.z - rZ*0.03f};
-                        Vector3 bLHip = {bHip.x + rX*hw2, bHip.y, bHip.z + rZ*hw2};
-                        Vector3 bRHip = {bHip.x - rX*hw2, bHip.y, bHip.z - rZ*hw2};
-                        Vector3 bLK = {bLHip.x, pos.y + pH*0.27f, bLHip.z};
-                        Vector3 bRK = {bRHip.x, pos.y + pH*0.27f, bRHip.z};
-                        Vector3 bLF = {bLK.x, pos.y, bLK.z};
-                        Vector3 bRF = {bRK.x, pos.y, bRK.z};
-
                         if (esp_skeleton_enabled) {
-                            Vector3 sb[] = {bHead,bNeck,bChest,bSpine,bHip,bLS,bLE,bLH,bRS,bRE,bRH,bLHip,bLK,bLF,bRHip,bRK,bRF};
                             int sl[][2] = {{0,1},{1,2},{2,3},{3,4},{2,5},{5,6},{6,7},{2,8},{8,9},{9,10},{4,11},{11,12},{12,13},{4,14},{14,15},{15,16}};
                             for (int li = 0; li < 16; li++) {
                                 Vector3 s1 = WorldToScreen(sb[sl[li][0]], viewMatrix, w, h);
@@ -1326,24 +1341,36 @@ struct UnityString32 { uint16_t chars[32]; };
                         }
 
                         if (esp_hitbox_enabled) {
+                            float enemyYawRad = 0;
+                            if (!usedReal) {
+                                enemyYawRad = enemyYaw * (float)M_PI / 180.0f;
+                            } else {
+                                float dx = sb[0].x - sb[1].x;
+                                float dz = sb[0].z - sb[1].z;
+                                enemyYawRad = atan2f(dx, dz);
+                            }
+                            float rX = cosf(enemyYawRad);
+                            float rZ = -sinf(enemyYawRad);
+                            float fwX = sinf(enemyYawRad);
+                            float fwZ = cosf(enemyYawRad);
+
                             struct OBBDef { Vector3 center; float hw; float hh; float hd; };
                             OBBDef obbs[] = {
-                                {bHead, 0.13f, pH*0.06f, 0.13f},
-                                {bNeck, 0.09f, pH*0.04f, 0.09f},
-                                {bChest, 0.26f, pH*0.11f, 0.16f},
-                                {bSpine, 0.24f, pH*0.10f, 0.14f},
-                                {bHip, 0.22f, pH*0.08f, 0.14f},
-                                {{(bLS.x+bLE.x)*0.5f, (bLS.y+bLE.y)*0.5f, (bLS.z+bLE.z)*0.5f}, 0.07f, pH*0.09f, 0.07f},
-                                {{(bRS.x+bRE.x)*0.5f, (bRS.y+bRE.y)*0.5f, (bRS.z+bRE.z)*0.5f}, 0.07f, pH*0.09f, 0.07f},
-                                {{(bLE.x+bLH.x)*0.5f, (bLE.y+bLH.y)*0.5f, (bLE.z+bLH.z)*0.5f}, 0.06f, pH*0.09f, 0.06f},
-                                {{(bRE.x+bRH.x)*0.5f, (bRE.y+bRH.y)*0.5f, (bRE.z+bRH.z)*0.5f}, 0.06f, pH*0.09f, 0.06f},
-                                {{bLHip.x, (bLHip.y+bLK.y)*0.5f, bLHip.z}, 0.08f, (bLHip.y-bLK.y)*0.5f, 0.08f},
-                                {{bRHip.x, (bRHip.y+bRK.y)*0.5f, bRHip.z}, 0.08f, (bRHip.y-bRK.y)*0.5f, 0.08f},
-                                {{bLK.x, (bLK.y+bLF.y)*0.5f, bLK.z}, 0.06f, (bLK.y-bLF.y)*0.5f, 0.06f},
-                                {{bRK.x, (bRK.y+bRF.y)*0.5f, bRK.z}, 0.06f, (bRK.y-bRF.y)*0.5f, 0.06f},
+                                {sb[0], 0.13f, 0.10f, 0.13f},
+                                {sb[1], 0.09f, 0.06f, 0.09f},
+                                {sb[2], 0.26f, 0.14f, 0.16f},
+                                {sb[3], 0.24f, 0.12f, 0.14f},
+                                {sb[4], 0.22f, 0.10f, 0.14f},
+                                {{(sb[5].x+sb[6].x)*0.5f,(sb[5].y+sb[6].y)*0.5f,(sb[5].z+sb[6].z)*0.5f}, 0.07f, 0.14f, 0.07f},
+                                {{(sb[8].x+sb[9].x)*0.5f,(sb[8].y+sb[9].y)*0.5f,(sb[8].z+sb[9].z)*0.5f}, 0.07f, 0.14f, 0.07f},
+                                {{(sb[6].x+sb[7].x)*0.5f,(sb[6].y+sb[7].y)*0.5f,(sb[6].z+sb[7].z)*0.5f}, 0.06f, 0.14f, 0.06f},
+                                {{(sb[9].x+sb[10].x)*0.5f,(sb[9].y+sb[10].y)*0.5f,(sb[9].z+sb[10].z)*0.5f}, 0.06f, 0.14f, 0.06f},
+                                {{(sb[11].x+sb[12].x)*0.5f,(sb[11].y+sb[12].y)*0.5f,(sb[11].z+sb[12].z)*0.5f}, 0.08f, 0.20f, 0.08f},
+                                {{(sb[14].x+sb[15].x)*0.5f,(sb[14].y+sb[15].y)*0.5f,(sb[14].z+sb[15].z)*0.5f}, 0.08f, 0.20f, 0.08f},
+                                {{(sb[12].x+sb[13].x)*0.5f,(sb[12].y+sb[13].y)*0.5f,(sb[12].z+sb[13].z)*0.5f}, 0.06f, 0.20f, 0.06f},
+                                {{(sb[15].x+sb[16].x)*0.5f,(sb[15].y+sb[16].y)*0.5f,(sb[15].z+sb[16].z)*0.5f}, 0.06f, 0.20f, 0.06f},
                             };
-                            int numObbs = 13;
-                            for (int oi = 0; oi < numObbs; oi++) {
+                            for (int oi = 0; oi < 13; oi++) {
                                 Vector3 c = obbs[oi].center;
                                 float ohw = obbs[oi].hw, ohh = obbs[oi].hh, ohd = obbs[oi].hd;
                                 Vector3 corners[8];
@@ -1419,35 +1446,28 @@ static mach_vm_address_t GetAimBoneOffset(int idx) {
 }
 
 
-static mach_vm_address_t FindBipedMapCached(mach_vm_address_t player, task_t task) {
-    int cvOffsets[] = {0xD0, 0x48, 0x50, 0x58, 0xC8, 0xD8, 0xE0};
-    int bmOffsets[] = {0x48, 0x50, 0x40, 0x58};
-    for (int ci = 0; ci < 7; ci++) {
-        mach_vm_address_t cv = Read<mach_vm_address_t>(player + cvOffsets[ci], task);
+static mach_vm_address_t GetBipedMap(mach_vm_address_t player, task_t task) {
+    int cvOffsets[] = {0x48, 0x50};
+    for (int i = 0; i < 2; i++) {
+        mach_vm_address_t cv = Read<mach_vm_address_t>(player + cvOffsets[i], task);
         if (cv < 0x1000000) continue;
-        for (int bi = 0; bi < 4; bi++) {
-            mach_vm_address_t bm = Read<mach_vm_address_t>(cv + bmOffsets[bi], task);
-            if (bm < 0x1000000) continue;
-            mach_vm_address_t headT = Read<mach_vm_address_t>(bm + 0x20, task);
-            if (headT < 0x1000000) continue;
-            Vector3 hp = get_position_by_transform(headT, task);
-            if (hp.x != 0 || hp.y != 0 || hp.z != 0) return bm;
-        }
+        mach_vm_address_t bm = Read<mach_vm_address_t>(cv + 0x48, task);
+        if (bm > 0x1000000) return bm;
     }
     return 0;
 }
 
-static Vector3 GetBoneWorldPos(mach_vm_address_t bipedMap, int boneOffset, task_t task) {
+static Vector3 ReadBonePos(mach_vm_address_t bipedMap, int offset, task_t task) {
     if (!bipedMap) return {0,0,0};
-    mach_vm_address_t t = Read<mach_vm_address_t>(bipedMap + boneOffset, task);
+    mach_vm_address_t t = Read<mach_vm_address_t>(bipedMap + offset, task);
     if (t < 0x1000000) return {0,0,0};
     return get_position_by_transform(t, task);
 }
 
 static Vector3 GetBonePosition(mach_vm_address_t player, int boneIdx, task_t task) {
-    mach_vm_address_t bm = FindBipedMapCached(player, task);
+    mach_vm_address_t bm = GetBipedMap(player, task);
     if (bm) {
-        Vector3 pos = GetBoneWorldPos(bm, GetAimBoneOffset(boneIdx), task);
+        Vector3 pos = ReadBonePos(bm, GetAimBoneOffset(boneIdx), task);
         if (pos.x != 0 || pos.y != 0 || pos.z != 0) return pos;
     }
 
@@ -1456,19 +1476,7 @@ static Vector3 GetBonePosition(mach_vm_address_t player, int boneIdx, task_t tas
         mach_vm_address_t md = Read<mach_vm_address_t>(mc + 0xB0, task);
         if (md > 0x1000000) {
             Vector3 pos = Read<Vector3>(md + 0x44, task);
-            if (boneIdx == 0) {
-                pos.y += 1.59f;
-                mach_vm_address_t eAim = Read<mach_vm_address_t>(player + 0x80, task);
-                if (eAim > 0x1000000) {
-                    mach_vm_address_t eAimData = Read<mach_vm_address_t>(eAim + 0x90, task);
-                    if (eAimData > 0x1000000) {
-                        float eYaw = Read<float>(eAimData + 0x1C, task);
-                        float yr = eYaw * (float)M_PI / 180.0f;
-                        pos.x += sinf(yr) * 0.10f;
-                        pos.z += cosf(yr) * 0.10f;
-                    }
-                }
-            }
+            if (boneIdx == 0) pos.y += 1.59f;
             else if (boneIdx == 1) pos.y += 1.45f;
             else pos.y += 1.03f;
             return pos;
