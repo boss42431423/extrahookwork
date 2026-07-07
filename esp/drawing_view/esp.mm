@@ -1735,41 +1735,29 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
     mach_vm_address_t aimingData = Read<mach_vm_address_t>(aimController + 0x90, so2_task);
     if (!aimingData || aimingData < 0x1000000) return;
 
-    // Позиция камеры из VP-матрицы (Cramer): VP * [cx,cy,cz,1] = [0,0,z,0]
-    float a11=viewMatrix.m11, a12=viewMatrix.m21, a13=viewMatrix.m31, b1=-viewMatrix.m41;
-    float a21=viewMatrix.m12, a22=viewMatrix.m22, a23=viewMatrix.m32, b2=-viewMatrix.m42;
-    float a31=viewMatrix.m14, a32=viewMatrix.m24, a33=viewMatrix.m34, b3=-viewMatrix.m44;
-    float det = a11*(a22*a33 - a23*a32) - a12*(a21*a33 - a23*a31) + a13*(a21*a32 - a22*a31);
-    Vector3 cameraPos = {0,0,0};
-    if (fabsf(det) > 0.0001f) {
-        float invDet = 1.0f / det;
-        cameraPos.x = (b1*(a22*a33 - a23*a32) - a12*(b2*a33 - a23*b3) + a13*(b2*a32 - a22*b3)) * invDet;
-        cameraPos.y = (a11*(b2*a33 - a23*b3) - b1*(a21*a33 - a23*a31) + a13*(a21*b3 - b2*a31)) * invDet;
-        cameraPos.z = (a11*(a22*b3 - b2*a32) - a12*(a21*b3 - b2*a31) + b1*(a21*a32 - a22*a31)) * invDet;
-    }
-    if (cameraPos.x == 0 && cameraPos.y == 0 && cameraPos.z == 0) {
-        mach_vm_address_t mv = Read<mach_vm_address_t>(localPlayer + 0x98, so2_task);
-        if (mv > 0x1000000) {
-            mach_vm_address_t md = Read<mach_vm_address_t>(mv + 0xB0, so2_task);
-            if (md > 0x1000000) {
-                cameraPos = Read<Vector3>(md + 0x44, so2_task);
-                cameraPos.y += 1.55f;
-            }
-        }
-    }
-
+    // Позиция камеры: экранный центр → degPerPt из VP матрицы
     float currentPitch = Read<float>(aimingData + 0x18, so2_task);
     float currentYaw   = Read<float>(aimingData + 0x1C, so2_task);
 
-    float dirX = closestBonePos.x - cameraPos.x;
-    float dirY = closestBonePos.y - cameraPos.y;
-    float dirZ = closestBonePos.z - cameraPos.z;
-    float distH = sqrtf(dirX*dirX + dirZ*dirZ);
-    float dist  = sqrtf(dirX*dirX + dirY*dirY + dirZ*dirZ);
-    if (dist < 0.0001f) return;
+    // Целевая точка уже спроецирована на экран (WorldToScreen работает точно)
+    Vector3 targetScreen = WorldToScreen(closestBonePos, viewMatrix, (int)w, (int)h);
+    if (targetScreen.z <= 0) return;
 
-    float targetPitch = -atan2f(dirY, distH) * (180.0f / (float)M_PI);
-    float targetYaw   =  atan2f(dirX, dirZ)  * (180.0f / (float)M_PI);
+    float cx = w / 2.0f, cy = h / 2.0f;
+    float pixDx = targetScreen.x - cx;
+    float pixDy = targetScreen.y - cy;
+
+    // FOV из VP матрицы: fY = длина Y-столбца = cot(vFOV/2)
+    float fY = sqrtf(viewMatrix.m12*viewMatrix.m12 + viewMatrix.m22*viewMatrix.m22 + viewMatrix.m32*viewMatrix.m32);
+    float fX = sqrtf(viewMatrix.m11*viewMatrix.m11 + viewMatrix.m21*viewMatrix.m21 + viewMatrix.m31*viewMatrix.m31);
+    if (fY < 0.001f || fX < 0.001f) return;
+
+    // Пиксели → угол через atan2 (точно даже на краях экрана)
+    float dPitchDeg = atan2f(pixDy, cy * fY) * (180.0f / (float)M_PI);
+    float dYawDeg   = atan2f(pixDx, cx * fX) * (180.0f / (float)M_PI);
+
+    float targetPitch = currentPitch + dPitchDeg;
+    float targetYaw   = currentYaw   + dYawDeg;
 
     float pitchDelta = targetPitch - currentPitch;
     float yawDelta   = targetYaw - currentYaw;
