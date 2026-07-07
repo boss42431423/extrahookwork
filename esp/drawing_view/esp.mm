@@ -1274,6 +1274,12 @@ struct UnityString32 { uint16_t chars[32]; };
                             }
                         }
 
+                        // Приседание
+                        bool isCrouching = false;
+                        if (moveData > 0x1000000) {
+                            isCrouching = Read<bool>(moveData + 0xB0, so2_task);
+                        }
+
                         float yawRad = enemyYaw * (float)M_PI / 180.0f;
                         float pitchRad = enemyPitch * (float)M_PI / 180.0f;
                         float rX = cosf(yawRad);
@@ -1281,16 +1287,17 @@ struct UnityString32 { uint16_t chars[32]; };
                         float fwX = sinf(yawRad);
                         float fwZ = cosf(yawRad);
 
-                        float pH = 1.67f;
+                        float pH = isCrouching ? 1.10f : 1.67f;
 
                         float headFwd = sinf(pitchRad) * 0.12f;
                         float headDip = (1.0f - cosf(pitchRad)) * 0.08f;
 
-                        Vector3 bHead  = {pos.x + fwX*headFwd, pos.y + pH - headDip, pos.z + fwZ*headFwd};
-                        Vector3 bNeck  = {pos.x + fwX*headFwd*0.5f, pos.y + pH*0.90f - headDip*0.5f, pos.z + fwZ*headFwd*0.5f};
-                        Vector3 bChest = {pos.x, pos.y + pH*0.78f, pos.z};
-                        Vector3 bSpine = {pos.x, pos.y + pH*0.64f, pos.z};
-                        Vector3 bHip   = {pos.x, pos.y + pH*0.53f, pos.z};
+                        float pTop = pos.y + pH * 0.88f;
+                        Vector3 bHead  = {pos.x + fwX*headFwd, pTop - headDip, pos.z + fwZ*headFwd};
+                        Vector3 bNeck  = {pos.x + fwX*headFwd*0.5f, pTop - pH*0.08f - headDip*0.5f, pos.z + fwZ*headFwd*0.5f};
+                        Vector3 bChest = {pos.x, pos.y + pH*0.68f, pos.z};
+                        Vector3 bSpine = {pos.x, pos.y + pH*0.55f, pos.z};
+                        Vector3 bHip   = {pos.x, pos.y + pH*0.45f, pos.z};
 
                         float sw2 = 0.24f, hw2 = 0.13f;
                         Vector3 bLS = {bChest.x + rX*sw2, bChest.y + 0.05f, bChest.z + rZ*sw2};
@@ -1301,8 +1308,8 @@ struct UnityString32 { uint16_t chars[32]; };
                         Vector3 bRH = {bRE.x - rX*0.03f, bRE.y - pH*0.16f, bRE.z - rZ*0.03f};
                         Vector3 bLHip = {bHip.x + rX*hw2, bHip.y, bHip.z + rZ*hw2};
                         Vector3 bRHip = {bHip.x - rX*hw2, bHip.y, bHip.z - rZ*hw2};
-                        Vector3 bLK = {bLHip.x, pos.y + pH*0.27f, bLHip.z};
-                        Vector3 bRK = {bRHip.x, pos.y + pH*0.27f, bRHip.z};
+                        Vector3 bLK = {bLHip.x, pos.y + pH*0.22f, bLHip.z};
+                        Vector3 bRK = {bRHip.x, pos.y + pH*0.22f, bRHip.z};
                         Vector3 bLF = {bLK.x, pos.y, bLK.z};
                         Vector3 bRF = {bRK.x, pos.y, bRK.z};
 
@@ -1450,9 +1457,9 @@ static Vector3 GetBonePosition(mach_vm_address_t player, int boneIdx, task_t tas
         mach_vm_address_t md = Read<mach_vm_address_t>(mc + 0xB0, task);
         if (md > 0x1000000) {
             Vector3 pos = Read<Vector3>(md + 0x44, task);
-            if (boneIdx == 0) pos.y += 1.60f;
-            else if (boneIdx == 1) pos.y += 1.50f;
-            else pos.y += 1.07f;
+            if (boneIdx == 0) pos.y += 1.47f;
+            else if (boneIdx == 1) pos.y += 1.37f;
+            else pos.y += 0.92f;
             return pos;
         }
     }

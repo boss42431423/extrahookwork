@@ -812,7 +812,7 @@ extern volatile bool esp_hitbox_enabled;
     _fovValueLabel.text = [NSString stringWithFormat:@"%.0f", aimbot_fov];
     [_innerContent addSubview:_fovValueLabel];
 
-    _fovSlider = [[CustomSliderView alloc] initWithFrame:CGRectMake(15, y, w - 30, 30) min:10.0f max:180.0f current:aimbot_fov];
+    _fovSlider = [[CustomSliderView alloc] initWithFrame:CGRectMake(15, y, w - 30, 30) min:10.0f max:360.0f current:aimbot_fov];
     __weak MenuView *weakSelf = self;
     _fovSlider.valueChanged = ^(float newValue) {
         __strong MenuView *strongSelf = weakSelf;
