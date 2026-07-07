@@ -1328,32 +1328,19 @@ struct UnityString32 { uint16_t chars[32]; };
                         if (esp_hitbox_enabled) {
                             struct OBBDef { Vector3 center; float hw; float hh; float hd; };
                             OBBDef obbs[] = {
-                                // head (capsule approximated as box)
-                                {bHead, 0.10f, 0.10f, 0.10f},
-                                // neck
-                                {bNeck, 0.06f, 0.05f, 0.06f},
-                                // chest
-                                {{pos.x, pos.y + 1.30f*cf, pos.z}, 0.18f, 0.15f*cf, 0.10f},
-                                // spine/stomach
-                                {{pos.x, pos.y + 1.05f*cf, pos.z}, 0.16f, 0.12f*cf, 0.09f},
-                                // pelvis
-                                {bHip, 0.14f, 0.08f*cf, 0.09f},
-                                // left upper arm
-                                {{bLS.x + rX*0.02f, (bLS.y + bLE.y)*0.5f, bLS.z + rZ*0.02f}, 0.05f, 0.14f*cf, 0.05f},
-                                // right upper arm
-                                {{bRS.x - rX*0.02f, (bRS.y + bRE.y)*0.5f, bRS.z - rZ*0.02f}, 0.05f, 0.14f*cf, 0.05f},
-                                // left forearm
-                                {{bLE.x + rX*0.015f, (bLE.y + bLH.y)*0.5f, bLE.z + rZ*0.015f}, 0.04f, 0.14f*cf, 0.04f},
-                                // right forearm
-                                {{bRE.x - rX*0.015f, (bRE.y + bRH.y)*0.5f, bRE.z - rZ*0.015f}, 0.04f, 0.14f*cf, 0.04f},
-                                // left thigh
-                                {{bLHip.x, (bLHip.y + bLK.y)*0.5f, bLHip.z}, 0.06f, 0.22f, 0.06f},
-                                // right thigh
-                                {{bRHip.x, (bRHip.y + bRK.y)*0.5f, bRHip.z}, 0.06f, 0.22f, 0.06f},
-                                // left shin
-                                {{bLK.x, (bLK.y + bLF.y)*0.5f, bLK.z}, 0.05f, 0.22f, 0.05f},
-                                // right shin
-                                {{bRK.x, (bRK.y + bRF.y)*0.5f, bRK.z}, 0.05f, 0.22f, 0.05f},
+                                {bHead, 0.14f, 0.14f, 0.14f},
+                                {bNeck, 0.10f, 0.07f, 0.10f},
+                                {{pos.x, pos.y + 1.30f*cf, pos.z}, 0.28f, 0.22f*cf, 0.18f},
+                                {{pos.x, pos.y + 1.05f*cf, pos.z}, 0.25f, 0.18f*cf, 0.16f},
+                                {bHip, 0.22f, 0.12f*cf, 0.16f},
+                                {{bLS.x + rX*0.02f, (bLS.y + bLE.y)*0.5f, bLS.z + rZ*0.02f}, 0.08f, 0.16f*cf, 0.08f},
+                                {{bRS.x - rX*0.02f, (bRS.y + bRE.y)*0.5f, bRS.z - rZ*0.02f}, 0.08f, 0.16f*cf, 0.08f},
+                                {{bLE.x + rX*0.015f, (bLE.y + bLH.y)*0.5f, bLE.z + rZ*0.015f}, 0.06f, 0.16f*cf, 0.06f},
+                                {{bRE.x - rX*0.015f, (bRE.y + bRH.y)*0.5f, bRE.z - rZ*0.015f}, 0.06f, 0.16f*cf, 0.06f},
+                                {{bLHip.x, (bLHip.y + bLK.y)*0.5f, bLHip.z}, 0.09f, 0.24f, 0.09f},
+                                {{bRHip.x, (bRHip.y + bRK.y)*0.5f, bRHip.z}, 0.09f, 0.24f, 0.09f},
+                                {{bLK.x, (bLK.y + bLF.y)*0.5f, bLK.z}, 0.07f, 0.24f, 0.07f},
+                                {{bRK.x, (bRK.y + bRF.y)*0.5f, bRK.z}, 0.07f, 0.24f, 0.07f},
                             };
                             int numObbs = 13;
                             for (int oi = 0; oi < numObbs; oi++) {
