@@ -1,14 +1,25 @@
 #import "unity.h"
 
-struct c_matrix_new {
-    float m[4][4];
-};
+static bool is_valid_pos(Vector3 v) {
+    // Игровые координаты Standoff 2 в пределах ±5000
+    if (v.x != v.x || v.y != v.y || v.z != v.z) return false; // NaN
+    float ax = v.x < 0 ? -v.x : v.x;
+    float ay = v.y < 0 ? -v.y : v.y;
+    float az = v.z < 0 ? -v.z : v.z;
+    return ax < 5000.0f && ay < 5000.0f && az < 5000.0f &&
+           (ax > 0.001f || ay > 0.001f || az > 0.001f);
+}
 
-struct TMatrix48 {
-    Vector4 position;
-    Vector4 rotation;
-    Vector4 scale;
-};
+static bool is_valid_quat(Vector4 q) {
+    float len2 = q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w;
+    return len2 > 0.5f && len2 < 2.0f; // |q| ≈ 1
+}
+
+static bool is_valid_scale(Vector3 s) {
+    return s.x > 0.001f && s.x < 100.0f &&
+           s.y > 0.001f && s.y < 100.0f &&
+           s.z > 0.001f && s.z < 100.0f;
+}
 
 static Vector3 walk_hierarchy(mach_vm_address_t matrix_list, mach_vm_address_t matrix_indices,
                               Vector3 result, int transformIndex, size_t eSize,
@@ -19,6 +30,8 @@ static Vector3 walk_hierarchy(mach_vm_address_t matrix_list, mach_vm_address_t m
         Vector4 rot = Read<Vector4>(base + rotOff, task);
         Vector3 pos = Read<Vector3>(base + posOff, task);
         Vector3 sc  = Read<Vector3>(base + scaleOff, task);
+
+        if (!is_valid_quat(rot) || !is_valid_scale(sc)) return Vector3{0,0,0};
 
         float rX = rot.x, rY = rot.y, rZ = rot.z, rW = rot.w;
         float sX = result.x * sc.x;
@@ -40,18 +53,19 @@ static Vector3 walk_hierarchy(mach_vm_address_t matrix_list, mach_vm_address_t m
 
         transformIndex = Read<int>(matrix_indices + sizeof(int) * (size_t)transformIndex, task);
     }
-    return result;
+    return is_valid_pos(result) ? result : Vector3{0,0,0};
 }
 
 static Vector3 try_get_position(mach_vm_address_t transObj, int matOff, int idxOff, task_t task) {
     mach_vm_address_t matrix = Read<mach_vm_address_t>(transObj + matOff, task);
-    if (!matrix) return Vector3{0,0,0};
+    if (!matrix || matrix < 0x1000000) return Vector3{0,0,0};
 
     mach_vm_address_t matrix_list = Read<mach_vm_address_t>(matrix + 0x18, task);
     mach_vm_address_t matrix_indices = Read<mach_vm_address_t>(matrix + 0x20, task);
     if (!matrix_list || !matrix_indices) return Vector3{0,0,0};
 
     int index = Read<int>(transObj + idxOff, task);
+    if (index < 0 || index > 65536) return Vector3{0,0,0};
 
     // Layout A: 40 bytes — rotation(16) + position(12) + scale(12)
     {
@@ -59,10 +73,10 @@ static Vector3 try_get_position(mach_vm_address_t transObj, int matOff, int idxO
         int rotOff = 0, posOff = 16, scaleOff = 28;
         Vector3 result = Read<Vector3>(matrix_list + eSize * (size_t)index + posOff, task);
         int ti = Read<int>(matrix_indices + sizeof(int) * (size_t)index, task);
-        if (ti < 0 && (result.x != 0 || result.y != 0 || result.z != 0)) return result;
-        if (ti >= 0) {
+        if (ti < 0 && is_valid_pos(result)) return result;
+        if (ti >= 0 && ti < 65536) {
             Vector3 r = walk_hierarchy(matrix_list, matrix_indices, result, ti, eSize, rotOff, posOff, scaleOff, task);
-            if (r.x != 0 || r.y != 0 || r.z != 0) return r;
+            if (is_valid_pos(r)) return r;
         }
     }
 
@@ -72,10 +86,10 @@ static Vector3 try_get_position(mach_vm_address_t transObj, int matOff, int idxO
         int posOff = 0, rotOff = 16, scaleOff = 32;
         Vector3 result = Read<Vector3>(matrix_list + eSize * (size_t)index + posOff, task);
         int ti = Read<int>(matrix_indices + sizeof(int) * (size_t)index, task);
-        if (ti < 0 && (result.x != 0 || result.y != 0 || result.z != 0)) return result;
-        if (ti >= 0) {
+        if (ti < 0 && is_valid_pos(result)) return result;
+        if (ti >= 0 && ti < 65536) {
             Vector3 r = walk_hierarchy(matrix_list, matrix_indices, result, ti, eSize, rotOff, posOff, scaleOff, task);
-            if (r.x != 0 || r.y != 0 || r.z != 0) return r;
+            if (is_valid_pos(r)) return r;
         }
     }
 
@@ -85,26 +99,22 @@ static Vector3 try_get_position(mach_vm_address_t transObj, int matOff, int idxO
 Vector3 get_position_by_transform(mach_vm_address_t mach_transform_ptr, task_t task)
 {
     mach_vm_address_t transObj = Read<mach_vm_address_t>(mach_transform_ptr + 0x10, task);
-    if (!transObj) return Vector3{0,0,0};
+    if (!transObj || transObj < 0x1000000) return Vector3{0,0,0};
 
-    // Unity 2020/2021: matrix at +0x38, index at +0x40
     Vector3 r = try_get_position(transObj, 0x38, 0x40, task);
-    if (r.x != 0 || r.y != 0 || r.z != 0) return r;
+    if (is_valid_pos(r)) return r;
 
-    // Unity 2022+: matrix at +0x40, index at +0x48
     r = try_get_position(transObj, 0x40, 0x48, task);
-    if (r.x != 0 || r.y != 0 || r.z != 0) return r;
+    if (is_valid_pos(r)) return r;
 
-    // Unity alt: matrix at +0x30, index at +0x38
     r = try_get_position(transObj, 0x30, 0x38, task);
-    if (r.x != 0 || r.y != 0 || r.z != 0) return r;
+    if (is_valid_pos(r)) return r;
 
     return Vector3{0,0,0};
 }
 
 Vector3 WorldToScreen(Vector3 object, SO2_Matrix mat, CGFloat ScreenWidth, CGFloat ScreenHeight)
 {
-
     float screenX = (mat.m11 * object.x) + (mat.m21 * object.y) + (mat.m31 * object.z) + mat.m41;
     float screenY = (mat.m12 * object.x) + (mat.m22 * object.y) + (mat.m32 * object.z) + mat.m42;
     float screenW = (mat.m14 * object.x) + (mat.m24 * object.y) + (mat.m34 * object.z) + mat.m44;

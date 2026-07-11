@@ -1,5 +1,9 @@
 #import "esp.h"
 #import "tt.h"
+
+// Forward declarations
+static mach_vm_address_t GetBipedMap(mach_vm_address_t player, task_t task);
+static Vector3 ReadBonePos(mach_vm_address_t bipedMap, int offset, task_t task);
 #import <UIKit/UIGestureRecognizerSubclass.h>
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
@@ -1476,8 +1480,18 @@ static Vector3 GetBonePosition(mach_vm_address_t player, int boneIdx, task_t tas
         mach_vm_address_t md = Read<mach_vm_address_t>(mc + 0xB0, task);
         if (md > 0x1000000) {
             Vector3 pos = Read<Vector3>(md + 0x44, task);
-            if (boneIdx == 0) pos.y += 1.59f;
-            else if (boneIdx == 1) pos.y += 1.45f;
+            if (boneIdx == 0) {
+                pos.y += 1.59f;
+                mach_vm_address_t eAim = Read<mach_vm_address_t>(player + 0x80, task);
+                if (eAim > 0x1000000) {
+                    mach_vm_address_t eAimData = Read<mach_vm_address_t>(eAim + 0x90, task);
+                    if (eAimData > 0x1000000) {
+                        float yr = Read<float>(eAimData + 0x1C, task) * (float)M_PI / 180.0f;
+                        pos.x += sinf(yr) * 0.10f;
+                        pos.z += cosf(yr) * 0.10f;
+                    }
+                }
+            } else if (boneIdx == 1) pos.y += 1.45f;
             else pos.y += 1.03f;
             return pos;
         }
