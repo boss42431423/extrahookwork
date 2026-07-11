@@ -555,7 +555,7 @@ struct ESPBoxData {
                 if (wc > 0x1000000) {
                     mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                     if (ctrl > 0x1000000) {
-                        // v0.39.1: AmmoInMagazine=+0xA0, AmmoReserve=+0xA4 (plain int)
+                        // v0.39.2: AmmoInMagazine=+0xA0, AmmoReserve=+0xA4 (plain int)
                         Write<int32_t>(ctrl + 0xA0, 999, so2_task);
                         Write<int32_t>(ctrl + 0xA4, 999, so2_task);
                     }
@@ -595,7 +595,7 @@ struct ESPBoxData {
                 if (wc > 0x1000000) {
                     mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                     if (ctrl > 0x1000000) {
-                        // v0.39.1: detect melee via SlotIndex byte at WeaponController+0x94 (slot 2 = melee)
+                        // v0.39.2: detect melee via SlotIndex byte at WeaponController+0x94 (slot 2 = melee)
                         uint8_t weaponSlot = Read<uint8_t>(ctrl + 0x94, so2_task);
                         if (weaponSlot == 2) {
                             mach_vm_address_t knifeParams = Read<mach_vm_address_t>(ctrl + 0x18, so2_task);
@@ -660,7 +660,7 @@ struct ESPBoxData {
                 if (wc > 0x1000000) {
                     mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                     if (ctrl > 0x1000000) {
-                        // v0.39.1: FireRate field at +0x80 (float)
+                        // v0.39.2: FireRate field at +0x80 (float)
                         Write<float>(ctrl + 0x80, 0.001f, so2_task);
                     }
                 }
@@ -1119,7 +1119,7 @@ struct UnityString32 { uint16_t chars[32]; };
                         if (wc > 0x1000000) {
                             mach_vm_address_t ctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
                             if (ctrl > 0x1000000) {
-                                // v0.39.1: weapon name is a direct string field at WeaponController+0x98
+                                // v0.39.2: weapon name is a direct string field at WeaponController+0x98
                                 mach_vm_address_t namePtr = Read<mach_vm_address_t>(ctrl + 0x98, so2_task);
                                 if (namePtr > 0x1000000) {
                                     int nameLen = Read<int>(namePtr + 0x10, so2_task);
@@ -1680,7 +1680,7 @@ static BOOL IsPlayerVisible(mach_vm_address_t player, task_t task) {
         if (wc > 0x1000000) {
             mach_vm_address_t wctrl = Read<mach_vm_address_t>(wc + 0xA0, so2_task);
             if (wctrl > 0x1000000) {
-                // v0.39.1: detect melee via SlotIndex byte at WeaponController+0x94 (slot 2 = melee)
+                // v0.39.2: detect melee via SlotIndex byte at WeaponController+0x94 (slot 2 = melee)
                 uint8_t wid = Read<uint8_t>(wctrl + 0x94, so2_task);
                 if (wid == 2) {
                     self.aimbotCurrentTarget = 0;
