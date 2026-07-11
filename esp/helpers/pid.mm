@@ -297,8 +297,8 @@ static uint64_t _scan_range(task_t task, mach_vm_address_t base, uint64_t start,
 
 uint64_t find_pm_typeinfo_offset(task_t task, mach_vm_address_t unity_base) {
     const uint64_t CHUNK = 256 * 1024;
-    const uint64_t HINT = 60050320ULL; // PM_TypeInfo from script.json v0.39.2
-    const uint64_t NEAR = 20ULL * 1024 * 1024; // ±20MB around hint
+    const uint64_t HINT = 178356728ULL; // PM_TypeInfo offset (0.39.1 base, full scan covers 0.39.2)
+    const uint64_t NEAR = 80ULL * 1024 * 1024; // ±80MB around hint
 
     s_scan_phase = 1;
     s_scan_progress = 0;
