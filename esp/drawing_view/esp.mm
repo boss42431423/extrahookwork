@@ -501,6 +501,9 @@ struct ESPBoxData {
         }
 
         // typeInfo → parent(+0x58) → staticFields(+0xB8) → PM(+0x0)
+        // Стрипаем PAC-биты (iOS ARM64e) со всех читаемых указателей
+        #define STRIP_PAC(p) ((p) & 0x0000FFFFFFFFFFFFULL)
+
         typeInfo = (mach_vm_address_t)get_found_class();
         if (!typeInfo || typeInfo < 0x1000000) {
             self.watermarkLabel.text = @"[SO2] ERR: no typeInfo";
@@ -508,45 +511,62 @@ struct ESPBoxData {
             goto CLEAR_BOXES;
         }
 
-        parentTypeInfo = Read<mach_vm_address_t>(typeInfo + 0x58, so2_task);
-        if (parentTypeInfo > 0x1000000) {
-            staticFields = Read<mach_vm_address_t>(parentTypeInfo + 0xB8, so2_task);
+        // Ходим по цепочке родителей ищем staticFields с данными
+        {
+            mach_vm_address_t walk = typeInfo;
+            for (int depth = 0; depth < 6 && !staticFields; depth++) {
+                mach_vm_address_t par = STRIP_PAC(Read<mach_vm_address_t>(walk + 0x58, so2_task));
+                if (!par || par < 0x1000000) break;
+                mach_vm_address_t sf = STRIP_PAC(Read<mach_vm_address_t>(par + 0xB8, so2_task));
+                if (sf > 0x1000000) {
+                    parentTypeInfo = par;
+                    staticFields   = sf;
+                    break;
+                }
+                // Пробуем +0xB0 (на случай другого лейаута)
+                sf = STRIP_PAC(Read<mach_vm_address_t>(par + 0xB0, so2_task));
+                if (sf > 0x1000000) {
+                    parentTypeInfo = par;
+                    staticFields   = sf;
+                    break;
+                }
+                walk = par;
+            }
+        }
+        // Фолбек: typeInfo собственные static_fields
+        if (!staticFields) {
+            staticFields = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0xB8, so2_task));
             if (!staticFields || staticFields < 0x1000000)
-                staticFields = Read<mach_vm_address_t>(parentTypeInfo + 0xB0, so2_task);
+                staticFields = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0xB0, so2_task));
         }
         if (!staticFields || staticFields < 0x1000000) {
-            staticFields = Read<mach_vm_address_t>(typeInfo + 0xB8, so2_task);
-            if (!staticFields || staticFields < 0x1000000)
-                staticFields = Read<mach_vm_address_t>(typeInfo + 0xB0, so2_task);
-        }
-        if (!staticFields || staticFields < 0x1000000) {
-            self.watermarkLabel.text = [NSString stringWithFormat:@"[SO2] ERR: no staticFields (ti=%llx par=%llx)", typeInfo, parentTypeInfo];
+            self.watermarkLabel.text = [NSString stringWithFormat:@"[SO2] ERR: no SF ti=%llx par=%llx", typeInfo, parentTypeInfo];
             [self.watermarkLabel sizeToFit];
             goto CLEAR_BOXES;
         }
 
-        // Проход 1: проверка по dict (PM+0x28 — словарь игроков)
+        // Проход 1: dict (PM+0x28) → валидный указатель
         playerManager = 0;
         for (int pmOff = 0; pmOff <= 0x80; pmOff += 8) {
-            mach_vm_address_t pmCandidate = Read<mach_vm_address_t>(staticFields + pmOff, so2_task);
+            mach_vm_address_t pmCandidate = STRIP_PAC(Read<mach_vm_address_t>(staticFields + pmOff, so2_task));
             if (pmCandidate < 0x1000000) continue;
-            mach_vm_address_t dictCheck = Read<mach_vm_address_t>(pmCandidate + 0x28, so2_task);
+            mach_vm_address_t dictCheck = STRIP_PAC(Read<mach_vm_address_t>(pmCandidate + 0x28, so2_task));
             if (dictCheck > 0x1000000) { playerManager = pmCandidate; break; }
         }
-        // Проход 2: проверка по klass == typeInfo (работает даже если dict ещё null)
+        // Проход 2: klass == typeInfo (dict может быть null при старте)
         if (!playerManager) {
             for (int pmOff = 0; pmOff <= 0x80; pmOff += 8) {
-                mach_vm_address_t pmCandidate = Read<mach_vm_address_t>(staticFields + pmOff, so2_task);
+                mach_vm_address_t pmCandidate = STRIP_PAC(Read<mach_vm_address_t>(staticFields + pmOff, so2_task));
                 if (pmCandidate < 0x1000000) continue;
-                mach_vm_address_t klassCheck = Read<mach_vm_address_t>(pmCandidate, so2_task);
+                mach_vm_address_t klassCheck = STRIP_PAC(Read<mach_vm_address_t>(pmCandidate, so2_task));
                 if (klassCheck == typeInfo) { playerManager = pmCandidate; break; }
             }
         }
         if (!playerManager) {
-            mach_vm_address_t v0 = Read<mach_vm_address_t>(staticFields, so2_task);
-            mach_vm_address_t v8 = Read<mach_vm_address_t>(staticFields + 8, so2_task);
+            mach_vm_address_t v0 = STRIP_PAC(Read<mach_vm_address_t>(staticFields, so2_task));
+            mach_vm_address_t v8 = STRIP_PAC(Read<mach_vm_address_t>(staticFields + 8, so2_task));
             self.watermarkLabel.text = [NSString stringWithFormat:
-                @"[SO2] no PM sf=%llx v0=%llx v8=%llx ti=%llx", staticFields, v0, v8, typeInfo];
+                @"[SO2] no PM par=%llx sf=%llx v0=%llx v8=%llx", parentTypeInfo, staticFields, v0, v8];
             [self.watermarkLabel sizeToFit];
             goto CLEAR_BOXES;
         }
