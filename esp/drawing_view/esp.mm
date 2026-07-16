@@ -611,14 +611,18 @@ struct ESPBoxData {
         playersDict = dict28;
 
         // dict._count @ +0x20, dict._freeCount @ +0x2C
+        int _dbg_cnt = 0, _dbg_free = 0;
         {
-            int _cnt  = Read<int>(playersDict + 0x20, so2_task);
-            int _free = Read<int>(playersDict + 0x2C, so2_task);
-            playersCount = (_cnt > 0 && _cnt <= 32) ? (_cnt - (_free > 0 ? _free : 0)) : 0;
+            _dbg_cnt  = Read<int>(playersDict + 0x20, so2_task);
+            _dbg_free = Read<int>(playersDict + 0x2C, so2_task);
+            playersCount = (_dbg_cnt > 0 && _dbg_cnt <= 32) ? (_dbg_cnt - (_dbg_free > 0 ? _dbg_free : 0)) : 0;
             if (playersCount < 0 || playersCount > 32) playersCount = 0;
         }
 
-        self.watermarkLabel.text = [NSString stringWithFormat:@"[SO2] PM OK | players: %d", playersCount];
+        // Диагностика: pm=, d= (dict), cnt=, fc= помогает понять где PM объект неверный
+        self.watermarkLabel.text = [NSString stringWithFormat:
+            @"[SO2] pm=%llx d=%llx cnt=%d fc=%d",
+            playerManager, dict28, _dbg_cnt, _dbg_free];
         [self.watermarkLabel sizeToFit];
 
         if (playersCount > 0 && playersCount <= 32) {
