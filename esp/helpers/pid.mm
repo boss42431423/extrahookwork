@@ -232,11 +232,6 @@ static inline uint64_t _pac_strip(uint64_t v) {
     return v & 0x0000FFFFFFFFFFFFULL;
 }
 
-// Принимаем адрес с учётом возможных PAC-битов
-static inline bool _is_valid_ptr(uint64_t v) {
-    return _is_vm_ptr(v) || _is_vm_ptr(_pac_strip(v));
-}
-
 static uint64_t _safe64(task_t task, uint64_t addr) {
     // Принимаем адрес с PAC — стрипаем перед чтением
     uint64_t real = _is_vm_ptr(addr) ? addr : _pac_strip(addr);
