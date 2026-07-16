@@ -62,17 +62,12 @@ static CGRect gMenuWindowRect = CGRectZero;
 
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
 {
-    if (!self.shouldCaptureTouch) return nil;
-
-    // When menu is open: capture only the menu window rect.
-    if (!CGRectIsEmpty(gMenuWindowRect)) {
-        return CGRectContainsPoint(gMenuWindowRect, point) ? self : nil;
+    // Capture only touches inside the actual menu window rect.
+    // Everything else passes through to the game below.
+    if (self.shouldCaptureTouch && CGRectContainsPoint(gMenuWindowRect, point)) {
+        return self;
     }
-
-    // When menu is closed: capture only the EH dot area (top-right corner ~40x40pt).
-    CGFloat w = self.bounds.size.width;
-    CGRect dotRect = CGRectMake(w - 56, 16, 40, 40);
-    return CGRectContainsPoint(dotRect, point) ? self : nil;
+    return nil;
 }
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
@@ -426,11 +421,10 @@ static bool gHUDMenuWasOpen = true;
     static int   chamsMaterialId = 0;       // 0 = solid purple "missing material"
     static bool  stealthEnabled = false;    // hide menu + ESP from screenshots/recording
 
-    // Always capture so the EH dot is tappable when menu is closed too.
-    // hitTest returns self only for gMenuWindowRect (menu) or the dot area (closed).
+    // Capture touches only when menu is open; game gets all touches otherwise.
     TouchableMTKView *touchableView = (TouchableMTKView *)view;
     if ([touchableView isKindOfClass:[TouchableMTKView class]]) {
-        touchableView.shouldCaptureTouch = YES;
+        touchableView.shouldCaptureTouch = MenDeal;
     }
 
     if (MenDeal == true) {
