@@ -253,9 +253,12 @@ struct ESPBoxData {
 
     UILabel *wm = [[UILabel alloc] init];
     wm.text = @"";
-    wm.hidden = YES;
+    wm.hidden = NO;
+    wm.textColor = [UIColor colorWithRed:0.4 green:1.0 blue:0.4 alpha:0.8];
+    wm.font = [UIFont boldSystemFontOfSize:10];
     wm.userInteractionEnabled = NO;
     self.watermarkLabel = wm;
+    [self addSubview:wm];
 
     UILabel *playerCountLabel = [UILabel new];
     playerCountLabel.hidden = YES;
@@ -436,7 +439,17 @@ struct ESPBoxData {
         s_pm_scanned_pid = 0;
     }
 
-    // Фоновый скан — запускаем сразу при новом PID
+    // Прямое чтение TypeInfo по известному offset из дампа (быстрый путь)
+    if (cached_unity_base && cached_so2_task && get_scan_phase() != 2) {
+        const uint64_t PM_TYPEINFO_OFF = 167221856ULL;
+        mach_vm_address_t directTI = Read<mach_vm_address_t>(cached_unity_base + PM_TYPEINFO_OFF, cached_so2_task);
+        if (directTI > 0x1000000) {
+            set_scan_phase(2);
+            set_found_class(directTI);
+        }
+    }
+
+    // Фоновый скан — резервный вариант если прямое чтение не дало результат
     if (cached_unity_base && cached_so2_task && !s_pm_scanning && get_scan_phase() != 2) {
         if (s_pm_scanned_pid != so2_pid || get_scan_phase() == -1) {
             s_pm_scanning    = true;
@@ -475,20 +488,25 @@ struct ESPBoxData {
             cam_off_cache = -1;
         }
 
-        // Ждём результат сканера
+        // Ждём результат сканера / прямого чтения
         if (get_scan_phase() != 2) {
             if (s_pm_scanning) {
                 self.watermarkLabel.text = [NSString stringWithFormat:
-                    @"SCANNING %llu/%llu...", get_scan_progress(), get_scan_total()];
+                    @"[SO2] SCAN %llu/%llu...", get_scan_progress(), get_scan_total()];
             } else {
-                self.watermarkLabel.text = @"Waiting...";
+                self.watermarkLabel.text = @"[SO2] Waiting PM...";
             }
+            [self.watermarkLabel sizeToFit];
             goto CLEAR_BOXES;
         }
 
-        // Как в старой рабочей версии: typeInfo → parent(+0x58) → staticFields(+0xB8/+0xB0) → PM(+0x0)
+        // typeInfo → parent(+0x58) → staticFields(+0xB8) → PM(+0x0)
         typeInfo = (mach_vm_address_t)get_found_class();
-        if (!typeInfo || typeInfo < 0x1000000) goto CLEAR_BOXES;
+        if (!typeInfo || typeInfo < 0x1000000) {
+            self.watermarkLabel.text = @"[SO2] ERR: no typeInfo";
+            [self.watermarkLabel sizeToFit];
+            goto CLEAR_BOXES;
+        }
 
         parentTypeInfo = Read<mach_vm_address_t>(typeInfo + 0x58, so2_task);
         if (parentTypeInfo > 0x1000000) {
@@ -501,10 +519,18 @@ struct ESPBoxData {
             if (!staticFields || staticFields < 0x1000000)
                 staticFields = Read<mach_vm_address_t>(typeInfo + 0xB0, so2_task);
         }
-        if (!staticFields || staticFields < 0x1000000) goto CLEAR_BOXES;
+        if (!staticFields || staticFields < 0x1000000) {
+            self.watermarkLabel.text = [NSString stringWithFormat:@"[SO2] ERR: no staticFields (ti=%llx par=%llx)", typeInfo, parentTypeInfo];
+            [self.watermarkLabel sizeToFit];
+            goto CLEAR_BOXES;
+        }
 
         playerManager = Read<mach_vm_address_t>(staticFields + 0x0, so2_task);
-        if (!playerManager || playerManager < 0x1000000) goto CLEAR_BOXES;
+        if (!playerManager || playerManager < 0x1000000) {
+            self.watermarkLabel.text = [NSString stringWithFormat:@"[SO2] ERR: no PM (sf=%llx)", staticFields];
+            [self.watermarkLabel sizeToFit];
+            goto CLEAR_BOXES;
+        }
 
         dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
         playersDict = dict28;
@@ -516,6 +542,9 @@ struct ESPBoxData {
         if      (c20 > 0 && c20 <= 32) playersCount = c20;
         else if (c40 > 0 && c40 <= 32) playersCount = c40;
         else if (c18 > 0 && c18 <= 32) playersCount = c18;
+
+        self.watermarkLabel.text = [NSString stringWithFormat:@"[SO2] PM OK | players: %d", playersCount];
+        [self.watermarkLabel sizeToFit];
 
         if (playersCount > 0 && playersCount <= 32) {
             mach_vm_address_t localPlayer = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
