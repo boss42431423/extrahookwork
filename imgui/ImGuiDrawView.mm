@@ -62,14 +62,17 @@ static CGRect gMenuWindowRect = CGRectZero;
 
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
 {
-    
-    // Only capture touches that land on the actual menu window. Everything else
-    // passes through (return nil) so taps reach whatever is behind the menu.
-    if (self.shouldCaptureTouch && CGRectContainsPoint(gMenuWindowRect, point)) {
-        return self;
+    if (!self.shouldCaptureTouch) return nil;
+
+    // When menu is open: capture only the menu window rect.
+    if (!CGRectIsEmpty(gMenuWindowRect)) {
+        return CGRectContainsPoint(gMenuWindowRect, point) ? self : nil;
     }
 
-    return nil;
+    // When menu is closed: capture only the EH dot area (top-right corner ~40x40pt).
+    CGFloat w = self.bounds.size.width;
+    CGRect dotRect = CGRectMake(w - 56, 16, 40, 40);
+    return CGRectContainsPoint(dotRect, point) ? self : nil;
 }
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
@@ -423,10 +426,11 @@ static bool gHUDMenuWasOpen = true;
     static int   chamsMaterialId = 0;       // 0 = solid purple "missing material"
     static bool  stealthEnabled = false;    // hide menu + ESP from screenshots/recording
 
-    // Update touch capture based on menu visibility
+    // Always capture so the EH dot is tappable when menu is closed too.
+    // hitTest returns self only for gMenuWindowRect (menu) or the dot area (closed).
     TouchableMTKView *touchableView = (TouchableMTKView *)view;
     if ([touchableView isKindOfClass:[TouchableMTKView class]]) {
-        touchableView.shouldCaptureTouch = MenDeal;
+        touchableView.shouldCaptureTouch = YES;
     }
 
     if (MenDeal == true) {
@@ -455,43 +459,49 @@ static bool gHUDMenuWasOpen = true;
     
     if (MenDeal == true)
     {
-        // GameSense-style: no title bar, sidebar + content
-        ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar |
-                                 ImGuiWindowFlags_NoCollapse  |
+        // GameSense-style: title bar kept (drag + close button), sidebar + content
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse  |
                                  ImGuiWindowFlags_NoResize    |
                                  ImGuiWindowFlags_NoSavedSettings;
-        const float WIN_W = 580.0f, WIN_H = 400.0f;
+        // Fit inside portrait phone screen (~390pt wide), leave margin
+        const float WIN_W = ImMin(390.0f, io.DisplaySize.x - 20.0f);
+        const float WIN_H = ImMin(420.0f, io.DisplaySize.y - 60.0f);
         ImGui::SetNextWindowSize(ImVec2(WIN_W, WIN_H), ImGuiCond_Always);
         ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
                                 ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+        // Style the title bar: dark + pink accent colour
+        ImGui::PushStyleColor(ImGuiCol_TitleBg,       ImVec4(0.07f,0.07f,0.08f,1.0f));
+        ImGui::PushStyleColor(ImGuiCol_TitleBgActive,  ImVec4(0.10f,0.07f,0.11f,1.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::Begin("##eh_main", &MenDeal, flags);
+        // &MenDeal shows the X close button automatically
+        ImGui::Begin("ExtraHook", &MenDeal, flags);
         ImGui::PopStyleVar();
+        ImGui::PopStyleColor(2);
 
         ImDrawList *dl = ImGui::GetWindowDrawList();
         ImVec2 winPos  = ImGui::GetWindowPos();
         ImVec2 winSize = ImGui::GetWindowSize();
 
-        // ── Top accent line (2px pink) ────────────────────────────────────
-        dl->AddRectFilled(winPos,
-                          ImVec2(winPos.x + winSize.x, winPos.y + 2),
+        // ── Pink accent line below title bar ──────────────────────────────
+        float titleH = ImGui::GetFrameHeight() + 2.0f;  // approximate title bar height
+        dl->AddRectFilled(ImVec2(winPos.x, winPos.y + titleH - 1),
+                          ImVec2(winPos.x + winSize.x, winPos.y + titleH + 1),
                           IM_COL32(200, 46, 214, 255));
 
-        // ── Left sidebar (55px) ───────────────────────────────────────────
+        // ── Left sidebar (50px) ───────────────────────────────────────────
         static int activeSection = 0;
-        const float SIDEBAR_W = 55.0f;
-        const float CONTENT_TOP = 2.0f;  // below accent line
+        const float SIDEBAR_W = 50.0f;
 
-        // Sidebar background slightly darker
-        dl->AddRectFilled(ImVec2(winPos.x, winPos.y + CONTENT_TOP),
+        // Sidebar background and border (drawn over client area starting at y=0)
+        ImVec2 clientMin = ImVec2(winPos.x, winPos.y + titleH + 1);
+        dl->AddRectFilled(clientMin,
                           ImVec2(winPos.x + SIDEBAR_W, winPos.y + winSize.y),
-                          IM_COL32(12, 12, 14, 255));
-        // Sidebar right border
-        dl->AddRectFilled(ImVec2(winPos.x + SIDEBAR_W, winPos.y + CONTENT_TOP),
+                          IM_COL32(10, 10, 12, 255));
+        dl->AddRectFilled(ImVec2(winPos.x + SIDEBAR_W, winPos.y + titleH + 1),
                           ImVec2(winPos.x + SIDEBAR_W + 1, winPos.y + winSize.y),
                           IM_COL32(22, 22, 26, 255));
 
-        ImGui::SetCursorPos(ImVec2(0, CONTENT_TOP));
+        ImGui::SetCursorPos(ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
 
         ImGui::BeginChild("##sidebar", ImVec2(SIDEBAR_W, -1), false,
@@ -530,7 +540,7 @@ static bool gHUDMenuWasOpen = true;
         ImGui::PopStyleVar();
 
         // ── Right content ─────────────────────────────────────────────────
-        ImGui::SetCursorPos(ImVec2(SIDEBAR_W + 1, CONTENT_TOP));
+        ImGui::SetCursorPos(ImVec2(SIDEBAR_W + 1, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 10));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,   ImVec2(8, 5));
         ImGui::BeginChild("##content", ImVec2(-1, -1), false);
@@ -716,12 +726,17 @@ static bool gHUDMenuWasOpen = true;
         ImGui::End();
     } else {
         gMenuWindowRect = CGRectZero;
-        // Closed-menu: small pink dot + "EH" label in top-right corner
+        // Closed-menu indicator: pink pill in top-right — tap anywhere on it to open
         ImDrawList *fg = ImGui::GetForegroundDrawList();
-        float bx = io.DisplaySize.x - 32, by = 32;
-        fg->AddCircleFilled(ImVec2(bx, by), 14, IM_COL32(15, 15, 18, 210));
-        fg->AddCircle(ImVec2(bx, by), 14, IM_COL32(200, 46, 214, 200), 24, 1.5f);
-        fg->AddText(ImVec2(bx - 8, by - 6), IM_COL32(200, 46, 214, 255), "EH");
+        float bx = io.DisplaySize.x - 36, by = 36;
+        fg->AddCircleFilled(ImVec2(bx, by), 20, IM_COL32(12, 12, 15, 220));
+        fg->AddCircle(ImVec2(bx, by), 20, IM_COL32(200, 46, 214, 230), 32, 2.0f);
+        fg->AddText(ImVec2(bx - 9, by - 6), IM_COL32(210, 60, 225, 255), "EH");
+        // Tap on dot to reopen
+        if (ImGui::IsMouseHoveringRect(ImVec2(bx-20,by-20), ImVec2(bx+20,by+20)) &&
+            ImGui::IsMouseClicked(0)) {
+            MenDeal = true;
+        }
     }
 
     ImGui::Render();
