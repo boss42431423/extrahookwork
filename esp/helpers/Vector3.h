@@ -1,3 +1,6 @@
+#pragma once
+#include <cmath>
+
 struct Vector3
 {
     union

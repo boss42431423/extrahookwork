@@ -83,14 +83,14 @@ mach_port_t get_task_for_PID(pid_t pid)
 pid_t get_pid_by_name(const char *keyword)
 {
     int count = proc_listallpids(NULL, 0);
-    std::vector<pid_t> pids(count);
-    proc_listallpids(pids.data(), (int)(pids.size() * sizeof(pid_t)));
+    pid_t pids[count];
+    proc_listallpids(pids, sizeof(pids));
     
     for (int i = 0; i < count; i++)
     {
         char name[1000];
         proc_name(pids[i], name, sizeof(name));
-        if (strcasestr(name, keyword) != NULL) // Ищем без учета регистра
+        if (strstr(name, keyword) != NULL)
         {
             return pids[i];
         }
@@ -99,9 +99,25 @@ pid_t get_pid_by_name(const char *keyword)
     return -1;
 }
 
+static char s_taskLastError[128] = "ok";
+
+const char *get_task_last_error(void) { return s_taskLastError; }
+
 task_t get_task_by_pid(pid_t pid)
 __attribute__((__annotate__("indibran_use_stack bcf_prob=100 bcf_junkasm bcf_junkasm_minnum=3 bcf_junkasm_maxnum=6 constenc constenc_times=2 constenc_subxor constenc_subxor_prob=60 constenc_togv constenc_togv_prob=80 split_num=3 sub_prob=100 strcry_prob=100 adb antihook")))
 {
+    // ── Метод 1: task_for_pid ─────────────────────────────────────────────
+    // Нужен только entitlement task_for_pid-allow; привилегированный host-порт
+    // (платформизация) НЕ требуется. Это самый надёжный путь под TrollStore.
+    task_t tfp = MACH_PORT_NULL;
+    kern_return_t kr_tfp = task_for_pid(mach_task_self(), pid, &tfp);
+    if (kr_tfp == KERN_SUCCESS && tfp != MACH_PORT_NULL) {
+        snprintf(s_taskLastError, sizeof(s_taskLastError), "ok(task_for_pid)");
+        return tfp;
+    }
+
+    // ── Метод 2 (фолбэк): processor_set_tasks ─────────────────────────────
+    // Требует привилегированный host-порт (host_processor_set_priv).
     task_port_t psDefault;
     task_port_t psDefault_control;
 
@@ -109,31 +125,34 @@ __attribute__((__annotate__("indibran_use_stack bcf_prob=100 bcf_junkasm bcf_jun
     mach_msg_type_number_t numTasks;
     kern_return_t kr;
 
-   
+
     host_t self_host = mach_host_self();
     kr = processor_set_default(self_host, &psDefault);
     if (kr != KERN_SUCCESS)
     {
+        snprintf(s_taskLastError, sizeof(s_taskLastError), "task_for_pid=0x%x; processor_set_default=0x%x", kr_tfp, kr);
         fprintf(stderr, "Error in processor_set_default: %x\n", kr);
         return MACH_PORT_NULL;
     }
 
-   
+
     kr = host_processor_set_priv(self_host, psDefault, &psDefault_control);
     if (kr != KERN_SUCCESS)
     {
+        snprintf(s_taskLastError, sizeof(s_taskLastError), "task_for_pid=0x%x; host_processor_set_priv=0x%x", kr_tfp, kr);
         fprintf(stderr, "Error in host_processor_set_priv: %x\n", kr);
         return MACH_PORT_NULL;
     }
 
-  
+
     kr = processor_set_tasks(psDefault_control, &tasks, &numTasks);
     if (kr != KERN_SUCCESS) {
+        snprintf(s_taskLastError, sizeof(s_taskLastError), "task_for_pid=0x%x; processor_set_tasks=0x%x", kr_tfp, kr);
         fprintf(stderr, "Error in processor_set_tasks: %x\n", kr);
         return MACH_PORT_NULL;
     }
 
-  
+
     for (int i = 0; i < numTasks; i++)
     {
         int task_pid;
@@ -142,9 +161,10 @@ __attribute__((__annotate__("indibran_use_stack bcf_prob=100 bcf_junkasm bcf_jun
             continue;
         }
 
-        if (task_pid == pid) return tasks[i];
+        if (task_pid == pid) { snprintf(s_taskLastError, sizeof(s_taskLastError), "ok(processor_set_tasks)"); return tasks[i]; }
     }
 
+    snprintf(s_taskLastError, sizeof(s_taskLastError), "task_for_pid=0x%x; pid %d не найден среди %u задач", kr_tfp, pid, numTasks);
     return MACH_PORT_NULL;
 }
 
@@ -214,108 +234,6 @@ __attribute__((__annotate__("indibran_use_stack bcf_prob=100 bcf_junkasm bcf_jun
     }
 
     free(image_infos);
-    return 0;
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// PlayerManager Il2CppClass* offset scanner
-// Searches ±8 MB around the last-known offset for a valid typeInfo chain.
-// Runs in a background thread – do NOT call this on the main thread.
-// ──────────────────────────────────────────────────────────────────────────────
-static inline bool _is_vm_ptr(uint64_t v) {
-    return v > 0x1000000ULL && v < 0x1000000000000ULL;
-}
-
-static uint64_t _safe64(task_t task, uint64_t addr) {
-    if (!_is_vm_ptr(addr)) return 0;
-    uint64_t val = 0;
-    mach_vm_size_t sz = sizeof(val);
-    mach_vm_read_overwrite(task, addr, sizeof(val), (mach_vm_address_t)&val, &sz);
-    return val;
-}
-
-std::atomic<int> s_scan_phase{0};
-std::atomic<uint64_t> s_scan_progress{0};
-std::atomic<uint64_t> s_scan_total{0};
-std::atomic<uint64_t> s_found_class_addr{0};
-std::atomic<int> s_found_name_off{0};
-
-int get_scan_phase(void)    { return s_scan_phase.load(); }
-uint64_t get_scan_progress(void) { return s_scan_progress.load(); }
-uint64_t get_scan_total(void)    { return s_scan_total.load(); }
-uint64_t get_found_class(void)   { return s_found_class_addr.load(); }
-int get_found_name_off(void)     { return s_found_name_off.load(); }
-void set_scan_phase(int v)       { s_scan_phase = v; }
-void set_found_class(uint64_t v) { s_found_class_addr = v; }
-void set_found_name_off(int v)   { s_found_name_off = v; }
-
-static bool _check_name(task_t task, uint64_t cls_ptr, const char *target, int *out_name_off) {
-    int name_offsets[] = {0x10, 0x08, 0x18, 0x20, 0x28, 0x30, 0x38, 0x40, 0x48};
-    char buf[32] = {0};
-    size_t tlen = strlen(target);
-    for (int ni = 0; ni < 9; ni++) {
-        uint64_t np = _safe64(task, cls_ptr + name_offsets[ni]);
-        if (!_is_vm_ptr(np)) continue;
-        if ((np & 3) != 0) continue;
-        mach_vm_size_t sz = tlen + 1;
-        kern_return_t kr = mach_vm_read_overwrite(task, np, tlen + 1, (mach_vm_address_t)buf, &sz);
-        if (kr != KERN_SUCCESS) continue;
-        buf[tlen] = 0;
-        if (memcmp(buf, target, tlen) == 0) {
-            *out_name_off = name_offsets[ni];
-            return true;
-        }
-    }
-    return false;
-}
-
-static uint64_t _scan_range(task_t task, mach_vm_address_t base, uint64_t start, uint64_t end, uint64_t chunk) {
-    for (uint64_t off = start; off < end; off += chunk) {
-        s_scan_progress++;
-        vm_offset_t buf = 0;
-        mach_msg_type_number_t cnt = 0;
-        if (vm_read(task, base + off, chunk, &buf, &cnt) != KERN_SUCCESS)
-            continue;
-        uint32_t n_words = cnt / 8;
-        uint64_t *words = (uint64_t *)buf;
-        for (uint32_t i = 0; i < n_words; i++) {
-            uint64_t ti = words[i];
-            if (!_is_vm_ptr(ti) || (ti & 7) != 0) continue;
-            int name_off = 0;
-            if (_check_name(task, ti, "PlayerManager", &name_off)) {
-                s_found_class_addr = ti;
-                s_found_name_off = name_off;
-                s_scan_phase = 2;
-                vm_deallocate(mach_task_self(), buf, cnt);
-                return off + (uint64_t)i * 8;
-            }
-        }
-        vm_deallocate(mach_task_self(), buf, cnt);
-    }
-    return 0;
-}
-
-uint64_t find_pm_typeinfo_offset(task_t task, mach_vm_address_t unity_base) {
-    const uint64_t CHUNK = 256 * 1024;
-    const uint64_t HINT = 167221856ULL; // PM_TypeInfo offset (0.39.2 = 0x9F7D060)
-    const uint64_t NEAR = 20ULL * 1024 * 1024; // ±20MB around hint
-
-    s_scan_phase = 1;
-    s_scan_progress = 0;
-
-    uint64_t near_start = HINT > NEAR ? HINT - NEAR : 0;
-    uint64_t near_end = HINT + NEAR;
-    s_scan_total = (near_end - near_start) / CHUNK + (300ULL * 1024 * 1024 * 2) / CHUNK;
-
-    // Фаза 1: ±20MB вокруг известного оффсета (быстро)
-    uint64_t r = _scan_range(task, unity_base, near_start, near_end, CHUNK);
-    if (r) return r;
-
-    // Фаза 2: полный скан 600MB
-    r = _scan_range(task, unity_base, 0, 300ULL * 1024 * 1024 * 2, CHUNK);
-    if (r) return r;
-
-    s_scan_phase = -1;
     return 0;
 }
 

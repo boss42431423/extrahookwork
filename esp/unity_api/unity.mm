@@ -1,118 +1,102 @@
 #import "unity.h"
 
-static bool is_valid_pos(Vector3 v) {
-    // Игровые координаты Standoff 2 в пределах ±5000
-    if (v.x != v.x || v.y != v.y || v.z != v.z) return false; // NaN
-    float ax = v.x < 0 ? -v.x : v.x;
-    float ay = v.y < 0 ? -v.y : v.y;
-    float az = v.z < 0 ? -v.z : v.z;
-    return ax < 5000.0f && ay < 5000.0f && az < 5000.0f &&
-           (ax > 0.001f || ay > 0.001f || az > 0.001f);
-}
-
-static bool is_valid_quat(Vector4 q) {
-    float len2 = q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w;
-    return len2 > 0.5f && len2 < 2.0f; // |q| ≈ 1
-}
-
-static bool is_valid_scale(Vector3 s) {
-    return s.x > 0.001f && s.x < 100.0f &&
-           s.y > 0.001f && s.y < 100.0f &&
-           s.z > 0.001f && s.z < 100.0f;
-}
-
-static Vector3 walk_hierarchy(mach_vm_address_t matrix_list, mach_vm_address_t matrix_indices,
-                              Vector3 result, int transformIndex, size_t eSize,
-                              int rotOff, int posOff, int scaleOff, task_t task) {
-    int max_safety = 50;
-    while (transformIndex >= 0 && max_safety-- > 0) {
-        mach_vm_address_t base = matrix_list + eSize * (size_t)transformIndex;
-        Vector4 rot = Read<Vector4>(base + rotOff, task);
-        Vector3 pos = Read<Vector3>(base + posOff, task);
-        Vector3 sc  = Read<Vector3>(base + scaleOff, task);
-
-        if (!is_valid_quat(rot) || !is_valid_scale(sc)) return Vector3{0,0,0};
-
-        float rX = rot.x, rY = rot.y, rZ = rot.z, rW = rot.w;
-        float sX = result.x * sc.x;
-        float sY = result.y * sc.y;
-        float sZ = result.z * sc.z;
-
-        result.x = pos.x + sX +
-            (sX * ((rY*rY*-2.0f) - (rZ*rZ*2.0f))) +
-            (sY * ((rW*rZ*-2.0f) - (rY*rX*-2.0f))) +
-            (sZ * ((rZ*rX*2.0f) - (rW*rY*-2.0f)));
-        result.y = pos.y + sY +
-            (sX * ((rX*rY*2.0f) - (rW*rZ*-2.0f))) +
-            (sY * ((rZ*rZ*-2.0f) - (rX*rX*2.0f))) +
-            (sZ * ((rW*rX*-2.0f) - (rZ*rY*-2.0f)));
-        result.z = pos.z + sZ +
-            (sX * ((rW*rY*-2.0f) - (rX*rZ*-2.0f))) +
-            (sY * ((rY*rZ*2.0f) - (rW*rX*-2.0f))) +
-            (sZ * ((rX*rX*-2.0f) - (rY*rY*2.0f)));
-
-        transformIndex = Read<int>(matrix_indices + sizeof(int) * (size_t)transformIndex, task);
-    }
-    return is_valid_pos(result) ? result : Vector3{0,0,0};
-}
-
-static Vector3 try_get_position(mach_vm_address_t transObj, int matOff, int idxOff, task_t task) {
-    mach_vm_address_t matrix = Read<mach_vm_address_t>(transObj + matOff, task);
-    if (!matrix || matrix < 0x1000000) return Vector3{0,0,0};
-
-    mach_vm_address_t matrix_list = Read<mach_vm_address_t>(matrix + 0x18, task);
-    mach_vm_address_t matrix_indices = Read<mach_vm_address_t>(matrix + 0x20, task);
-    if (!matrix_list || !matrix_indices) return Vector3{0,0,0};
-
-    int index = Read<int>(transObj + idxOff, task);
-    if (index < 0 || index > 65536) return Vector3{0,0,0};
-
-    // Layout A: 40 bytes — rotation(16) + position(12) + scale(12)
-    {
-        size_t eSize = 40;
-        int rotOff = 0, posOff = 16, scaleOff = 28;
-        Vector3 result = Read<Vector3>(matrix_list + eSize * (size_t)index + posOff, task);
-        int ti = Read<int>(matrix_indices + sizeof(int) * (size_t)index, task);
-        if (ti < 0 && is_valid_pos(result)) return result;
-        if (ti >= 0 && ti < 65536) {
-            Vector3 r = walk_hierarchy(matrix_list, matrix_indices, result, ti, eSize, rotOff, posOff, scaleOff, task);
-            if (is_valid_pos(r)) return r;
-        }
-    }
-
-    // Layout B: 48 bytes — position(16) + rotation(16) + scale(16)
-    {
-        size_t eSize = 48;
-        int posOff = 0, rotOff = 16, scaleOff = 32;
-        Vector3 result = Read<Vector3>(matrix_list + eSize * (size_t)index + posOff, task);
-        int ti = Read<int>(matrix_indices + sizeof(int) * (size_t)index, task);
-        if (ti < 0 && is_valid_pos(result)) return result;
-        if (ti >= 0 && ti < 65536) {
-            Vector3 r = walk_hierarchy(matrix_list, matrix_indices, result, ti, eSize, rotOff, posOff, scaleOff, task);
-            if (is_valid_pos(r)) return r;
-        }
-    }
-
-    return Vector3{0,0,0};
+// Позиция кости как в референсе: view = player+view_offset, bipedmap = view+pbipedmap,
+// bone_transform = bipedmap+bone_offset, position_ptr = bone_transform+0xB0, pos = position_ptr+0x44.
+Vector3 get_bone_position(mach_vm_address_t player_addr, uint32_t view_offset, uint32_t bipedmap_offset, uint32_t bone_offset, task_t task)
+{
+    mach_vm_address_t view = Read<mach_vm_address_t>(player_addr + view_offset, task);
+    if (!view) return Vector3{0, 0, 0};
+    mach_vm_address_t bipedmap = Read<mach_vm_address_t>(view + bipedmap_offset, task);
+    if (!bipedmap) return Vector3{0, 0, 0};
+    mach_vm_address_t bone_transform = Read<mach_vm_address_t>(bipedmap + bone_offset, task);
+    if (!bone_transform) return Vector3{0, 0, 0};
+    mach_vm_address_t position_ptr = Read<mach_vm_address_t>(bone_transform + 0xB0, task);
+    if (!position_ptr) return Vector3{0, 0, 0};
+    return Read<Vector3>(position_ptr + 0x44, task);
 }
 
 Vector3 get_position_by_transform(mach_vm_address_t mach_transform_ptr, task_t task)
 {
     mach_vm_address_t transObj = Read<mach_vm_address_t>(mach_transform_ptr + 0x10, task);
-    if (!transObj || transObj < 0x1000000) return Vector3{0,0,0};
+    if (!transObj) return Vector3{0,0,0};
 
-    Vector3 r = try_get_position(transObj, 0x38, 0x40, task);
-    if (is_valid_pos(r)) return r;
+    mach_vm_address_t matrix = Read<mach_vm_address_t>(transObj + 0x38, task);
+    if (!matrix) return Vector3{0,0,0};
 
-    r = try_get_position(transObj, 0x40, 0x48, task);
-    if (is_valid_pos(r)) return r;
+    int index = Read<int>(transObj + 0x40, task);
 
-    r = try_get_position(transObj, 0x30, 0x38, task);
-    if (is_valid_pos(r)) return r;
+    mach_vm_address_t matrix_list = Read<mach_vm_address_t>(matrix + 0x18, task);
+    mach_vm_address_t matrix_indices = Read<mach_vm_address_t>(matrix + 0x20, task);
+    if (!matrix_list || !matrix_indices) return Vector3{0,0,0};
 
-    return Vector3{0,0,0};
+    Vector3 result = Read<Vector3>(matrix_list + (size_t)sizeof(TMatrix) * (size_t)index, task);
+    int transformIndex = Read<int>(matrix_indices + (size_t)sizeof(int) * (size_t)index, task);
+
+    if (transformIndex < 0) return result;
+
+    while (transformIndex >= 0)
+    {
+        TMatrix tMatrix = Read<TMatrix>(matrix_list + (size_t)sizeof(TMatrix) * (size_t)transformIndex, task);
+
+        float rotX = tMatrix.rotation.x;
+        float rotY = tMatrix.rotation.y;
+        float rotZ = tMatrix.rotation.z;
+        float rotW = tMatrix.rotation.w;
+
+        float scaleX = result.x * tMatrix.scale.x;
+        float scaleY = result.y * tMatrix.scale.y;
+        float scaleZ = result.z * tMatrix.scale.z;
+
+        result.x = tMatrix.position.x + scaleX +
+            (scaleX * ((rotY * rotY * -2.0f) - (rotZ * rotZ * 2.0f))) +
+            (scaleY * ((rotW * rotZ * -2.0f) - (rotY * rotX * -2.0f))) +
+            (scaleZ * ((rotZ * rotX * 2.0f) - (rotW * rotY * -2.0f)));
+        result.y = tMatrix.position.y + scaleY +
+            (scaleX * ((rotX * rotY * 2.0f) - (rotW * rotZ * -2.0f))) +
+            (scaleY * ((rotZ * rotZ * -2.0f) - (rotX * rotX * 2.0f))) +
+            (scaleZ * ((rotW * rotX * -2.0f) - (rotZ * rotY * -2.0f)));
+        result.z = tMatrix.position.z + scaleZ +
+            (scaleX * ((rotW * rotY * -2.0f) - (rotX * rotZ * -2.0f))) +
+            (scaleY * ((rotY * rotZ * 2.0f) - (rotW * rotX * -2.0f))) +
+            (scaleZ * ((rotX * rotX * -2.0f) - (rotY * rotY * 2.0f)));
+
+        transformIndex = Read<int>(matrix_indices + (size_t)sizeof(int) * (size_t)transformIndex, task);
+    }
+
+    return result;
 }
 
+
+inline float Dot(const Vector3 &Vec1, const Vector3 &Vec2)
+{
+    return Vec1.x * Vec2.x + Vec1.y * Vec2.y + Vec1.z * Vec2.z;
+}
+
+Vector3 WorldToScreen(Vector3 object, mach_vm_address_t camera_ptr, CGFloat ScreenWidth, CGFloat ScreenHeight, task_t task)
+{
+    mach_vm_address_t internal = Read<mach_vm_address_t>(camera_ptr + 0x10, task);
+    c_matrix mtx = Read<c_matrix>(internal + 0x100, task);
+
+    Vector3 transVec = Vector3(mtx[0][3], mtx[1][3], mtx[2][3]);
+    Vector3 rightVec = Vector3(mtx[0][0], mtx[1][0], mtx[2][0]);
+    Vector3 upVec = Vector3(mtx[0][1], mtx[1][1], mtx[2][1]);
+
+    float w = Dot(transVec, object) + mtx[3][3];
+    if (w < 0.9f)
+    {
+        Vector3 v;
+        v.x = v.y = v.z = 0;
+        return v;
+    }
+        //return {0,0,0};
+
+    float y = Dot(upVec, object) + mtx[3][1];
+    float x = Dot(rightVec, object) + mtx[3][0];
+
+    return Vector3((ScreenWidth / 2) * (1.f + x / w), (ScreenHeight / 2) * (1.f - y / w), w);
+}
+
+// Project a world position to screen space using the camera's view matrix.
 Vector3 WorldToScreen(Vector3 object, SO2_Matrix mat, CGFloat ScreenWidth, CGFloat ScreenHeight)
 {
     float screenX = (mat.m11 * object.x) + (mat.m21 * object.y) + (mat.m31 * object.z) + mat.m41;
