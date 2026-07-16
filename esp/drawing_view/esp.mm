@@ -564,15 +564,18 @@ struct ESPBoxData {
             }
         }
         if (!staticFields) {
-            // parent стандартный offset 0x58; читаем что у него на sf-офсетах
-            mach_vm_address_t par58 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x58, so2_task));
-            mach_vm_address_t sf90  = par58 ? STRIP_PAC(Read<mach_vm_address_t>(par58 + 0x90, so2_task)) : 0;
-            mach_vm_address_t sfB0  = par58 ? STRIP_PAC(Read<mach_vm_address_t>(par58 + 0xB0, so2_task)) : 0;
-            mach_vm_address_t sfB8  = par58 ? STRIP_PAC(Read<mach_vm_address_t>(par58 + 0xB8, so2_task)) : 0;
-            mach_vm_address_t sfC0  = par58 ? STRIP_PAC(Read<mach_vm_address_t>(par58 + 0xC0, so2_task)) : 0;
+            // n = name ptr @+0x10 (верификация что ti = реальный Il2CppClass)
+            // 40-68 = все кандидаты на parent
+            mach_vm_address_t n   = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x10, so2_task));
+            mach_vm_address_t d40 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x40, so2_task));
+            mach_vm_address_t d48 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x48, so2_task));
+            mach_vm_address_t d50 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x50, so2_task));
+            mach_vm_address_t d58 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x58, so2_task));
+            mach_vm_address_t d60 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x60, so2_task));
+            mach_vm_address_t d68 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x68, so2_task));
             self.watermarkLabel.text = [NSString stringWithFormat:
-                @"[SO2] noSF par58=%llx 90=%llx B0=%llx B8=%llx C0=%llx",
-                par58, sf90, sfB0, sfB8, sfC0];
+                @"[SO2] n=%llx\n40=%llx 48=%llx\n50=%llx 58=%llx\n60=%llx 68=%llx",
+                n, d40, d48, d50, d58, d60, d68];
             [self.watermarkLabel sizeToFit];
             goto CLEAR_BOXES;
         }
