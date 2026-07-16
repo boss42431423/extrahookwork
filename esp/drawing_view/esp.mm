@@ -606,24 +606,25 @@ struct ESPBoxData {
             goto CLEAR_BOXES;
         }
 
-        dict28      = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
+        // Dictionary<int,PlayerController> at PM+0x28; always strip PAC before use
+        dict28      = STRIP_PAC(Read<mach_vm_address_t>(playerManager + 0x28, so2_task));
         playersDict = dict28;
 
-        c20 = Read<int>(playersDict + 0x20, so2_task);
-        c40 = Read<int>(playersDict + 0x40, so2_task);
-        c18 = Read<int>(playersDict + 0x18, so2_task);
-
-        if      (c20 > 0 && c20 <= 32) playersCount = c20;
-        else if (c40 > 0 && c40 <= 32) playersCount = c40;
-        else if (c18 > 0 && c18 <= 32) playersCount = c18;
+        // dict._count @ +0x20, dict._freeCount @ +0x2C
+        {
+            int _cnt  = Read<int>(playersDict + 0x20, so2_task);
+            int _free = Read<int>(playersDict + 0x2C, so2_task);
+            playersCount = (_cnt > 0 && _cnt <= 32) ? (_cnt - (_free > 0 ? _free : 0)) : 0;
+            if (playersCount < 0 || playersCount > 32) playersCount = 0;
+        }
 
         self.watermarkLabel.text = [NSString stringWithFormat:@"[SO2] PM OK | players: %d", playersCount];
         [self.watermarkLabel sizeToFit];
 
         if (playersCount > 0 && playersCount <= 32) {
-            mach_vm_address_t localPlayer = Read<mach_vm_address_t>(playerManager + 0x70, so2_task);
-            if (localPlayer < 0x1000000 || Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task) == 0)
-                localPlayer = Read<mach_vm_address_t>(playerManager + 0x68, so2_task);
+            mach_vm_address_t localPlayer = STRIP_PAC(Read<mach_vm_address_t>(playerManager + 0x70, so2_task));
+            if (localPlayer < 0x1000000 || STRIP_PAC(Read<mach_vm_address_t>(localPlayer + 0xE0, so2_task)) == 0)
+                localPlayer = STRIP_PAC(Read<mach_vm_address_t>(playerManager + 0x68, so2_task));
 
 
             // Не сбрасываем кэш камеры при смене localPlayer — цепочка 0xE8 проверяется каждый кадр
@@ -943,9 +944,10 @@ struct ESPBoxData {
                      viewMatrix:viewMatrix];
             }
 
-            mach_vm_address_t entries_arr = Read<mach_vm_address_t>(playersDict + 0x18, so2_task);
-            int capacity = Read<int>(entries_arr + 0x18, so2_task);
-            if (capacity > 100) capacity = 100;
+            // dict._entries @ dict+0x18 (pointer, strip PAC); array.max_length @ arr+0x18
+            mach_vm_address_t entries_arr = STRIP_PAC(Read<mach_vm_address_t>(playersDict + 0x18, so2_task));
+            int capacity = (entries_arr > 0x1000000) ? Read<int>(entries_arr + 0x18, so2_task) : 0;
+            if (capacity <= 0 || capacity > 100) capacity = playersCount;
 
             BOOL drawBoxes = esp_box_enabled || esp_box_3d || esp_box_fill || esp_box_corner;
             BOOL drawLines = esp_line_enabled;
@@ -992,9 +994,11 @@ struct ESPBoxData {
             if (esp_team_check) {
                 localTeam = (int)Read<uint8_t>(localPlayer + 0x79, so2_task);
             }
+            // Entry layout: hashCode(4)+next(4)+key_int(4)+pad(4)+value_ptr(8) = 0x18 per entry
+            // value (PlayerController*) at entry+0x10; strip PAC from the pointer
             mach_vm_address_t *players = (mach_vm_address_t *)malloc(capacity * sizeof(mach_vm_address_t));
             for (int i = 0; i < capacity; i++) {
-                players[i] = Read<mach_vm_address_t>(entries_arr + 0x20 + (i * 0x18) + 0x10, so2_task);
+                players[i] = STRIP_PAC(Read<mach_vm_address_t>(entries_arr + 0x20 + (i * 0x18) + 0x10, so2_task));
             }
 
             // HP: пока не найден способ чтения, отключаем поиск
