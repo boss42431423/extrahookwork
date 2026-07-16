@@ -444,9 +444,9 @@ struct ESPBoxData {
 
     // Прямое чтение TypeInfo по известному offset из дампа (быстрый путь)
     // Имя НЕ валидируем — metadata-секция часто недоступна через mach_vm_read.
-    // Доверяем script.json: если там PlayerManager_TypeInfo = 167221856, то так и есть.
+    // Доверяем script.json: если там PlayerManager_TypeInfo = 168615648, то так и есть.
     if (cached_unity_base && cached_so2_task && get_scan_phase() != 2) {
-        const uint64_t PM_TYPEINFO_OFF = 167221856ULL;
+        const uint64_t PM_TYPEINFO_OFF = 168615648ULL;
         mach_vm_address_t rawTI = Read<mach_vm_address_t>(cached_unity_base + PM_TYPEINFO_OFF, cached_so2_task);
         mach_vm_address_t directTI = rawTI & 0x0000FFFFFFFFFFFFULL; // strip PAC
         if (directTI <= 0x1000000) directTI = rawTI; // fallback: без стрипа
@@ -499,7 +499,7 @@ struct ESPBoxData {
         if (get_scan_phase() != 2) {
             if (s_pm_scanning) {
                 // Показываем прогресс + диагностику hint-офсета
-                const uint64_t PM_OFF = 167221856ULL;
+                const uint64_t PM_OFF = 168615648ULL;
                 mach_vm_address_t rawHint = Read<mach_vm_address_t>(unity_base + PM_OFF, so2_task);
                 mach_vm_address_t cleanHint = rawHint & 0x0000FFFFFFFFFFFFULL;
                 // Читаем name-ptr и parent-ptr из cleanHint для диагностики
