@@ -145,6 +145,7 @@ struct ESPBoxData {
 @property (nonatomic, strong) UILabel           *noPlayersLabel;
 @property (nonatomic, strong) AVPlayer          *backgroundPlayer;
 @property (nonatomic, assign) BOOL              hasAttemptedLaunch;
+@property (nonatomic, strong) UIView            *floatBtn;
 @property (nonatomic, strong) CAShapeLayer      *espBoxLayer;
 @property (nonatomic, strong) CAShapeLayer      *espBoxFillLayer;
 @property (nonatomic, strong) NSMutableArray<UILabel *> *nameLabelPool;
@@ -279,11 +280,26 @@ struct ESPBoxData {
     self.menuView.center = CGPointMake(frame.size.width / 2, frame.size.height / 2);
     [self addSubview:self.menuView];
 
-    // 3-finger tap to show menu if hidden
-    UITapGestureRecognizer *showTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleThreeFingerTap:)];
-    showTap.numberOfTouchesRequired = 3;
-    showTap.cancelsTouchesInView = NO;
-    [self addGestureRecognizer:showTap];
+    // Floating draggable toggle button
+    UIView *btn = [[UIView alloc] initWithFrame:CGRectMake(10, 60, 44, 44)];
+    btn.backgroundColor = [UIColor colorWithRed:0.08 green:0.08 blue:0.10 alpha:0.92];
+    btn.layer.cornerRadius = 10;
+    btn.layer.borderWidth = 1.5;
+    btn.layer.borderColor = [UIColor colorWithWhite:0.4 alpha:0.7].CGColor;
+    btn.layer.zPosition = 2000;
+    UILabel *btnLbl = [[UILabel alloc] initWithFrame:btn.bounds];
+    btnLbl.text = @"≡";
+    btnLbl.textAlignment = NSTextAlignmentCenter;
+    btnLbl.font = [UIFont boldSystemFontOfSize:22];
+    btnLbl.textColor = [UIColor colorWithRed:0.55 green:1.0 blue:0.55 alpha:1.0];
+    btnLbl.userInteractionEnabled = NO;
+    [btn addSubview:btnLbl];
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(floatBtnPan:)];
+    [btn addGestureRecognizer:pan];
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(floatBtnTap:)];
+    [btn addGestureRecognizer:tap];
+    [self addSubview:btn];
+    self.floatBtn = btn;
 
     [[NSNotificationCenter defaultCenter]
         addObserver:self
@@ -309,22 +325,39 @@ struct ESPBoxData {
 }
 
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    if (self.menuView) {
+    if (self.floatBtn) {
+        CGPoint inBtn = [self convertPoint:point toView:self.floatBtn];
+        if ([self.floatBtn pointInside:inBtn withEvent:event])
+            return [self.floatBtn hitTest:inBtn withEvent:event];
+    }
+    if (self.menuView && !self.menuView.hidden) {
         CGPoint pointInMenu = [self convertPoint:point toView:self.menuView];
-        if ([self.menuView pointInside:pointInMenu withEvent:event]) {
+        if ([self.menuView pointInside:pointInMenu withEvent:event])
             return [self.menuView hitTest:pointInMenu withEvent:event];
-        }
     }
     return nil;
 }
 
 
 
-- (void)handleThreeFingerTap:(UITapGestureRecognizer *)g {
-    if (self.menuView.hidden) {
-        self.menuView.hidden = NO;
+- (void)floatBtnTap:(UITapGestureRecognizer *)g {
+    self.menuView.hidden = !self.menuView.hidden;
+    if (!self.menuView.hidden)
         [self.menuView centerMenu];
-    }
+}
+
+- (void)floatBtnPan:(UIPanGestureRecognizer *)g {
+    CGPoint delta = [g translationInView:self];
+    CGPoint center = self.floatBtn.center;
+    center.x += delta.x;
+    center.y += delta.y;
+    // Clamp inside screen
+    CGFloat hw = self.floatBtn.bounds.size.width / 2;
+    CGFloat hh = self.floatBtn.bounds.size.height / 2;
+    center.x = MAX(hw, MIN(self.bounds.size.width - hw, center.x));
+    center.y = MAX(hh, MIN(self.bounds.size.height - hh, center.y));
+    self.floatBtn.center = center;
+    [g setTranslation:CGPointZero inView:self];
 }
 
 - (void)dealloc {
