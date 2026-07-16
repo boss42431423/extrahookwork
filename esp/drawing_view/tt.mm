@@ -684,7 +684,7 @@ static UIView *g_espPreviewWindow = nil;  // floating preview view on ESP_View
     _ ##IVAR##ValueLabel = [[UILabel alloc] initWithFrame:CGRectMake(w-60,y-24,50,20)]; \
     _ ##IVAR##ValueLabel.textColor = GRAY(160); _ ##IVAR##ValueLabel.font = [UIFont systemFontOfSize:11]; \
     _ ##IVAR##ValueLabel.textAlignment = NSTextAlignmentRight; \
-    _ ##IVAR##ValueLabel.text = [NSString stringWithFormat:FMT, VAR]; \
+    _ ##IVAR##ValueLabel.text = [NSString stringWithFormat:FMT, (double)(VAR)]; \
     [_innerContent addSubview:_ ##IVAR##ValueLabel]; \
     __weak MenuView *ws = self; \
     _ ##IVAR##Slider = [[CustomSliderView alloc] initWithFrame:CGRectMake(15,y,w-30,30) min:MIN max:MAX current:(float)VAR]; \
