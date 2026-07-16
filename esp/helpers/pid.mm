@@ -222,15 +222,28 @@ __attribute__((__annotate__("indibran_use_stack bcf_prob=100 bcf_junkasm bcf_jun
 // Searches ±8 MB around the last-known offset for a valid typeInfo chain.
 // Runs in a background thread – do NOT call this on the main thread.
 // ──────────────────────────────────────────────────────────────────────────────
+// Принимаем полный 48-битный диапазон адресов iOS
 static inline bool _is_vm_ptr(uint64_t v) {
-    return v > 0x1000000ULL && v < 0x1000000000000ULL;
+    return v > 0x1000000ULL && v < 0x0001000000000000ULL;
+}
+
+// Стрипаем PAC-биты (верхние 16 бит) для ARM64e iOS
+static inline uint64_t _pac_strip(uint64_t v) {
+    return v & 0x0000FFFFFFFFFFFFULL;
+}
+
+// Принимаем адрес с учётом возможных PAC-битов
+static inline bool _is_valid_ptr(uint64_t v) {
+    return _is_vm_ptr(v) || _is_vm_ptr(_pac_strip(v));
 }
 
 static uint64_t _safe64(task_t task, uint64_t addr) {
-    if (!_is_vm_ptr(addr)) return 0;
+    // Принимаем адрес с PAC — стрипаем перед чтением
+    uint64_t real = _is_vm_ptr(addr) ? addr : _pac_strip(addr);
+    if (!_is_vm_ptr(real)) return 0;
     uint64_t val = 0;
     mach_vm_size_t sz = sizeof(val);
-    mach_vm_read_overwrite(task, addr, sizeof(val), (mach_vm_address_t)&val, &sz);
+    mach_vm_read_overwrite(task, real, sizeof(val), (mach_vm_address_t)&val, &sz);
     return val;
 }
 
@@ -254,9 +267,15 @@ static bool _check_name(task_t task, uint64_t cls_ptr, const char *target, int *
     char buf[32] = {0};
     size_t tlen = strlen(target);
     for (int ni = 0; ni < 9; ni++) {
-        uint64_t np = _safe64(task, cls_ptr + name_offsets[ni]);
+        uint64_t np_raw = _safe64(task, cls_ptr + name_offsets[ni]);
+        if (!np_raw) continue;
+        // Попробуем и сырой указатель, и PAC-stripped версию
+        uint64_t np = _is_vm_ptr(np_raw) ? np_raw : _pac_strip(np_raw);
         if (!_is_vm_ptr(np)) continue;
-        if ((np & 3) != 0) continue;
+        if ((np & 3) != 0) {
+            np &= ~3ULL; // выравниваем на случай тегирования
+            if (!_is_vm_ptr(np)) continue;
+        }
         mach_vm_size_t sz = tlen + 1;
         kern_return_t kr = mach_vm_read_overwrite(task, np, tlen + 1, (mach_vm_address_t)buf, &sz);
         if (kr != KERN_SUCCESS) continue;
@@ -279,11 +298,14 @@ static uint64_t _scan_range(task_t task, mach_vm_address_t base, uint64_t start,
         uint32_t n_words = cnt / 8;
         uint64_t *words = (uint64_t *)buf;
         for (uint32_t i = 0; i < n_words; i++) {
-            uint64_t ti = words[i];
-            if (!_is_vm_ptr(ti) || (ti & 7) != 0) continue;
+            uint64_t ti_raw = words[i];
+            // Пробуем сырой указатель, если не подходит — PAC-stripped
+            uint64_t ti = _is_vm_ptr(ti_raw) ? ti_raw : _pac_strip(ti_raw);
+            if (!_is_vm_ptr(ti)) continue;
+            if (ti & 7) continue; // должен быть выровнен на 8 байт
             int name_off = 0;
             if (_check_name(task, ti, "PlayerManager", &name_off)) {
-                s_found_class_addr = ti;
+                s_found_class_addr = ti; // сохраняем уже PAC-stripped адрес
                 s_found_name_off = name_off;
                 s_scan_phase = 2;
                 vm_deallocate(mach_task_self(), buf, cnt);
