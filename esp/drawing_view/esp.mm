@@ -514,33 +514,40 @@ struct ESPBoxData {
             goto CLEAR_BOXES;
         }
 
-        // Ходим по цепочке родителей ищем staticFields с данными
+        // Ходим по цепочке родителей ищем staticFields с данными.
+        // Пробуем ОБА возможных offset для parent: 0x50 (packed Il2CppType=12 байт)
+        // и 0x58 (padded Il2CppType=16 байт). Аналогично для static_fields: 0xB0 и 0xB8.
         {
+            static const int parentOffsets[] = {0x50, 0x58};
+            static const int sfOffsets[]     = {0xB0, 0xB8, 0xA8};
             mach_vm_address_t walk = typeInfo;
             for (int depth = 0; depth < 6 && !staticFields; depth++) {
-                mach_vm_address_t par = STRIP_PAC(Read<mach_vm_address_t>(walk + 0x58, so2_task));
-                if (!par || par < 0x1000000) break;
-                mach_vm_address_t sf = STRIP_PAC(Read<mach_vm_address_t>(par + 0xB8, so2_task));
-                if (sf > 0x1000000) {
-                    parentTypeInfo = par;
-                    staticFields   = sf;
-                    break;
+                mach_vm_address_t par = 0;
+                for (int pOff : parentOffsets) {
+                    par = STRIP_PAC(Read<mach_vm_address_t>(walk + pOff, so2_task));
+                    if (par > 0x1000000) break;
+                    par = 0;
                 }
-                // Пробуем +0xB0 (на случай другого лейаута)
-                sf = STRIP_PAC(Read<mach_vm_address_t>(par + 0xB0, so2_task));
-                if (sf > 0x1000000) {
-                    parentTypeInfo = par;
-                    staticFields   = sf;
-                    break;
+                if (!par) break;
+                for (int sOff : sfOffsets) {
+                    mach_vm_address_t sf = STRIP_PAC(Read<mach_vm_address_t>(par + sOff, so2_task));
+                    if (sf > 0x1000000) {
+                        parentTypeInfo = par;
+                        staticFields   = sf;
+                        break;
+                    }
                 }
+                if (staticFields) break;
                 walk = par;
             }
         }
-        // Фолбек: typeInfo собственные static_fields
+        // Фолбек: собственные static_fields typeInfo (PlayerManager может иметь свои)
         if (!staticFields) {
-            staticFields = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0xB8, so2_task));
-            if (!staticFields || staticFields < 0x1000000)
-                staticFields = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0xB0, so2_task));
+            static const int sfFb[] = {0xB0, 0xB8, 0xA8};
+            for (int sOff : sfFb) {
+                mach_vm_address_t sf = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + sOff, so2_task));
+                if (sf > 0x1000000) { staticFields = sf; break; }
+            }
         }
         if (!staticFields || staticFields < 0x1000000) {
             self.watermarkLabel.text = [NSString stringWithFormat:@"[SO2] ERR: no SF ti=%llx par=%llx", typeInfo, parentTypeInfo];
