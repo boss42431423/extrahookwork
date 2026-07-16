@@ -480,8 +480,6 @@ static bool gHUDMenuWasOpen = true;
                 ImGui::TextDisabled(espMaster ? "[ ON ]" : "[ OFF ]");
                 ImGui::Separator();
 
-                ImGui::BeginDisabled(!espMaster);
-
                 ImGui::Columns(2, "##espcols", false);
 
                 ImGui::Checkbox("Box ESP",    &showBoxes);
@@ -505,7 +503,6 @@ static bool gHUDMenuWasOpen = true;
                 ImGui::TextDisabled("skip teammates");
 
                 ImGui::Columns(1);
-                ImGui::EndDisabled();
                 ImGui::Spacing();
                 ImGui::EndTabItem();
 
