@@ -514,8 +514,21 @@ struct ESPBoxData {
         // Ждём результат сканера / прямого чтения
         if (get_scan_phase() != 2) {
             if (s_pm_scanning) {
+                // Показываем прогресс + диагностику hint-офсета
+                const uint64_t PM_OFF = 167221856ULL;
+                mach_vm_address_t rawHint = Read<mach_vm_address_t>(unity_base + PM_OFF, so2_task);
+                mach_vm_address_t cleanHint = rawHint & 0x0000FFFFFFFFFFFFULL;
+                // Читаем name-ptr и parent-ptr из cleanHint для диагностики
+                mach_vm_address_t n10raw  = cleanHint > 0x1000000 ? Read<mach_vm_address_t>(cleanHint + 0x10, so2_task) : 0;
+                mach_vm_address_t p50raw  = cleanHint > 0x1000000 ? Read<mach_vm_address_t>(cleanHint + 0x50, so2_task) : 0;
+                mach_vm_address_t p58raw  = cleanHint > 0x1000000 ? Read<mach_vm_address_t>(cleanHint + 0x58, so2_task) : 0;
                 self.watermarkLabel.text = [NSString stringWithFormat:
-                    @"[SO2] SCAN %llu/%llu...", get_scan_progress(), get_scan_total()];
+                    @"[SO2] SCAN %llu/%llu raw=%llx ti=%llx n=%llx p50=%llx p58=%llx",
+                    get_scan_progress(), get_scan_total(),
+                    rawHint, cleanHint,
+                    n10raw & 0x0000FFFFFFFFFFFFULL,
+                    p50raw & 0x0000FFFFFFFFFFFFULL,
+                    p58raw & 0x0000FFFFFFFFFFFFULL];
             } else {
                 self.watermarkLabel.text = @"[SO2] Waiting PM...";
             }
