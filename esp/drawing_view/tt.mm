@@ -468,9 +468,20 @@ static UIView *g_espPreviewWindow = nil;  // floating preview view on ESP_View
     { CGRect f=_otherContent.frame; f.size.height=y+10; _otherContent.frame=f; }
 
     _innerContent = nil;
+
+    // ── Close button (floating top-right corner) ──────────────────────────
+    UILabel *closeBtn = [[UILabel alloc] initWithFrame:CGRectMake(W-20, 0, 20, 14)];
+    closeBtn.text = @"✕"; closeBtn.textAlignment = NSTextAlignmentCenter;
+    closeBtn.font = [UIFont boldSystemFontOfSize:9]; closeBtn.textColor = GRAY(130);
+    closeBtn.userInteractionEnabled = YES; closeBtn.layer.zPosition = 1000;
+    [self addSubview:closeBtn];
+    [closeBtn addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(closeTapped)]];
+
     [self showViewForCapture];
     return self;
 }
+
+- (void)closeTapped { self.hidden = YES; }
 
 // ── antilose port: accent color preset picker (iOS UIKit) ─────────────────────
 - (void)addAccentColorPickerAtY:(CGFloat)y {

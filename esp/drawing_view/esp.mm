@@ -279,6 +279,12 @@ struct ESPBoxData {
     self.menuView.center = CGPointMake(frame.size.width / 2, frame.size.height / 2);
     [self addSubview:self.menuView];
 
+    // 3-finger tap to show menu if hidden
+    UITapGestureRecognizer *showTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleThreeFingerTap:)];
+    showTap.numberOfTouchesRequired = 3;
+    showTap.cancelsTouchesInView = NO;
+    [self addGestureRecognizer:showTap];
+
     [[NSNotificationCenter defaultCenter]
         addObserver:self
            selector:@selector(clearAllBoxes)
@@ -313,6 +319,13 @@ struct ESPBoxData {
 }
 
 
+
+- (void)handleThreeFingerTap:(UITapGestureRecognizer *)g {
+    if (self.menuView.hidden) {
+        self.menuView.hidden = NO;
+        [self.menuView centerMenu];
+    }
+}
 
 - (void)dealloc {
     [self.displayLinkData invalidate];
