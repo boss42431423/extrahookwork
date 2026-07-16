@@ -45,6 +45,8 @@ extern volatile bool esp_weapon_enabled;
 extern volatile bool esp_weapon_icon_enabled;
 extern volatile bool esp_platform_enabled;
 extern volatile bool esp_avatar_enabled;
+extern volatile bool esp_skeleton_enabled;
+extern volatile bool esp_hitbox_enabled;
 
 extern volatile bool  viewmodel_enabled;
 extern volatile float viewmodel_x;
