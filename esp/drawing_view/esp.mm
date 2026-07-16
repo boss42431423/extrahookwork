@@ -525,8 +525,15 @@ struct ESPBoxData {
             goto CLEAR_BOXES;
         }
 
-        playerManager = Read<mach_vm_address_t>(staticFields + 0x0, so2_task);
-        if (!playerManager || playerManager < 0x1000000) {
+        // MonoBehaviourRef может хранить указатель не на +0x0 — сканируем нужный offset
+        playerManager = 0;
+        for (int pmOff = 0; pmOff <= 0x40; pmOff += 8) {
+            mach_vm_address_t pmCandidate = Read<mach_vm_address_t>(staticFields + pmOff, so2_task);
+            if (pmCandidate < 0x1000000) continue;
+            mach_vm_address_t dictCheck = Read<mach_vm_address_t>(pmCandidate + 0x28, so2_task);
+            if (dictCheck > 0x1000000) { playerManager = pmCandidate; break; }
+        }
+        if (!playerManager) {
             self.watermarkLabel.text = [NSString stringWithFormat:@"[SO2] ERR: no PM (sf=%llx)", staticFields];
             [self.watermarkLabel sizeToFit];
             goto CLEAR_BOXES;
