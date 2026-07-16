@@ -525,16 +525,28 @@ struct ESPBoxData {
             goto CLEAR_BOXES;
         }
 
-        // MonoBehaviourRef может хранить указатель не на +0x0 — сканируем нужный offset
+        // Проход 1: проверка по dict (PM+0x28 — словарь игроков)
         playerManager = 0;
-        for (int pmOff = 0; pmOff <= 0x40; pmOff += 8) {
+        for (int pmOff = 0; pmOff <= 0x80; pmOff += 8) {
             mach_vm_address_t pmCandidate = Read<mach_vm_address_t>(staticFields + pmOff, so2_task);
             if (pmCandidate < 0x1000000) continue;
             mach_vm_address_t dictCheck = Read<mach_vm_address_t>(pmCandidate + 0x28, so2_task);
             if (dictCheck > 0x1000000) { playerManager = pmCandidate; break; }
         }
+        // Проход 2: проверка по klass == typeInfo (работает даже если dict ещё null)
         if (!playerManager) {
-            self.watermarkLabel.text = [NSString stringWithFormat:@"[SO2] ERR: no PM (sf=%llx)", staticFields];
+            for (int pmOff = 0; pmOff <= 0x80; pmOff += 8) {
+                mach_vm_address_t pmCandidate = Read<mach_vm_address_t>(staticFields + pmOff, so2_task);
+                if (pmCandidate < 0x1000000) continue;
+                mach_vm_address_t klassCheck = Read<mach_vm_address_t>(pmCandidate, so2_task);
+                if (klassCheck == typeInfo) { playerManager = pmCandidate; break; }
+            }
+        }
+        if (!playerManager) {
+            mach_vm_address_t v0 = Read<mach_vm_address_t>(staticFields, so2_task);
+            mach_vm_address_t v8 = Read<mach_vm_address_t>(staticFields + 8, so2_task);
+            self.watermarkLabel.text = [NSString stringWithFormat:
+                @"[SO2] no PM sf=%llx v0=%llx v8=%llx ti=%llx", staticFields, v0, v8, typeInfo];
             [self.watermarkLabel sizeToFit];
             goto CLEAR_BOXES;
         }
