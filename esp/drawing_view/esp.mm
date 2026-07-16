@@ -443,33 +443,17 @@ struct ESPBoxData {
     }
 
     // Прямое чтение TypeInfo по известному offset из дампа (быстрый путь)
+    // Имя НЕ валидируем — metadata-секция часто недоступна через mach_vm_read.
+    // Доверяем script.json: если там PlayerManager_TypeInfo = 167221856, то так и есть.
     if (cached_unity_base && cached_so2_task && get_scan_phase() != 2) {
         const uint64_t PM_TYPEINFO_OFF = 167221856ULL;
         mach_vm_address_t rawTI = Read<mach_vm_address_t>(cached_unity_base + PM_TYPEINFO_OFF, cached_so2_task);
-        // Пробуем оба варианта: сырой и PAC-stripped
-        mach_vm_address_t candidates[2] = { rawTI & 0x0000FFFFFFFFFFFFULL, rawTI };
-        for (int ci = 0; ci < 2; ci++) {
-            mach_vm_address_t directTI = candidates[ci];
-            if (directTI <= 0x1000000) continue;
-            // Валидируем: имя при +0x10 должно быть "PlayerManager"
-            mach_vm_address_t nameRaw = Read<mach_vm_address_t>(directTI + 0x10, cached_so2_task);
-            // Пробуем оба варианта namePtr тоже
-            mach_vm_address_t namePtrs[2] = { nameRaw & 0x0000FFFFFFFFFFFFULL, nameRaw };
-            for (int ni = 0; ni < 2; ni++) {
-                mach_vm_address_t np = namePtrs[ni];
-                if (np <= 0x1000000 || (np & 3)) continue;
-                char nmBuf[14] = {0};
-                mach_vm_size_t nmSz = 13;
-                kern_return_t nmKr = mach_vm_read_overwrite(cached_so2_task, np, 13,
-                                                            (mach_vm_address_t)nmBuf, &nmSz);
-                if (nmKr == KERN_SUCCESS && memcmp(nmBuf, "PlayerManager", 13) == 0) {
-                    set_scan_phase(2);
-                    set_found_class(directTI);
-                    goto DIRECT_READ_DONE;
-                }
-            }
+        mach_vm_address_t directTI = rawTI & 0x0000FFFFFFFFFFFFULL; // strip PAC
+        if (directTI <= 0x1000000) directTI = rawTI; // fallback: без стрипа
+        if (directTI > 0x1000000) {
+            set_scan_phase(2);
+            set_found_class(directTI);
         }
-        DIRECT_READ_DONE:;
     }
 
     // Фоновый скан — резервный вариант если прямое чтение не дало результат
@@ -548,24 +532,25 @@ struct ESPBoxData {
             goto CLEAR_BOXES;
         }
 
+        // iOS user-space heap: всегда < 1TB. PAC-stripped адреса > 1TB — мусор или kernel.
+        #define IS_HEAP(p) ((p) > 0x1000000ULL && (p) < 0x10000000000ULL)
+
         // Ходим по цепочке родителей ищем staticFields с данными.
-        // Пробуем ОБА возможных offset для parent: 0x50 (packed Il2CppType=12 байт)
-        // и 0x58 (padded Il2CppType=16 байт). Аналогично для static_fields: 0xB0 и 0xB8.
+        // parent может быть на 0x48, 0x50, 0x58, 0x60 в зависимости от версии Unity.
         {
-            static const int parentOffsets[] = {0x50, 0x58};
-            static const int sfOffsets[]     = {0xB0, 0xB8, 0xA8};
+            static const int parentOffsets[] = {0x48, 0x50, 0x58, 0x60};
+            static const int sfOffsets[]     = {0xA8, 0xB0, 0xB8, 0xC0};
             mach_vm_address_t walk = typeInfo;
             for (int depth = 0; depth < 6 && !staticFields; depth++) {
                 mach_vm_address_t par = 0;
                 for (int pOff : parentOffsets) {
-                    par = STRIP_PAC(Read<mach_vm_address_t>(walk + pOff, so2_task));
-                    if (par > 0x1000000) break;
-                    par = 0;
+                    mach_vm_address_t v = STRIP_PAC(Read<mach_vm_address_t>(walk + pOff, so2_task));
+                    if (IS_HEAP(v)) { par = v; break; }
                 }
                 if (!par) break;
                 for (int sOff : sfOffsets) {
                     mach_vm_address_t sf = STRIP_PAC(Read<mach_vm_address_t>(par + sOff, so2_task));
-                    if (sf > 0x1000000) {
+                    if (IS_HEAP(sf)) {
                         parentTypeInfo = par;
                         staticFields   = sf;
                         break;
@@ -575,16 +560,23 @@ struct ESPBoxData {
                 walk = par;
             }
         }
-        // Фолбек: собственные static_fields typeInfo (PlayerManager может иметь свои)
+        // Фолбек: собственные static_fields typeInfo
         if (!staticFields) {
-            static const int sfFb[] = {0xB0, 0xB8, 0xA8};
+            static const int sfFb[] = {0xA8, 0xB0, 0xB8, 0xC0};
             for (int sOff : sfFb) {
                 mach_vm_address_t sf = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + sOff, so2_task));
-                if (sf > 0x1000000) { staticFields = sf; break; }
+                if (IS_HEAP(sf)) { staticFields = sf; break; }
             }
         }
-        if (!staticFields || staticFields < 0x1000000) {
-            self.watermarkLabel.text = [NSString stringWithFormat:@"[SO2] ERR: no SF ti=%llx par=%llx", typeInfo, parentTypeInfo];
+        if (!staticFields) {
+            // Показываем raw parent-кандидаты на всех возможных офсетах для диагностики
+            mach_vm_address_t r48 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x48, so2_task));
+            mach_vm_address_t r50 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x50, so2_task));
+            mach_vm_address_t r58 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x58, so2_task));
+            mach_vm_address_t r60 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x60, so2_task));
+            self.watermarkLabel.text = [NSString stringWithFormat:
+                @"[SO2] noSF ti=%llx 48=%llx 50=%llx 58=%llx 60=%llx",
+                typeInfo, r48, r50, r58, r60];
             [self.watermarkLabel sizeToFit];
             goto CLEAR_BOXES;
         }
@@ -608,18 +600,12 @@ struct ESPBoxData {
             }
         }
         if (!playerManager) {
-            mach_vm_address_t v0 = STRIP_PAC(Read<mach_vm_address_t>(staticFields, so2_task));
-            mach_vm_address_t v8 = STRIP_PAC(Read<mach_vm_address_t>(staticFields + 8, so2_task));
-            // Читаем имя класса при typeInfo+0x10 для диагностики
-            char tiName[9] = "????????";
-            mach_vm_address_t nPtr = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x10, so2_task));
-            if (nPtr > 0x1000000) {
-                mach_vm_size_t nSz = 8;
-                mach_vm_read_overwrite(so2_task, nPtr, 8, (mach_vm_address_t)tiName, &nSz);
-                tiName[8] = 0;
-            }
+            mach_vm_address_t v0 = STRIP_PAC(Read<mach_vm_address_t>(staticFields + 0x00, so2_task));
+            mach_vm_address_t v8 = STRIP_PAC(Read<mach_vm_address_t>(staticFields + 0x08, so2_task));
+            mach_vm_address_t v10= STRIP_PAC(Read<mach_vm_address_t>(staticFields + 0x10, so2_task));
             self.watermarkLabel.text = [NSString stringWithFormat:
-                @"[SO2] no PM[%.8s] par=%llx sf=%llx v0=%llx", tiName, parentTypeInfo, staticFields, v0];
+                @"[SO2] noPM par=%llx sf=%llx v0=%llx v8=%llx v10=%llx",
+                parentTypeInfo, staticFields, v0, v8, v10];
             [self.watermarkLabel sizeToFit];
             goto CLEAR_BOXES;
         }
