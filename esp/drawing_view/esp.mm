@@ -532,8 +532,9 @@ struct ESPBoxData {
             goto CLEAR_BOXES;
         }
 
-        // iOS user-space heap: всегда < 1TB. PAC-stripped адреса > 1TB — мусор или kernel.
-        #define IS_HEAP(p) ((p) > 0x1000000ULL && (p) < 0x10000000000ULL)
+        // iOS user-space: 47-битный VA = max 128TB. IL2Cpp metadata/runtime могут
+        // располагаться в диапазоне нескольких TB — это нормально на ARM64e.
+        #define IS_HEAP(p) ((p) > 0x1000000ULL && (p) < 0x800000000000ULL)
 
         // Ходим по цепочке родителей ищем staticFields с данными.
         // parent может быть на 0x48, 0x50, 0x58, 0x60 в зависимости от версии Unity.
