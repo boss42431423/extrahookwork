@@ -437,6 +437,9 @@ struct ESPBoxData {
 
         cached_so2_pid = so2_pid;
         s_pm_scanned_pid = 0;
+        // Сбрасываем старый typeInfo при смене PID (новый ASLR)
+        set_scan_phase(0);
+        set_found_class(0);
     }
 
     // Прямое чтение TypeInfo по известному offset из дампа (быстрый путь)
@@ -446,8 +449,23 @@ struct ESPBoxData {
         // Стрипаем PAC-биты из TypeInfo-указателя (iOS ARM64e)
         directTI = directTI & 0x0000FFFFFFFFFFFFULL;
         if (directTI > 0x1000000) {
-            set_scan_phase(2);
-            set_found_class(directTI);
+            // Валидируем: имя при +0x10 должно быть "PlayerManager"
+            bool valid = false;
+            mach_vm_address_t namePtr = Read<mach_vm_address_t>(directTI + 0x10, cached_so2_task);
+            namePtr &= 0x0000FFFFFFFFFFFFULL;
+            if (namePtr > 0x1000000) {
+                char nmBuf[14] = {0};
+                mach_vm_size_t nmSz = 13;
+                kern_return_t nmKr = mach_vm_read_overwrite(cached_so2_task, namePtr, 13,
+                                                            (mach_vm_address_t)nmBuf, &nmSz);
+                if (nmKr == KERN_SUCCESS && memcmp(nmBuf, "PlayerManager", 13) == 0)
+                    valid = true;
+            }
+            if (valid) {
+                set_scan_phase(2);
+                set_found_class(directTI);
+            }
+            // Если валидация провалилась — ждём сканер (он найдёт правильный TypeInfo)
         }
     }
 
@@ -576,8 +594,16 @@ struct ESPBoxData {
         if (!playerManager) {
             mach_vm_address_t v0 = STRIP_PAC(Read<mach_vm_address_t>(staticFields, so2_task));
             mach_vm_address_t v8 = STRIP_PAC(Read<mach_vm_address_t>(staticFields + 8, so2_task));
+            // Читаем имя класса при typeInfo+0x10 для диагностики
+            char tiName[9] = "????????";
+            mach_vm_address_t nPtr = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x10, so2_task));
+            if (nPtr > 0x1000000) {
+                mach_vm_size_t nSz = 8;
+                mach_vm_read_overwrite(so2_task, nPtr, 8, (mach_vm_address_t)tiName, &nSz);
+                tiName[8] = 0;
+            }
             self.watermarkLabel.text = [NSString stringWithFormat:
-                @"[SO2] no PM par=%llx sf=%llx v0=%llx v8=%llx", parentTypeInfo, staticFields, v0, v8];
+                @"[SO2] no PM[%.8s] par=%llx sf=%llx v0=%llx", tiName, parentTypeInfo, staticFields, v0];
             [self.watermarkLabel sizeToFit];
             goto CLEAR_BOXES;
         }
