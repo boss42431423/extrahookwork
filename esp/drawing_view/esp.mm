@@ -445,28 +445,31 @@ struct ESPBoxData {
     // Прямое чтение TypeInfo по известному offset из дампа (быстрый путь)
     if (cached_unity_base && cached_so2_task && get_scan_phase() != 2) {
         const uint64_t PM_TYPEINFO_OFF = 167221856ULL;
-        mach_vm_address_t directTI = Read<mach_vm_address_t>(cached_unity_base + PM_TYPEINFO_OFF, cached_so2_task);
-        // Стрипаем PAC-биты из TypeInfo-указателя (iOS ARM64e)
-        directTI = directTI & 0x0000FFFFFFFFFFFFULL;
-        if (directTI > 0x1000000) {
+        mach_vm_address_t rawTI = Read<mach_vm_address_t>(cached_unity_base + PM_TYPEINFO_OFF, cached_so2_task);
+        // Пробуем оба варианта: сырой и PAC-stripped
+        mach_vm_address_t candidates[2] = { rawTI & 0x0000FFFFFFFFFFFFULL, rawTI };
+        for (int ci = 0; ci < 2; ci++) {
+            mach_vm_address_t directTI = candidates[ci];
+            if (directTI <= 0x1000000) continue;
             // Валидируем: имя при +0x10 должно быть "PlayerManager"
-            bool valid = false;
-            mach_vm_address_t namePtr = Read<mach_vm_address_t>(directTI + 0x10, cached_so2_task);
-            namePtr &= 0x0000FFFFFFFFFFFFULL;
-            if (namePtr > 0x1000000) {
+            mach_vm_address_t nameRaw = Read<mach_vm_address_t>(directTI + 0x10, cached_so2_task);
+            // Пробуем оба варианта namePtr тоже
+            mach_vm_address_t namePtrs[2] = { nameRaw & 0x0000FFFFFFFFFFFFULL, nameRaw };
+            for (int ni = 0; ni < 2; ni++) {
+                mach_vm_address_t np = namePtrs[ni];
+                if (np <= 0x1000000 || (np & 3)) continue;
                 char nmBuf[14] = {0};
                 mach_vm_size_t nmSz = 13;
-                kern_return_t nmKr = mach_vm_read_overwrite(cached_so2_task, namePtr, 13,
+                kern_return_t nmKr = mach_vm_read_overwrite(cached_so2_task, np, 13,
                                                             (mach_vm_address_t)nmBuf, &nmSz);
-                if (nmKr == KERN_SUCCESS && memcmp(nmBuf, "PlayerManager", 13) == 0)
-                    valid = true;
+                if (nmKr == KERN_SUCCESS && memcmp(nmBuf, "PlayerManager", 13) == 0) {
+                    set_scan_phase(2);
+                    set_found_class(directTI);
+                    goto DIRECT_READ_DONE;
+                }
             }
-            if (valid) {
-                set_scan_phase(2);
-                set_found_class(directTI);
-            }
-            // Если валидация провалилась — ждём сканер (он найдёт правильный TypeInfo)
         }
+        DIRECT_READ_DONE:;
     }
 
     // Фоновый скан — резервный вариант если прямое чтение не дало результат

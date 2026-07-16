@@ -258,19 +258,17 @@ void set_found_class(uint64_t v) { s_found_class_addr = v; }
 void set_found_name_off(int v)   { s_found_name_off = v; }
 
 static bool _check_name(task_t task, uint64_t cls_ptr, const char *target, int *out_name_off) {
-    int name_offsets[] = {0x10, 0x08, 0x18, 0x20, 0x28, 0x30, 0x38, 0x40, 0x48};
+    // Il2CppClass.name ВСЕГДА на 0x10. Проверяем только его (+ 0x08 как запасной).
+    // Проверка большего числа смещений даёт ложные срабатывания.
+    int name_offsets[] = {0x10, 0x08};
     char buf[32] = {0};
     size_t tlen = strlen(target);
-    for (int ni = 0; ni < 9; ni++) {
+    for (int ni = 0; ni < 2; ni++) {
         uint64_t np_raw = _safe64(task, cls_ptr + name_offsets[ni]);
         if (!np_raw) continue;
         // Попробуем и сырой указатель, и PAC-stripped версию
         uint64_t np = _is_vm_ptr(np_raw) ? np_raw : _pac_strip(np_raw);
-        if (!_is_vm_ptr(np)) continue;
-        if ((np & 3) != 0) {
-            np &= ~3ULL; // выравниваем на случай тегирования
-            if (!_is_vm_ptr(np)) continue;
-        }
+        if (!_is_vm_ptr(np) || (np & 3) != 0) continue;
         mach_vm_size_t sz = tlen + 1;
         kern_return_t kr = mach_vm_read_overwrite(task, np, tlen + 1, (mach_vm_address_t)buf, &sz);
         if (kr != KERN_SUCCESS) continue;
