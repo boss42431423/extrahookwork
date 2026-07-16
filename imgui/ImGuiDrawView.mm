@@ -150,16 +150,19 @@ extern "C" void HUDInjectImGuiTouchAtWindowPoint(CGPoint point, NSInteger phase,
     }
 }
 
-// Bridge to HUD layer to toggle ESP overlay visibility, HUD overlay, and hide menu.
+// Bridge to HUD layer — ESP control
 extern "C" void HUDSetESPEnabled(bool enabled);
 extern "C" void HUDSetTracersEnabled(bool enabled);
 extern "C" void HUDSetOverlayEnabled(bool enabled);
 extern "C" void HUDSetStealthEnabled(bool enabled);
 extern "C" void HUDHideMenu(void);
 
-// Bridge to HUD layer to toggle ESP overlay visibility and hide menu.
-extern "C" void HUDSetESPEnabled(bool enabled);
-extern "C" void HUDHideMenu(void);
+// Debug info from ESP pipeline (defined in HUDMainApplication.mm)
+extern "C" pid_t    HUDGetDebugPID(void);
+extern "C" uint64_t HUDGetDebugUnity(void);
+extern "C" uint64_t HUDGetDebugTypeInfo(void);
+extern "C" uint64_t HUDGetDebugPM(void);
+extern "C" int      HUDGetDebugPlayers(void);
 
 #define kWidth  [UIScreen mainScreen].bounds.size.width
 #define kHeight [UIScreen mainScreen].bounds.size.height
@@ -450,13 +453,6 @@ static bool gHUDMenuWasOpen = true;
     ImGui_ImplMetal_NewFrame(renderPassDescriptor);
     ImGui::NewFrame();
     
-    // C bridges for debug info from the ESP pipeline
-    extern "C" pid_t     HUDGetDebugPID(void);
-    extern "C" uint64_t  HUDGetDebugUnity(void);
-    extern "C" uint64_t  HUDGetDebugTypeInfo(void);
-    extern "C" uint64_t  HUDGetDebugPM(void);
-    extern "C" int       HUDGetDebugPlayers(void);
-
     if (MenDeal == true)
     {
         // GameSense-style: no title bar, sidebar + content
