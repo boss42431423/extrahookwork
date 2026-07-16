@@ -200,45 +200,56 @@ static bool MenDeal = true;
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.IniFilename = NULL;
 
-    // Compact modern dark theme (reference: packages/ui.png) — blue accent,
-    // smaller font so the menu fits comfortably on phones.
+    // GameSense-style dark theme: near-black bg, pink/purple accent
     ImGui::StyleColorsDark();
 
     ImFontConfig fontCfg;
-    fontCfg.SizePixels = 18.0f;  // compact but readable on retina phones
+    fontCfg.SizePixels = 15.0f;
     io.Fonts->AddFontDefault(&fontCfg);
 
     ImGuiStyle &style = ImGui::GetStyle();
-    const ImVec4 accent     = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);  // #438CFA blue
-    const ImVec4 accentDim  = ImVec4(0.26f, 0.59f, 0.98f, 0.45f);
-    style.Colors[ImGuiCol_Text]            = ImVec4(0.92f, 0.93f, 0.95f, 1.00f);
-    style.Colors[ImGuiCol_TextDisabled]    = ImVec4(0.50f, 0.52f, 0.56f, 1.00f);
-    style.Colors[ImGuiCol_WindowBg]        = ImVec4(0.07f, 0.08f, 0.10f, 0.96f);
-    style.Colors[ImGuiCol_FrameBg]         = ImVec4(0.15f, 0.16f, 0.19f, 1.00f);
-    style.Colors[ImGuiCol_FrameBgHovered]  = ImVec4(0.20f, 0.22f, 0.26f, 1.00f);
-    style.Colors[ImGuiCol_FrameBgActive]   = accentDim;
-    style.Colors[ImGuiCol_CheckMark]       = accent;
-    style.Colors[ImGuiCol_SliderGrab]      = accent;
-    style.Colors[ImGuiCol_SliderGrabActive]= ImVec4(0.40f, 0.70f, 1.00f, 1.00f);
-    style.Colors[ImGuiCol_Button]          = ImVec4(0.15f, 0.16f, 0.19f, 1.00f);
-    style.Colors[ImGuiCol_ButtonHovered]   = accentDim;
-    style.Colors[ImGuiCol_ButtonActive]    = accent;
-    style.Colors[ImGuiCol_Header]          = accentDim;
-    style.Colors[ImGuiCol_HeaderHovered]   = accentDim;
-    style.Colors[ImGuiCol_HeaderActive]    = accent;
-    style.Colors[ImGuiCol_TitleBg]         = ImVec4(0.07f, 0.08f, 0.10f, 1.00f);
-    style.Colors[ImGuiCol_TitleBgActive]   = ImVec4(0.10f, 0.12f, 0.16f, 1.00f);
-    style.Colors[ImGuiCol_Separator]       = ImVec4(0.20f, 0.22f, 0.26f, 1.00f);
-    style.WindowRounding   = 10.0f;
-    style.FrameRounding    = 5.0f;
-    style.GrabRounding     = 5.0f;
-    style.WindowPadding    = ImVec2(14, 12);
-    style.FramePadding     = ImVec2(10, 9);   // chunky so fat fingers actually hit it
-    style.ItemSpacing      = ImVec2(10, 10);
-    style.ItemInnerSpacing = ImVec2(8, 6);
-    style.TouchExtraPadding = ImVec2(10, 10); // fatter touch hitbox
-    style.WindowBorderSize = 0.0f;
-    style.TabRounding      = 5.0f;
+
+    // Pink/magenta accent matching gamesense
+    const ImVec4 accent    = ImVec4(0.78f, 0.18f, 0.84f, 1.00f);
+    const ImVec4 accentDim = ImVec4(0.78f, 0.18f, 0.84f, 0.35f);
+    const ImVec4 bgMain    = ImVec4(0.06f, 0.06f, 0.07f, 0.97f);
+    const ImVec4 bgFrame   = ImVec4(0.10f, 0.10f, 0.12f, 1.00f);
+    const ImVec4 bgFrameH  = ImVec4(0.14f, 0.14f, 0.17f, 1.00f);
+
+    style.Colors[ImGuiCol_Text]             = ImVec4(0.88f, 0.88f, 0.90f, 1.00f);
+    style.Colors[ImGuiCol_TextDisabled]     = ImVec4(0.42f, 0.42f, 0.46f, 1.00f);
+    style.Colors[ImGuiCol_WindowBg]         = bgMain;
+    style.Colors[ImGuiCol_ChildBg]          = ImVec4(0.05f, 0.05f, 0.06f, 1.00f);
+    style.Colors[ImGuiCol_PopupBg]          = ImVec4(0.08f, 0.08f, 0.09f, 0.98f);
+    style.Colors[ImGuiCol_FrameBg]          = bgFrame;
+    style.Colors[ImGuiCol_FrameBgHovered]   = bgFrameH;
+    style.Colors[ImGuiCol_FrameBgActive]    = accentDim;
+    style.Colors[ImGuiCol_CheckMark]        = accent;
+    style.Colors[ImGuiCol_SliderGrab]       = accent;
+    style.Colors[ImGuiCol_SliderGrabActive] = ImVec4(0.90f, 0.30f, 0.95f, 1.00f);
+    style.Colors[ImGuiCol_Button]           = bgFrame;
+    style.Colors[ImGuiCol_ButtonHovered]    = bgFrameH;
+    style.Colors[ImGuiCol_ButtonActive]     = accentDim;
+    style.Colors[ImGuiCol_Header]           = accentDim;
+    style.Colors[ImGuiCol_HeaderHovered]    = ImVec4(0.78f, 0.18f, 0.84f, 0.50f);
+    style.Colors[ImGuiCol_HeaderActive]     = accent;
+    style.Colors[ImGuiCol_Separator]        = ImVec4(0.15f, 0.15f, 0.18f, 1.00f);
+    style.Colors[ImGuiCol_TitleBg]          = bgMain;
+    style.Colors[ImGuiCol_TitleBgActive]    = bgMain;
+    style.Colors[ImGuiCol_ScrollbarBg]      = ImVec4(0.04f, 0.04f, 0.05f, 1.00f);
+    style.Colors[ImGuiCol_ScrollbarGrab]    = ImVec4(0.20f, 0.20f, 0.24f, 1.00f);
+
+    style.WindowRounding    = 4.0f;
+    style.ChildRounding     = 0.0f;
+    style.FrameRounding     = 3.0f;
+    style.GrabRounding      = 3.0f;
+    style.WindowPadding     = ImVec2(0, 0);
+    style.FramePadding      = ImVec2(8, 6);
+    style.ItemSpacing       = ImVec2(8, 5);
+    style.ItemInnerSpacing  = ImVec2(6, 4);
+    style.TouchExtraPadding = ImVec2(8, 8);
+    style.WindowBorderSize  = 0.0f;
+    style.ChildBorderSize   = 0.0f;
 
     ImGui_ImplMetal_Init(_device);
 
@@ -439,137 +450,241 @@ static bool gHUDMenuWasOpen = true;
     ImGui_ImplMetal_NewFrame(renderPassDescriptor);
     ImGui::NewFrame();
     
+    // C bridges for debug info from the ESP pipeline
+    extern "C" pid_t     HUDGetDebugPID(void);
+    extern "C" uint64_t  HUDGetDebugUnity(void);
+    extern "C" uint64_t  HUDGetDebugTypeInfo(void);
+    extern "C" uint64_t  HUDGetDebugPM(void);
+    extern "C" int       HUDGetDebugPlayers(void);
+
     if (MenDeal == true)
     {
-        ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse |
-                                 ImGuiWindowFlags_NoResize |
+        // GameSense-style: no title bar, sidebar + content
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar |
+                                 ImGuiWindowFlags_NoCollapse  |
+                                 ImGuiWindowFlags_NoResize    |
                                  ImGuiWindowFlags_NoSavedSettings;
-        ImGui::SetNextWindowSize(ImVec2(460.0f, 0.0f), ImGuiCond_Always);
+        const float WIN_W = 580.0f, WIN_H = 400.0f;
+        ImGui::SetNextWindowSize(ImVec2(WIN_W, WIN_H), ImGuiCond_Always);
         ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
                                 ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-        ImGui::Begin("ExtraHook", &MenDeal, flags);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::Begin("##eh_main", &MenDeal, flags);
+        ImGui::PopStyleVar();
 
-        // Header bar
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.48f, 0.76f, 1.00f, 1.0f));
-        ImGui::Text("EXTRA");
-        ImGui::PopStyleColor();
-        ImGui::SameLine(0, 0);
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-        ImGui::Text("HOOK");
-        ImGui::PopStyleColor();
-        ImGui::SameLine();
-        ImGui::TextDisabled("v2.0  |  SO2 0.39.2");
-        ImGui::Separator();
-        ImGui::Spacing();
+        ImDrawList *dl = ImGui::GetWindowDrawList();
+        ImVec2 winPos  = ImGui::GetWindowPos();
+        ImVec2 winSize = ImGui::GetWindowSize();
+
+        // ── Top accent line (2px pink) ────────────────────────────────────
+        dl->AddRectFilled(winPos,
+                          ImVec2(winPos.x + winSize.x, winPos.y + 2),
+                          IM_COL32(200, 46, 214, 255));
+
+        // ── Left sidebar (55px) ───────────────────────────────────────────
+        static int activeSection = 0;
+        const float SIDEBAR_W = 55.0f;
+        const float CONTENT_TOP = 2.0f;  // below accent line
+
+        // Sidebar background slightly darker
+        dl->AddRectFilled(ImVec2(winPos.x, winPos.y + CONTENT_TOP),
+                          ImVec2(winPos.x + SIDEBAR_W, winPos.y + winSize.y),
+                          IM_COL32(12, 12, 14, 255));
+        // Sidebar right border
+        dl->AddRectFilled(ImVec2(winPos.x + SIDEBAR_W, winPos.y + CONTENT_TOP),
+                          ImVec2(winPos.x + SIDEBAR_W + 1, winPos.y + winSize.y),
+                          IM_COL32(22, 22, 26, 255));
+
+        ImGui::SetCursorPos(ImVec2(0, CONTENT_TOP));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+
+        ImGui::BeginChild("##sidebar", ImVec2(SIDEBAR_W, -1), false,
+                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+        // Section labels  [E] [V] [M] [?]
+        const char *secLabels[] = {"ESP", "VIS", "MISC", "INFO"};
+        const int   secCount    = 4;
+
+        for (int i = 0; i < secCount; i++) {
+            bool sel = (activeSection == i);
+            ImVec4 txtCol = sel ? ImVec4(0.80f, 0.20f, 0.86f, 1.0f)
+                                : ImVec4(0.40f, 0.40f, 0.44f, 1.0f);
+            ImVec4 btnBg  = sel ? ImVec4(0.10f, 0.10f, 0.13f, 1.0f)
+                                : ImVec4(0.00f, 0.00f, 0.00f, 0.0f);
+
+            ImGui::PushStyleColor(ImGuiCol_Button,        btnBg);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.10f,0.10f,0.13f,0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.12f,0.12f,0.16f,1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text,          txtCol);
+
+            if (ImGui::Button(secLabels[i], ImVec2(SIDEBAR_W, 52)))
+                activeSection = i;
+
+            ImGui::PopStyleColor(4);
+
+            // Left accent bar for selected tab
+            if (sel) {
+                ImVec2 rMin = ImGui::GetItemRectMin();
+                ImVec2 rMax = ImGui::GetItemRectMax();
+                ImGui::GetWindowDrawList()->AddRectFilled(
+                    rMin, ImVec2(rMin.x + 3, rMax.y), IM_COL32(200, 46, 214, 255));
+            }
+        }
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+
+        // ── Right content ─────────────────────────────────────────────────
+        ImGui::SetCursorPos(ImVec2(SIDEBAR_W + 1, CONTENT_TOP));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 10));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,   ImVec2(8, 5));
+        ImGui::BeginChild("##content", ImVec2(-1, -1), false);
 
         ImGuiColorEditFlags cflags = ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoAlpha;
 
-        if (ImGui::BeginTabBar("##ehtabs", ImGuiTabBarFlags_None)) {
+        // Helper: draw a grey section header like "Visuals" / "Settings"
+        auto SectionHeader = [](const char *label) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.45f,0.45f,0.50f,1.0f));
+            ImGui::Text("%s", label);
+            ImGui::PopStyleColor();
+            ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(0.14f,0.14f,0.17f,1.0f));
+            ImGui::Separator();
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+        };
 
-            // ── ESP TAB ──────────────────────────────────────────────────────
-            if (ImGui::BeginTabItem("  ESP  ")) {
-                ImGui::Spacing();
+        // ── SECTION 0: ESP ────────────────────────────────────────────────
+        if (activeSection == 0) {
+            ImGui::Columns(2, "##espcols", false);
 
-                // Master ESP enable with accent color
-                ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0.10f, 0.90f, 0.40f, 1.0f));
-                static bool espMaster = false;
-                ImGui::Checkbox("ESP Enable", &espMaster);
-                ImGui::PopStyleColor();
+            SectionHeader("Boxes & Lines");
+            ImGui::Checkbox("Box ESP",    &showBoxes);
+            ImGui::SameLine(0,6); ImGui::ColorEdit3("##cbox",  colBox,  cflags);
+            ImGui::Spacing();
+            ImGui::Checkbox("Snap Lines", &showTracers);
+            ImGui::SameLine(0,6); ImGui::ColorEdit3("##cline", colLine, cflags);
+            ImGui::Spacing();
+            ImGui::Checkbox("Health Bar", &showHealthBar);
+            ImGui::SameLine(0,6); ImGui::ColorEdit3("##chp",   colHp,   cflags);
 
-                ImGui::SameLine(ImGui::GetWindowWidth() - 120);
-                ImGui::TextDisabled(espMaster ? "[ ON ]" : "[ OFF ]");
-                ImGui::Separator();
+            ImGui::NextColumn();
 
-                ImGui::Columns(2, "##espcols", false);
+            SectionHeader("Info");
+            ImGui::Checkbox("Name",       &showName);
+            ImGui::SameLine(0,6); ImGui::ColorEdit3("##cname", colName,   cflags);
+            ImGui::Spacing();
+            ImGui::Checkbox("Weapon",     &showWeapon);
+            ImGui::SameLine(0,6); ImGui::ColorEdit3("##cwep",  colWeapon, cflags);
+            ImGui::Spacing();
+            ImGui::Checkbox("Team Check", &teamCheck);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f,0.4f,0.44f,1.0f));
+            ImGui::Text("  skip teammates");
+            ImGui::PopStyleColor();
 
-                ImGui::Checkbox("Box ESP",    &showBoxes);
-                ImGui::ColorEdit3("##cbox", colBox, cflags);
-                ImGui::Spacing();
-                ImGui::Checkbox("Snap Lines", &showTracers);
-                ImGui::ColorEdit3("##cline", colLine, cflags);
-                ImGui::Spacing();
-                ImGui::Checkbox("Health Bar", &showHealthBar);
-                ImGui::ColorEdit3("##chp", colHp, cflags);
-
-                ImGui::NextColumn();
-
-                ImGui::Checkbox("Name",       &showName);
-                ImGui::ColorEdit3("##cname", colName, cflags);
-                ImGui::Spacing();
-                ImGui::Checkbox("Weapon",     &showWeapon);
-                ImGui::ColorEdit3("##cwep", colWeapon, cflags);
-                ImGui::Spacing();
-                ImGui::Checkbox("Team Check", &teamCheck);
-                ImGui::TextDisabled("skip teammates");
-
-                ImGui::Columns(1);
-                ImGui::Spacing();
-                ImGui::EndTabItem();
-
-                // Propagate ESP master switch
-                if (!espMaster) {
-                    showBoxes = showTracers = showHealthBar = showName = showWeapon = false;
-                }
-            }
-
-            // ── MISC TAB ─────────────────────────────────────────────────────
-            if (ImGui::BeginTabItem(" Misc ")) {
-                ImGui::Spacing();
-
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.70f, 0.75f, 1.0f));
-                ImGui::Text("CHAMS");
-                ImGui::PopStyleColor();
-                ImGui::Separator();
-                ImGui::Spacing();
-
-                ImGui::Checkbox("Enable Chams", &chamsEnabled);
-                if (chamsEnabled) {
-                    ImGui::SameLine();
-                    ImGui::TextDisabled("(experimental)");
-                    ImGui::SliderInt("Material ID", &chamsMaterialId, 0, 200);
-                }
-
-                ImGui::Spacing();
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.70f, 0.75f, 1.0f));
-                ImGui::Text("STEALTH");
-                ImGui::PopStyleColor();
-                ImGui::Separator();
-                ImGui::Spacing();
-
-                ImGui::Checkbox("Hide from screen record", &stealthEnabled);
-                ImGui::TextDisabled("hides menu+ESP from screenshots");
-
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::Spacing();
-
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.70f, 0.75f, 1.0f));
-                ImGui::Text("STATUS");
-                ImGui::PopStyleColor();
-                ImGui::Separator();
-                ImGui::Spacing();
-
-                // Live status indicator
-                BOOL espOn = (showBoxes || showHealthBar || showName || showWeapon || showTracers || chamsEnabled);
-                if (espOn) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.10f, 0.90f, 0.40f, 1.0f));
-                    ImGui::Text("* ESP ACTIVE");
-                    ImGui::PopStyleColor();
-                } else {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.60f, 0.60f, 0.60f, 1.0f));
-                    ImGui::Text("  ESP INACTIVE");
-                    ImGui::PopStyleColor();
-                }
-                ImGui::TextDisabled("Build: ExtraHook 2.0 / SO2 0.39.2");
-
-                ImGui::Spacing();
-                ImGui::EndTabItem();
-            }
-
-            ImGui::EndTabBar();
+            ImGui::Columns(1);
         }
 
-        // Apply colors to shared state
+        // ── SECTION 1: VIS ────────────────────────────────────────────────
+        else if (activeSection == 1) {
+            SectionHeader("Chams");
+            ImGui::Checkbox("Enable Chams", &chamsEnabled);
+            if (chamsEnabled) {
+                ImGui::SetNextItemWidth(180);
+                ImGui::SliderInt("Material ID", &chamsMaterialId, 0, 200);
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f,0.4f,0.44f,1.0f));
+                ImGui::Text("  experimental, may crash");
+                ImGui::PopStyleColor();
+            }
+            ImGui::Spacing();
+            SectionHeader("Stealth");
+            ImGui::Checkbox("Hide from screen record", &stealthEnabled);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f,0.4f,0.44f,1.0f));
+            ImGui::Text("  hides menu+ESP from screenshots");
+            ImGui::PopStyleColor();
+        }
+
+        // ── SECTION 2: MISC ───────────────────────────────────────────────
+        else if (activeSection == 2) {
+            SectionHeader("ExtraHook v2.0");
+            ImGui::Text("Standoff 2  0.39.2");
+            ImGui::Text("iOS TrollStore overlay");
+            ImGui::Spacing();
+            SectionHeader("Controls");
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f,0.4f,0.44f,1.0f));
+            ImGui::Text("  Tap EH dot to open menu");
+            ImGui::Text("  Drag title bar to reposition");
+            ImGui::PopStyleColor();
+        }
+
+        // ── SECTION 3: INFO (debug) ───────────────────────────────────────
+        else if (activeSection == 3) {
+            SectionHeader("Pipeline Debug");
+
+            pid_t    dbgPid  = HUDGetDebugPID();
+            uint64_t dbgBase = HUDGetDebugUnity();
+            uint64_t dbgTI   = HUDGetDebugTypeInfo();
+            uint64_t dbgPM   = HUDGetDebugPM();
+            int      dbgPlrs = HUDGetDebugPlayers();
+
+            // PID row
+            if (dbgPid > 0) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.10f,0.85f,0.35f,1.0f));
+                ImGui::Text("PID      %d  [OK]", (int)dbgPid);
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f,0.20f,0.20f,1.0f));
+                ImGui::Text("PID      --- [game not found]");
+            }
+            ImGui::PopStyleColor();
+
+            // Unity base row
+            if (dbgBase) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.10f,0.85f,0.35f,1.0f));
+                ImGui::Text("Unity    0x%llX  [OK]", (unsigned long long)dbgBase);
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f,0.55f,0.10f,1.0f));
+                ImGui::Text("Unity    0x0  [not found]");
+            }
+            ImGui::PopStyleColor();
+
+            // TypeInfo row
+            if (dbgTI) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.10f,0.85f,0.35f,1.0f));
+                ImGui::Text("TypeInfo 0x%llX  [OK]", (unsigned long long)dbgTI);
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f,0.55f,0.10f,1.0f));
+                ImGui::Text("TypeInfo 0x0  [read failed]");
+            }
+            ImGui::PopStyleColor();
+
+            // PlayerManager row
+            if (dbgPM) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.10f,0.85f,0.35f,1.0f));
+                ImGui::Text("PM       0x%llX  [OK]", (unsigned long long)dbgPM);
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f,0.55f,0.10f,1.0f));
+                ImGui::Text("PM       0x0  [read failed]");
+            }
+            ImGui::PopStyleColor();
+
+            // Players count
+            if (dbgPlrs > 0) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.10f,0.85f,0.35f,1.0f));
+                ImGui::Text("Players  %d", dbgPlrs);
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f,0.55f,0.10f,1.0f));
+                ImGui::Text("Players  0  [in lobby / bad ptr]");
+            }
+            ImGui::PopStyleColor();
+
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f,0.4f,0.44f,1.0f));
+            ImGui::Text("Open game + match for non-zero values");
+            ImGui::PopStyleColor();
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleVar(2);
+
+        // ── Propagate state to ESP pipeline ──────────────────────────────
         [ESPImGuiView setLineColor:[UIColor colorWithRed:colLine[0] green:colLine[1] blue:colLine[2] alpha:1.0]];
         [ESPImGuiView setBoxColor:[UIColor colorWithRed:colBox[0] green:colBox[1] blue:colBox[2] alpha:1.0]];
         [ESPImGuiView setHpColor:[UIColor colorWithRed:colHp[0] green:colHp[1] blue:colHp[2] alpha:1.0]];
@@ -585,7 +700,6 @@ static bool gHUDMenuWasOpen = true;
             HUDSetStealthEnabled(stealthEnabled);
         }
 
-        // Drive ESP draw loop
         BOOL espOn = (showBoxes || showHealthBar || showName || showWeapon || showTracers || chamsEnabled);
         [ESPImGuiView setESPEnabled:espOn];
         [ESPImGuiView setTracersEnabled:espOn];
@@ -599,17 +713,19 @@ static bool gHUDMenuWasOpen = true;
         HUDSetESPEnabled(espOn);
         HUDSetTracersEnabled(espOn);
 
-        ImVec2 wpos = ImGui::GetWindowPos();
+        ImVec2 wpos  = ImGui::GetWindowPos();
         ImVec2 wsize = ImGui::GetWindowSize();
         gMenuWindowRect = CGRectMake(wpos.x, wpos.y, wsize.x, wsize.y);
 
         ImGui::End();
     } else {
         gMenuWindowRect = CGRectZero;
-        // Small ExtraHook indicator dot when menu is closed
+        // Closed-menu: small pink dot + "EH" label in top-right corner
         ImDrawList *fg = ImGui::GetForegroundDrawList();
-        fg->AddCircleFilled(ImVec2(io.DisplaySize.x - 28, 28), 9, IM_COL32(30, 180, 90, 200));
-        fg->AddText(ImVec2(io.DisplaySize.x - 48, 38), IM_COL32(255, 255, 255, 180), "EH");
+        float bx = io.DisplaySize.x - 32, by = 32;
+        fg->AddCircleFilled(ImVec2(bx, by), 14, IM_COL32(15, 15, 18, 210));
+        fg->AddCircle(ImVec2(bx, by), 14, IM_COL32(200, 46, 214, 200), 24, 1.5f);
+        fg->AddText(ImVec2(bx - 8, by - 6), IM_COL32(200, 46, 214, 255), "EH");
     }
 
     ImGui::Render();

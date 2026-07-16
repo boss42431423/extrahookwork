@@ -25,6 +25,19 @@
 
 #define SPAWN_AS_ROOT 0
 
+// Debug globals — updated every ESP tick so ImGui can show the pipeline state.
+volatile pid_t         g_esp_debug_pid     = 0;
+volatile uint64_t      g_esp_debug_unity   = 0;
+volatile uint64_t      g_esp_debug_typeinfo= 0;
+volatile uint64_t      g_esp_debug_pm      = 0;
+volatile int           g_esp_debug_players = 0;
+
+extern "C" pid_t     HUDGetDebugPID(void)     { return g_esp_debug_pid; }
+extern "C" uint64_t  HUDGetDebugUnity(void)   { return g_esp_debug_unity; }
+extern "C" uint64_t  HUDGetDebugTypeInfo(void){ return g_esp_debug_typeinfo; }
+extern "C" uint64_t  HUDGetDebugPM(void)      { return g_esp_debug_pm; }
+extern "C" int       HUDGetDebugPlayers(void) { return g_esp_debug_players; }
+
 extern "C" char **environ;
 
 #if SPAWN_AS_ROOT
@@ -1271,9 +1284,7 @@ static void HUDEnableMultiTouchOnViewTree(UIView *view, NSUInteger depth)
             [_tracerTimer invalidate];
             _tracerTimer = nil;
         } else if (!_tracerTimer) {
-            // Only create timer if not already running — ImGui calls this every frame,
-            // so recreating each time was preventing the timer from ever firing.
-            _tracerTimer = [NSTimer scheduledTimerWithTimeInterval:1.0/30.0
+            _tracerTimer = [NSTimer scheduledTimerWithTimeInterval:1.0/60.0
                                                             target:self
                                                           selector:@selector(updateTracers)
                                                           userInfo:nil
@@ -1981,11 +1992,16 @@ static inline void HUDClampViewKeepingVisible(UIView *view, UIView *hostView, CG
     static mach_vm_address_t cached_unity_base = 0;
 
     pid_t so2_pid = get_pid_by_name("Standoff2");
+    g_esp_debug_pid = so2_pid;
 
     if (so2_pid <= 0) {
         cached_so2_pid = 0;
         cached_so2_task = 0;
         cached_unity_base = 0;
+        g_esp_debug_unity = 0;
+        g_esp_debug_typeinfo = 0;
+        g_esp_debug_pm = 0;
+        g_esp_debug_players = 0;
         _fakeESPLayer.path = nil;
         _fakeESPOutlineLayer.path = nil;
         return;
@@ -2009,14 +2025,15 @@ static inline void HUDClampViewKeepingVisible(UIView *view, UIView *hostView, CG
 
 
     mach_vm_address_t unity_base = cached_unity_base;
+    g_esp_debug_unity = unity_base;
     if (!unity_base) {
         _fakeESPLayer.path = nil;
         _fakeESPOutlineLayer.path = nil;
         return;
     }
-    
 
-    mach_vm_address_t typeInfo = Read<mach_vm_address_t>(unity_base + 167221856, so2_task); // 0x9F7D060 PlayerManager_TypeInfo 0.39.2
+    mach_vm_address_t typeInfo = Read<mach_vm_address_t>(unity_base + 167221856, so2_task);
+    g_esp_debug_typeinfo = typeInfo;
     if (!typeInfo || typeInfo < 0x1000000) {
         _fakeESPLayer.path = nil;
         _fakeESPOutlineLayer.path = nil;
@@ -2040,6 +2057,7 @@ static inline void HUDClampViewKeepingVisible(UIView *view, UIView *hostView, CG
     }
 
     mach_vm_address_t playerManager = Read<mach_vm_address_t>(staticFields + 0x0, so2_task);
+    g_esp_debug_pm = playerManager;
     if (!playerManager || playerManager < 0x1000000) {
         _fakeESPLayer.path = nil;
         _fakeESPOutlineLayer.path = nil;
@@ -2047,17 +2065,17 @@ static inline void HUDClampViewKeepingVisible(UIView *view, UIView *hostView, CG
     }
 
     mach_vm_address_t playersDict = Read<mach_vm_address_t>(playerManager + 0x28, so2_task);
-    
+
     int c20 = Read<int>(playersDict + 0x20, so2_task);
     int c40 = Read<int>(playersDict + 0x40, so2_task);
     int c18 = Read<int>(playersDict + 0x18, so2_task);
-    
+
     int playersCount = 0;
     if      (c20 > 0 && c20 <= 32) playersCount = c20;
     else if (c40 > 0 && c40 <= 32) playersCount = c40;
     else if (c18 > 0 && c18 <= 32) playersCount = c18;
-    
-    
+    g_esp_debug_players = playersCount;
+
     if (playersCount <= 0 || playersCount > 32) {
         _fakeESPLayer.path = nil;
         _fakeESPOutlineLayer.path = nil;
