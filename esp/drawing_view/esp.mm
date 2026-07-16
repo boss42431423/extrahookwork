@@ -536,48 +536,43 @@ struct ESPBoxData {
         // располагаться в диапазоне нескольких TB — это нормально на ARM64e.
         #define IS_HEAP(p) ((p) > 0x1000000ULL && (p) < 0x800000000000ULL)
 
-        // Ходим по цепочке родителей ищем staticFields с данными.
-        // parent может быть на 0x48, 0x50, 0x58, 0x60 в зависимости от версии Unity.
+        // Для каждого кандидата parent пробуем ВСЕ pOff, а не break на первом IS_HEAP.
+        // standard Il2CppClass: parent@0x58, static_fields@0x90..0xB8 (varies by Unity ver).
         {
-            static const int parentOffsets[] = {0x48, 0x50, 0x58, 0x60};
-            static const int sfOffsets[]     = {0xA8, 0xB0, 0xB8, 0xC0};
+            static const int parentOffsets[] = {0x48, 0x50, 0x58, 0x60, 0x68};
+            static const int sfOffsets[]     = {0x88, 0x90, 0x98, 0xA0, 0xA8, 0xB0, 0xB8, 0xC0};
             mach_vm_address_t walk = typeInfo;
-            for (int depth = 0; depth < 6 && !staticFields; depth++) {
-                mach_vm_address_t par = 0;
+            for (int depth = 0; depth < 4 && !staticFields; depth++) {
+                mach_vm_address_t last_par = 0;
                 for (int pOff : parentOffsets) {
-                    mach_vm_address_t v = STRIP_PAC(Read<mach_vm_address_t>(walk + pOff, so2_task));
-                    if (IS_HEAP(v)) { par = v; break; }
-                }
-                if (!par) break;
-                for (int sOff : sfOffsets) {
-                    mach_vm_address_t sf = STRIP_PAC(Read<mach_vm_address_t>(par + sOff, so2_task));
-                    if (IS_HEAP(sf)) {
-                        parentTypeInfo = par;
-                        staticFields   = sf;
-                        break;
+                    mach_vm_address_t par = STRIP_PAC(Read<mach_vm_address_t>(walk + pOff, so2_task));
+                    if (!IS_HEAP(par)) continue;
+                    last_par = par;
+                    // Проверяем SF у этого кандидата
+                    for (int sOff : sfOffsets) {
+                        mach_vm_address_t sf = STRIP_PAC(Read<mach_vm_address_t>(par + sOff, so2_task));
+                        if (IS_HEAP(sf)) {
+                            parentTypeInfo = par;
+                            staticFields   = sf;
+                            break;
+                        }
                     }
+                    if (staticFields) break;
                 }
-                if (staticFields) break;
-                walk = par;
-            }
-        }
-        // Фолбек: собственные static_fields typeInfo
-        if (!staticFields) {
-            static const int sfFb[] = {0xA8, 0xB0, 0xB8, 0xC0};
-            for (int sOff : sfFb) {
-                mach_vm_address_t sf = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + sOff, so2_task));
-                if (IS_HEAP(sf)) { staticFields = sf; break; }
+                if (staticFields || !last_par) break;
+                walk = last_par; // advance to last tried parent for next depth
             }
         }
         if (!staticFields) {
-            // Показываем raw parent-кандидаты на всех возможных офсетах для диагностики
-            mach_vm_address_t r48 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x48, so2_task));
-            mach_vm_address_t r50 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x50, so2_task));
-            mach_vm_address_t r58 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x58, so2_task));
-            mach_vm_address_t r60 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x60, so2_task));
+            // parent стандартный offset 0x58; читаем что у него на sf-офсетах
+            mach_vm_address_t par58 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x58, so2_task));
+            mach_vm_address_t sf90  = par58 ? STRIP_PAC(Read<mach_vm_address_t>(par58 + 0x90, so2_task)) : 0;
+            mach_vm_address_t sfB0  = par58 ? STRIP_PAC(Read<mach_vm_address_t>(par58 + 0xB0, so2_task)) : 0;
+            mach_vm_address_t sfB8  = par58 ? STRIP_PAC(Read<mach_vm_address_t>(par58 + 0xB8, so2_task)) : 0;
+            mach_vm_address_t sfC0  = par58 ? STRIP_PAC(Read<mach_vm_address_t>(par58 + 0xC0, so2_task)) : 0;
             self.watermarkLabel.text = [NSString stringWithFormat:
-                @"[SO2] noSF ti=%llx 48=%llx 50=%llx 58=%llx 60=%llx",
-                typeInfo, r48, r50, r58, r60];
+                @"[SO2] noSF par58=%llx 90=%llx B0=%llx B8=%llx C0=%llx",
+                par58, sf90, sfB0, sfB8, sfC0];
             [self.watermarkLabel sizeToFit];
             goto CLEAR_BOXES;
         }
