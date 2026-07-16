@@ -464,8 +464,8 @@ static bool gHUDMenuWasOpen = true;
                                  ImGuiWindowFlags_NoResize    |
                                  ImGuiWindowFlags_NoSavedSettings;
         // Fit inside portrait phone screen (~390pt wide), leave margin
-        const float WIN_W = ImMin(390.0f, io.DisplaySize.x - 20.0f);
-        const float WIN_H = ImMin(420.0f, io.DisplaySize.y - 60.0f);
+        const float WIN_W = fminf(390.0f, io.DisplaySize.x - 20.0f);
+        const float WIN_H = fminf(420.0f, io.DisplaySize.y - 60.0f);
         ImGui::SetNextWindowSize(ImVec2(WIN_W, WIN_H), ImGuiCond_Always);
         ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
                                 ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
