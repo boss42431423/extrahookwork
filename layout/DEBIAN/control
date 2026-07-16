@@ -1,9 +1,9 @@
-Package: com.extrahook.app
-Name: ExtraHook
-Version: 2.0.0
+Package: dev.metaware.external
+Name: PastaWare
+Version: 555
 Section: Tweaks
-Depends: firmware (>= 13.0), mobilesubstrate (>= 0.9.7000), com.rpetrich.rocketbootstrap (>= 1.0.9)
+Depends: firmware (>= 14.0)
 Architecture: iphoneos-arm
-Author: extrahook
-Maintainer: extrahook
-Description: External overlay ESP for Standoff 2.
+Author: Lessica <82flex@gmail.com>
+Maintainer: Lessica <82flex@gmail.com>
+Description: Troll your speed, but jailbroken.

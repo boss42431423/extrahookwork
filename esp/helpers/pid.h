@@ -5,7 +5,6 @@
 #import <UIKit/UIKit.h>
 #import "libproc.h"
 #import <mach/mach.h>
-#import <mach/vm_map.h>
 #import "proc_info.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,11 +19,27 @@
 #include <sys/types.h>
 
 /*
-   * Use mach_vm_read_overwrite (avoids memory leaks).
-   * vm_read is provided by system <mach/vm_map.h>.
+ 
+   * if you use mach_vm_read or vm_read, check memory, it is important to avoid memory leaks.
+   * Use vm_deallocate to fix leaks memory.
+   *
+   * ---------------- OR -----------------
+   *
+   * Use mach_vm_read_overwrite instead.
+ 
 */
 
 extern "C" {
+
+
+extern kern_return_t
+vm_read(
+        vm_map_read_t target_task,
+        vm_address_t address,
+        vm_size_t size,
+        vm_offset_t *data,
+        mach_msg_type_number_t *dataCnt
+        );
 
 extern kern_return_t
 mach_vm_read_overwrite(
@@ -94,9 +109,16 @@ extern host_name_port_t mach_host_self();
 mach_port_t get_task_for_PID(pid_t pid);
 pid_t get_pid_by_name(const char *keyword);
 task_t get_task_by_pid(pid_t pid);
-/// Причина последней неудачи get_task_by_pid (для отладочного оверлея). Не NULL.
-const char *get_task_last_error(void);
 mach_vm_address_t get_image_base_address(mach_port_t task, const char *image_name);
+uint64_t find_pm_typeinfo_offset(task_t task, mach_vm_address_t unity_base);
+int get_scan_phase(void);
+uint64_t get_scan_progress(void);
+uint64_t get_scan_total(void);
+uint64_t get_found_class(void);
+int get_found_name_off(void);
+void set_scan_phase(int v);
+void set_found_class(uint64_t v);
+void set_found_name_off(int v);
 
 template<typename T>
 T Read(uintptr_t address, task_t task)
@@ -122,11 +144,12 @@ T Read(uintptr_t address, task_t task)
 }
 
 template<typename T>
-void Write(uintptr_t address, T value, task_t task)
+void Write(uintptr_t address, T data, task_t task)
 {
-    if (address <= 0 || !task) return;
-    mach_vm_write((vm_map_t)task, (mach_vm_address_t)address, (pointer_t)&value, (mach_msg_type_number_t)sizeof(T));
-}
+    if (address <= 0 || address > 100000000000)
+        return;
 
+    mach_vm_write(task, address, (pointer_t)&data, sizeof(T));
+}
 
 #endif /* Injector_h */

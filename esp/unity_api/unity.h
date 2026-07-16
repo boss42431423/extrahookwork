@@ -24,9 +24,9 @@ struct Vector4
 
 struct TMatrix
 {
-    Vector4 position;
     Vector4 rotation;
-    Vector4 scale;
+    Vector3 position;
+    Vector3 scale;
 };
 
 struct c_matrix
@@ -37,11 +37,7 @@ struct c_matrix
 
 
 Vector3 get_position_by_transform(mach_vm_address_t mach_transform_ptr, task_t task);
-/** Позиция кости: player = PlayerController, view = player+viewOffset, bipedmap = view+bipedmapOffset, bone = Read(bipedmap+boneOffset) → get_position_by_transform(bone). */
-Vector3 get_bone_position(mach_vm_address_t player_addr, uint32_t view_offset, uint32_t bipedmap_offset, uint32_t bone_offset, task_t task);
 inline float Dot(const Vector3 &Vec1, const Vector3 &Vec2);
-
-// SO2 Matrix structure for WorldToScreen
 struct SO2_Matrix {
     float m11, m12, m13, m14;
     float m21, m22, m23, m24;
@@ -49,7 +45,6 @@ struct SO2_Matrix {
     float m41, m42, m43, m44;
 };
 
-Vector3 WorldToScreen(Vector3 object, mach_vm_address_t camera_ptr, CGFloat ScreenWidth, CGFloat ScreenHeight, task_t task);
 Vector3 WorldToScreen(Vector3 object, SO2_Matrix mat, CGFloat ScreenWidth, CGFloat ScreenHeight);
 
 template <typename T>
