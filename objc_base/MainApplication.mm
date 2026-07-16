@@ -145,14 +145,14 @@ static NSString * const kToggleHUDAfterLaunchNotificationActionToggleOff = @"tog
     [self.backgroundView addSubview:appIconImageView];
 
     UILabel *appNameLabel = [[UILabel alloc] init];
-    appNameLabel.text = @"XternalZ";
+    appNameLabel.text = @"ExtraHook";
     appNameLabel.font = [UIFont fontWithName:@"HelveticaNeue" size:labelFontSize];
     appNameLabel.textColor = [UIColor whiteColor];
     appNameLabel.font = [UIFont boldSystemFontOfSize:labelFontSize];
     [self.backgroundView addSubview:appNameLabel];
 
     UILabel *appVersionLabel = [[UILabel alloc] init];
-    appVersionLabel.text = @"1.8.7";
+    appVersionLabel.text = @"2.0.0";
     appVersionLabel.textColor = [UIColor lightGrayColor];
     appVersionLabel.font = [UIFont systemFontOfSize:versionFontSize];
     [self.backgroundView addSubview:appVersionLabel];
@@ -518,7 +518,7 @@ static NSString * const kToggleHUDAfterLaunchNotificationActionToggleOff = @"tog
         NSMutableAttributedString *githubIconTextFull = [[NSMutableAttributedString alloc] initWithAttributedString:githubIconText];
         [githubIconTextFull appendAttributedString:[[NSAttributedString alloc] initWithString:@" " attributes:defaultAttributes]];
         
-        NSString *githubText = NSLocalizedString(@"XternalZ", nil);
+        NSString *githubText = NSLocalizedString(@"ExtraHook", nil);
         NSMutableAttributedString *githubAttributedText = [[NSMutableAttributedString alloc] initWithString:githubText attributes:defaultAttributes];
         
         // replace all "@" with github icon

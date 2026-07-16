@@ -441,70 +441,130 @@ static bool gHUDMenuWasOpen = true;
     
     if (MenDeal == true)
     {
-        // Draggable window (no NoMove): on iPad the UIKit pan never sees real
-        // touches, but ImGui dragging rides the injected-mouse channel that also
-        // works the checkbox. Wider default size, applied once so a dragged
-        // position sticks. Touch capture follows the window rect (gMenuWindowRect).
         ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse |
                                  ImGuiWindowFlags_NoResize |
                                  ImGuiWindowFlags_NoSavedSettings;
-        // wide and short, height auto-fits the content
-        ImGui::SetNextWindowSize(ImVec2(480.0f, 0.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(460.0f, 0.0f), ImGuiCond_Always);
         ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
                                 ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-        ImGui::Begin("XternalZ", &MenDeal, flags);
+        ImGui::Begin("ExtraHook", &MenDeal, flags);
 
-        ImGui::TextColored(ImVec4(0.26f, 0.59f, 0.98f, 1.0f), "XternalZ");
+        // Header bar
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.48f, 0.76f, 1.00f, 1.0f));
+        ImGui::Text("EXTRA");
+        ImGui::PopStyleColor();
+        ImGui::SameLine(0, 0);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        ImGui::Text("HOOK");
+        ImGui::PopStyleColor();
         ImGui::SameLine();
-        ImGui::TextDisabled("1.8.7");
+        ImGui::TextDisabled("v2.0  |  SO2 0.39.2");
         ImGui::Separator();
+        ImGui::Spacing();
 
         ImGuiColorEditFlags cflags = ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoAlpha;
 
-        if (ImGui::BeginTabBar("##xtabs", ImGuiTabBarFlags_None)) {
+        if (ImGui::BeginTabBar("##ehtabs", ImGuiTabBarFlags_None)) {
 
-            // Tab 1: ESP toggles, two columns to keep it compact
-            if (ImGui::BeginTabItem("ESP")) {
+            // ── ESP TAB ──────────────────────────────────────────────────────
+            if (ImGui::BeginTabItem("  ESP  ")) {
                 ImGui::Spacing();
+
+                // Master ESP enable with accent color
+                ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0.10f, 0.90f, 0.40f, 1.0f));
+                static bool espMaster = false;
+                ImGui::Checkbox("ESP Enable", &espMaster);
+                ImGui::PopStyleColor();
+
+                ImGui::SameLine(ImGui::GetWindowWidth() - 120);
+                ImGui::TextDisabled(espMaster ? "[ ON ]" : "[ OFF ]");
+                ImGui::Separator();
+
+                ImGui::BeginDisabled(!espMaster);
+
                 ImGui::Columns(2, "##espcols", false);
-                ImGui::Checkbox("Box",        &showBoxes);
+
+                ImGui::Checkbox("Box ESP",    &showBoxes);
+                ImGui::ColorEdit3("##cbox", colBox, cflags);
+                ImGui::Spacing();
+                ImGui::Checkbox("Snap Lines", &showTracers);
+                ImGui::ColorEdit3("##cline", colLine, cflags);
+                ImGui::Spacing();
                 ImGui::Checkbox("Health Bar", &showHealthBar);
-                ImGui::Checkbox("Name",       &showName);
+                ImGui::ColorEdit3("##chp", colHp, cflags);
+
                 ImGui::NextColumn();
+
+                ImGui::Checkbox("Name",       &showName);
+                ImGui::ColorEdit3("##cname", colName, cflags);
+                ImGui::Spacing();
                 ImGui::Checkbox("Weapon",     &showWeapon);
-                ImGui::Checkbox("Lines",      &showTracers);
+                ImGui::ColorEdit3("##cwep", colWeapon, cflags);
+                ImGui::Spacing();
                 ImGui::Checkbox("Team Check", &teamCheck);
+                ImGui::TextDisabled("skip teammates");
+
                 ImGui::Columns(1);
+                ImGui::EndDisabled();
                 ImGui::Spacing();
                 ImGui::EndTabItem();
+
+                // Propagate ESP master switch
+                if (!espMaster) {
+                    showBoxes = showTracers = showHealthBar = showName = showWeapon = false;
+                }
             }
 
-            // Tab 2: colors
-            if (ImGui::BeginTabItem("Settings")) {
+            // ── MISC TAB ─────────────────────────────────────────────────────
+            if (ImGui::BeginTabItem(" Misc ")) {
                 ImGui::Spacing();
-                ImGui::TextDisabled("COLORS");
-                ImGui::Columns(2, "##colcols", false);
-                ImGui::ColorEdit3("Line##c",   colLine,   cflags);
-                ImGui::ColorEdit3("Box##c",    colBox,    cflags);
-                ImGui::ColorEdit3("Health##c", colHp,     cflags);
-                ImGui::NextColumn();
-                ImGui::ColorEdit3("Name##c",   colName,   cflags);
-                ImGui::ColorEdit3("Weapon##c", colWeapon, cflags);
-                ImGui::Columns(1);
+
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.70f, 0.75f, 1.0f));
+                ImGui::Text("CHAMS");
+                ImGui::PopStyleColor();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::Checkbox("Enable Chams", &chamsEnabled);
+                if (chamsEnabled) {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(experimental)");
+                    ImGui::SliderInt("Material ID", &chamsMaterialId, 0, 200);
+                }
+
+                ImGui::Spacing();
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.70f, 0.75f, 1.0f));
+                ImGui::Text("STEALTH");
+                ImGui::PopStyleColor();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::Checkbox("Hide from screen record", &stealthEnabled);
+                ImGui::TextDisabled("hides menu+ESP from screenshots");
+
                 ImGui::Spacing();
                 ImGui::Separator();
-                ImGui::TextDisabled("STEALTH");
-                ImGui::Checkbox("Hide from screenshots/record", &stealthEnabled);
-                ImGui::TextDisabled("menu + ESP only (chams stays visible)");
                 ImGui::Spacing();
-                ImGui::EndTabItem();
-            }
 
-            // Tab 3: chams
-            if (ImGui::BeginTabItem("Chams")) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.70f, 0.75f, 1.0f));
+                ImGui::Text("STATUS");
+                ImGui::PopStyleColor();
+                ImGui::Separator();
                 ImGui::Spacing();
-                ImGui::Checkbox("Enable chams (may bugs)", &chamsEnabled);
-                ImGui::TextDisabled("exp");
+
+                // Live status indicator
+                BOOL espOn = (showBoxes || showHealthBar || showName || showWeapon || showTracers || chamsEnabled);
+                if (espOn) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.10f, 0.90f, 0.40f, 1.0f));
+                    ImGui::Text("* ESP ACTIVE");
+                    ImGui::PopStyleColor();
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.60f, 0.60f, 0.60f, 1.0f));
+                    ImGui::Text("  ESP INACTIVE");
+                    ImGui::PopStyleColor();
+                }
+                ImGui::TextDisabled("Build: ExtraHook 2.0 / SO2 0.39.2");
+
                 ImGui::Spacing();
                 ImGui::EndTabItem();
             }
@@ -512,6 +572,7 @@ static bool gHUDMenuWasOpen = true;
             ImGui::EndTabBar();
         }
 
+        // Apply colors to shared state
         [ESPImGuiView setLineColor:[UIColor colorWithRed:colLine[0] green:colLine[1] blue:colLine[2] alpha:1.0]];
         [ESPImGuiView setBoxColor:[UIColor colorWithRed:colBox[0] green:colBox[1] blue:colBox[2] alpha:1.0]];
         [ESPImGuiView setHpColor:[UIColor colorWithRed:colHp[0] green:colHp[1] blue:colHp[2] alpha:1.0]];
@@ -520,17 +581,17 @@ static bool gHUDMenuWasOpen = true;
         [ESPImGuiView setChamsEnabled:chamsEnabled];
         [ESPImGuiView setChamsMaterialId:chamsMaterialId];
         [ESPImGuiView setStealthEnabled:stealthEnabled];
-        // Apply stealth immediately on toggle (HUD layout timer may be idle).
+
         static bool prevStealth = false;
         if (stealthEnabled != prevStealth) {
             prevStealth = stealthEnabled;
             HUDSetStealthEnabled(stealthEnabled);
         }
 
-        // Drive the ESP draw loop (HUDMainApplication reads these flags).
+        // Drive ESP draw loop
         BOOL espOn = (showBoxes || showHealthBar || showName || showWeapon || showTracers || chamsEnabled);
         [ESPImGuiView setESPEnabled:espOn];
-        [ESPImGuiView setTracersEnabled:espOn];   // master gate for the HUD ESP draw loop
+        [ESPImGuiView setTracersEnabled:espOn];
         [ESPImGuiView setShowLines:showTracers];
         [ESPImGuiView setShowBox:showBoxes];
         [ESPImGuiView setShowHealthBar:showHealthBar];
@@ -538,11 +599,9 @@ static bool gHUDMenuWasOpen = true;
         [ESPImGuiView setShowWeapon:showWeapon];
         [ESPImGuiView setTeamCheck:teamCheck];
 
-        // The HUD ESP overlay is driven by the same "any feature on" flag.
         HUDSetESPEnabled(espOn);
         HUDSetTracersEnabled(espOn);
 
-        // Record the real window rect so the surface captures touches only here.
         ImVec2 wpos = ImGui::GetWindowPos();
         ImVec2 wsize = ImGui::GetWindowSize();
         gMenuWindowRect = CGRectMake(wpos.x, wpos.y, wsize.x, wsize.y);
@@ -550,9 +609,10 @@ static bool gHUDMenuWasOpen = true;
         ImGui::End();
     } else {
         gMenuWindowRect = CGRectZero;
-        // Draw small indicator when menu is closed
-        ImDrawList *fgDrawList = ImGui::GetForegroundDrawList();
-        fgDrawList->AddCircleFilled(ImVec2(io.DisplaySize.x - 30, 30), 10, IM_COL32(0, 255, 0, 150));
+        // Small ExtraHook indicator dot when menu is closed
+        ImDrawList *fg = ImGui::GetForegroundDrawList();
+        fg->AddCircleFilled(ImVec2(io.DisplaySize.x - 28, 28), 9, IM_COL32(30, 180, 90, 200));
+        fg->AddText(ImVec2(io.DisplaySize.x - 48, 38), IM_COL32(255, 255, 255, 180), "EH");
     }
 
     ImGui::Render();

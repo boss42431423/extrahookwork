@@ -1,9 +1,9 @@
-Package: com.xternalz.app
-Name: XternalZ
-Version: 1.8.7
+Package: com.extrahook.app
+Name: ExtraHook
+Version: 2.0.0
 Section: Tweaks
 Depends: firmware (>= 13.0), mobilesubstrate (>= 0.9.7000), com.rpetrich.rocketbootstrap (>= 1.0.9)
 Architecture: iphoneos-arm
-Author: XternalZ
-Maintainer: XternalZ
+Author: extrahook
+Maintainer: extrahook
 Description: External overlay ESP for Standoff 2.

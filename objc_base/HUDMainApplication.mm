@@ -496,7 +496,7 @@ static void LaunchServicesApplicationStateChanged
     
     for (LSApplicationProxy *app in [[objc_getClass("LSApplicationWorkspace") defaultWorkspace] allApplications])
     {
-        if ([app.applicationIdentifier isEqualToString:@"ch.xxtou.hudapp"])
+        if ([app.applicationIdentifier isEqualToString:@"com.extrahook.app"])
         {
             isAppInstalled = YES;
             break;
@@ -1270,15 +1270,14 @@ static void HUDEnableMultiTouchOnViewTree(UIView *view, NSUInteger depth)
             _fakeESPOutlineLayer.path = nil;
             [_tracerTimer invalidate];
             _tracerTimer = nil;
-        } else {
-            // Start timer to update tracers 60 times per second
-            [_tracerTimer invalidate];
-            _tracerTimer = [NSTimer scheduledTimerWithTimeInterval:1.0/60.0 
-                                                            target:self 
-                                                          selector:@selector(updateTracers) 
-                                                          userInfo:nil 
+        } else if (!_tracerTimer) {
+            // Only create timer if not already running — ImGui calls this every frame,
+            // so recreating each time was preventing the timer from ever firing.
+            _tracerTimer = [NSTimer scheduledTimerWithTimeInterval:1.0/30.0
+                                                            target:self
+                                                          selector:@selector(updateTracers)
+                                                          userInfo:nil
                                                            repeats:YES];
-            // Trigger immediate update
             [self updateTracers];
         }
     }

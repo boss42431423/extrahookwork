@@ -1,4 +1,4 @@
-name: Build XternalZ
+name: Build ExtraHook
 
 on:
   push:
@@ -38,6 +38,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: XternalZ-tipa
-          path: packages/XternalZ.tipa
+          name: extrahook-tipa
+          path: packages/extrahook.tipa
           if-no-files-found: error
