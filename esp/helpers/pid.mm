@@ -83,8 +83,8 @@ mach_port_t get_task_for_PID(pid_t pid)
 pid_t get_pid_by_name(const char *keyword)
 {
     int count = proc_listallpids(NULL, 0);
-    pid_t pids[count];
-    proc_listallpids(pids, sizeof(pids));
+    std::vector<pid_t> pids(count);
+    proc_listallpids(pids.data(), (int)(pids.size() * sizeof(pid_t)));
     
     for (int i = 0; i < count; i++)
     {
