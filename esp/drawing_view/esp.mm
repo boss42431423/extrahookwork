@@ -443,6 +443,8 @@ struct ESPBoxData {
     if (cached_unity_base && cached_so2_task && get_scan_phase() != 2) {
         const uint64_t PM_TYPEINFO_OFF = 167221856ULL;
         mach_vm_address_t directTI = Read<mach_vm_address_t>(cached_unity_base + PM_TYPEINFO_OFF, cached_so2_task);
+        // Стрипаем PAC-биты из TypeInfo-указателя (iOS ARM64e)
+        directTI = directTI & 0x0000FFFFFFFFFFFFULL;
         if (directTI > 0x1000000) {
             set_scan_phase(2);
             set_found_class(directTI);
@@ -504,7 +506,8 @@ struct ESPBoxData {
         // Стрипаем PAC-биты (iOS ARM64e) со всех читаемых указателей
         #define STRIP_PAC(p) ((p) & 0x0000FFFFFFFFFFFFULL)
 
-        typeInfo = (mach_vm_address_t)get_found_class();
+        // Стрипаем PAC и с самого typeInfo (он тоже может быть PAC-signed)
+        typeInfo = STRIP_PAC((mach_vm_address_t)get_found_class());
         if (!typeInfo || typeInfo < 0x1000000) {
             self.watermarkLabel.text = @"[SO2] ERR: no typeInfo";
             [self.watermarkLabel sizeToFit];
@@ -558,8 +561,9 @@ struct ESPBoxData {
             for (int pmOff = 0; pmOff <= 0x80; pmOff += 8) {
                 mach_vm_address_t pmCandidate = STRIP_PAC(Read<mach_vm_address_t>(staticFields + pmOff, so2_task));
                 if (pmCandidate < 0x1000000) continue;
+                // klass в объекте тоже может содержать PAC — стрипаем оба
                 mach_vm_address_t klassCheck = STRIP_PAC(Read<mach_vm_address_t>(pmCandidate, so2_task));
-                if (klassCheck == typeInfo) { playerManager = pmCandidate; break; }
+                if (klassCheck == typeInfo || klassCheck == STRIP_PAC(typeInfo)) { playerManager = pmCandidate; break; }
             }
         }
         if (!playerManager) {
