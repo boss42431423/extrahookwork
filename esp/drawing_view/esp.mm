@@ -613,6 +613,28 @@ struct ESPBoxData {
         dict28      = STRIP_PAC(Read<mach_vm_address_t>(playerManager + 0x28, so2_task));
         playersDict = dict28;
 
+        // Валидация: если dict IS_HEAP но entries ptr @ dict+0x18 невалиден → false-positive SF/PM
+        // Читаем из unmapped-адреса (ASCII-мусор) → mach_vm_read возвращает 0 → NOT IS_HEAP
+        {
+            mach_vm_address_t ent_check = IS_HEAP(dict28)
+                ? STRIP_PAC(Read<mach_vm_address_t>(dict28 + 0x18, so2_task)) : 0;
+            if (IS_HEAP(dict28) && !IS_HEAP(ent_check)) {
+                // SF/PM были ложными — показываем typeInfo structure для поиска реального parent
+                mach_vm_address_t n   = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x10, so2_task));
+                mach_vm_address_t d40 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x40, so2_task));
+                mach_vm_address_t d48 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x48, so2_task));
+                mach_vm_address_t d50 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x50, so2_task));
+                mach_vm_address_t d58 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x58, so2_task));
+                mach_vm_address_t d60 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x60, so2_task));
+                mach_vm_address_t d68 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x68, so2_task));
+                self.watermarkLabel.text = [NSString stringWithFormat:
+                    @"[SO2] n=%llx\n40=%llx 48=%llx\n50=%llx 58=%llx\n60=%llx 68=%llx",
+                    n, d40, d48, d50, d58, d60, d68];
+                [self.watermarkLabel sizeToFit];
+                goto CLEAR_BOXES;
+            }
+        }
+
         // dict._count @ +0x20, dict._freeCount @ +0x2C
         int _dbg_cnt = 0, _dbg_free = 0;
         {
@@ -622,7 +644,7 @@ struct ESPBoxData {
             if (playersCount < 0 || playersCount > 32) playersCount = 0;
         }
 
-        // Диагностика: pm=, d= (dict), cnt=, fc= помогает понять где PM объект неверный
+        // pm=, d=, cnt=, fc= диагностика
         self.watermarkLabel.text = [NSString stringWithFormat:
             @"[SO2] pm=%llx d=%llx cnt=%d fc=%d",
             playerManager, dict28, _dbg_cnt, _dbg_free];
