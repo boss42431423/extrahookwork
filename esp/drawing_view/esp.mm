@@ -585,31 +585,18 @@ struct ESPBoxData {
             goto CLEAR_BOXES;
         }
 
-        // Проход 1: dict (PM+0x28) → валидный указатель
-        playerManager = 0;
-        for (int pmOff = 0; pmOff <= 0x80; pmOff += 8) {
-            mach_vm_address_t pmCandidate = STRIP_PAC(Read<mach_vm_address_t>(staticFields + pmOff, so2_task));
-            if (pmCandidate < 0x1000000) continue;
-            mach_vm_address_t dictCheck = STRIP_PAC(Read<mach_vm_address_t>(pmCandidate + 0x28, so2_task));
-            if (dictCheck > 0x1000000) { playerManager = pmCandidate; break; }
-        }
-        // Проход 2: klass == typeInfo (dict может быть null при старте)
-        if (!playerManager) {
-            for (int pmOff = 0; pmOff <= 0x80; pmOff += 8) {
-                mach_vm_address_t pmCandidate = STRIP_PAC(Read<mach_vm_address_t>(staticFields + pmOff, so2_task));
-                if (pmCandidate < 0x1000000) continue;
-                // klass в объекте тоже может содержать PAC — стрипаем оба
-                mach_vm_address_t klassCheck = STRIP_PAC(Read<mach_vm_address_t>(pmCandidate, so2_task));
-                if (klassCheck == typeInfo || klassCheck == STRIP_PAC(typeInfo)) { playerManager = pmCandidate; break; }
-            }
-        }
-        if (!playerManager) {
-            mach_vm_address_t v0 = STRIP_PAC(Read<mach_vm_address_t>(staticFields + 0x00, so2_task));
+        // PM* = sf[0x0]: MonoBehaviourRef<T>._value (из dump.cs: AHBDECFCGGCDHAG // 0x0)
+        // Никакого scan-loop — только точный offset 0x0
+        playerManager = STRIP_PAC(Read<mach_vm_address_t>(staticFields + 0x0, so2_task));
+        if (!IS_HEAP(playerManager)) {
+            // PM ещё не создан (старт матча) или SF неверный
+            mach_vm_address_t v0 = playerManager; // уже прочитали выше
             mach_vm_address_t v8 = STRIP_PAC(Read<mach_vm_address_t>(staticFields + 0x08, so2_task));
             mach_vm_address_t v10= STRIP_PAC(Read<mach_vm_address_t>(staticFields + 0x10, so2_task));
             self.watermarkLabel.text = [NSString stringWithFormat:
-                @"[SO2] noPM par=%llx sf=%llx v0=%llx v8=%llx v10=%llx",
-                parentTypeInfo, staticFields, v0, v8, v10];
+                @"[SO2] noPM par=%x sf=%x v0=%x v8=%x v10=%x",
+                (uint32_t)parentTypeInfo, (uint32_t)staticFields,
+                (uint32_t)v0, (uint32_t)v8, (uint32_t)v10];
             [self.watermarkLabel sizeToFit];
             goto CLEAR_BOXES;
         }
