@@ -550,6 +550,8 @@ struct ESPBoxData {
                 for (int pOff : parentOffsets) {
                     mach_vm_address_t par = STRIP_PAC(Read<mach_vm_address_t>(walk + pOff, so2_task));
                     if (!IS_HEAP(par)) continue;
+                    // Пропускаем self-ссылки (element_class/castClass = typeInfo)
+                    if (par == walk) continue;
                     last_par = par;
                     // Проверяем SF у этого кандидата
                     for (int sOff : sfOffsets) {
