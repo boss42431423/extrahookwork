@@ -442,10 +442,9 @@ struct ESPBoxData {
         set_found_class(0);
     }
 
-    // Прямое чтение TypeInfo по известному offset из дампа (быстрый путь)
-    // Имя НЕ валидируем — metadata-секция часто недоступна через mach_vm_read.
-    // Доверяем script.json: если там PlayerManager_TypeInfo = 168615648, то так и есть.
-    if (cached_unity_base && cached_so2_task && get_scan_phase() != 2) {
+    // Прямое чтение TypeInfo — всегда обновляем каждый кадр, чтобы поймать изменения
+    // между матчами (TypeInfo может стать null при перезагрузке сцены).
+    if (cached_unity_base && cached_so2_task) {
         const uint64_t PM_TYPEINFO_OFF = 168615648ULL;
         mach_vm_address_t rawTI = Read<mach_vm_address_t>(cached_unity_base + PM_TYPEINFO_OFF, cached_so2_task);
         mach_vm_address_t directTI = rawTI & 0x0000FFFFFFFFFFFFULL; // strip PAC
@@ -453,6 +452,10 @@ struct ESPBoxData {
         if (directTI > 0x1000000) {
             set_scan_phase(2);
             set_found_class(directTI);
+        } else if (get_scan_phase() == 2) {
+            // TypeInfo стала null → сбрасываем phase, ждём следующего кадра
+            set_scan_phase(0);
+            set_found_class(0);
         }
     }
 
@@ -573,9 +576,10 @@ struct ESPBoxData {
             mach_vm_address_t d60 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x60, so2_task));
             mach_vm_address_t d68 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x68, so2_task));
             self.watermarkLabel.text = [NSString stringWithFormat:
-                @"[SO2] n=%x 40=%x 48=%x 50=%x 58=%x 60=%x 68=%x",
-                (uint32_t)n, (uint32_t)d40, (uint32_t)d48,
-                (uint32_t)d50, (uint32_t)d58, (uint32_t)d60, (uint32_t)d68];
+                @"[SO2] ti=%x n=%x 40=%x 48=%x 50=%x 58=%x 60=%x 68=%x",
+                (uint32_t)typeInfo, (uint32_t)n,
+                (uint32_t)d40, (uint32_t)d48, (uint32_t)d50,
+                (uint32_t)d58, (uint32_t)d60, (uint32_t)d68];
             [self.watermarkLabel sizeToFit];
             goto CLEAR_BOXES;
         }
@@ -627,7 +631,8 @@ struct ESPBoxData {
                 mach_vm_address_t d60 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x60, so2_task));
                 mach_vm_address_t d68 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x68, so2_task));
                 self.watermarkLabel.text = [NSString stringWithFormat:
-                    @"[SO2] badSF 40=%x 48=%x 50=%x 58=%x 60=%x 68=%x",
+                    @"[SO2] badSF ti=%x 40=%x 48=%x 50=%x 58=%x 60=%x 68=%x",
+                    (uint32_t)typeInfo,
                     (uint32_t)d40, (uint32_t)d48, (uint32_t)d50,
                     (uint32_t)d58, (uint32_t)d60, (uint32_t)d68];
                 [self.watermarkLabel sizeToFit];
