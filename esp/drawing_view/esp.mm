@@ -564,8 +564,7 @@ struct ESPBoxData {
             }
         }
         if (!staticFields) {
-            // n = name ptr @+0x10 (верификация что ti = реальный Il2CppClass)
-            // 40-68 = все кандидаты на parent
+            // Одна строка с усечёнными адресами (нижние 32 бит); n=nameptr@+0x10 для верификации ti
             mach_vm_address_t n   = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x10, so2_task));
             mach_vm_address_t d40 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x40, so2_task));
             mach_vm_address_t d48 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x48, so2_task));
@@ -574,8 +573,9 @@ struct ESPBoxData {
             mach_vm_address_t d60 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x60, so2_task));
             mach_vm_address_t d68 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x68, so2_task));
             self.watermarkLabel.text = [NSString stringWithFormat:
-                @"[SO2] n=%llx\n40=%llx 48=%llx\n50=%llx 58=%llx\n60=%llx 68=%llx",
-                n, d40, d48, d50, d58, d60, d68];
+                @"[SO2] n=%x 40=%x 48=%x 50=%x 58=%x 60=%x 68=%x",
+                (uint32_t)n, (uint32_t)d40, (uint32_t)d48,
+                (uint32_t)d50, (uint32_t)d58, (uint32_t)d60, (uint32_t)d68];
             [self.watermarkLabel sizeToFit];
             goto CLEAR_BOXES;
         }
@@ -619,8 +619,7 @@ struct ESPBoxData {
             mach_vm_address_t ent_check = IS_HEAP(dict28)
                 ? STRIP_PAC(Read<mach_vm_address_t>(dict28 + 0x18, so2_task)) : 0;
             if (IS_HEAP(dict28) && !IS_HEAP(ent_check)) {
-                // SF/PM были ложными — показываем typeInfo structure для поиска реального parent
-                mach_vm_address_t n   = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x10, so2_task));
+                // SF/PM были ложными — показываем typeInfo parent-кандидаты (нижние 32 бит)
                 mach_vm_address_t d40 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x40, so2_task));
                 mach_vm_address_t d48 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x48, so2_task));
                 mach_vm_address_t d50 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x50, so2_task));
@@ -628,8 +627,9 @@ struct ESPBoxData {
                 mach_vm_address_t d60 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x60, so2_task));
                 mach_vm_address_t d68 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x68, so2_task));
                 self.watermarkLabel.text = [NSString stringWithFormat:
-                    @"[SO2] n=%llx\n40=%llx 48=%llx\n50=%llx 58=%llx\n60=%llx 68=%llx",
-                    n, d40, d48, d50, d58, d60, d68];
+                    @"[SO2] badSF 40=%x 48=%x 50=%x 58=%x 60=%x 68=%x",
+                    (uint32_t)d40, (uint32_t)d48, (uint32_t)d50,
+                    (uint32_t)d58, (uint32_t)d60, (uint32_t)d68];
                 [self.watermarkLabel sizeToFit];
                 goto CLEAR_BOXES;
             }
