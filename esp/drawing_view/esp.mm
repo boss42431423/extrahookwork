@@ -578,10 +578,9 @@ struct ESPBoxData {
             mach_vm_address_t d60 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x60, so2_task));
             mach_vm_address_t d68 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x68, so2_task));
             self.watermarkLabel.text = [NSString stringWithFormat:
-                @"[SO2] ti=%x n=%x 40=%x 48=%x 50=%x 58=%x 60=%x 68=%x",
-                (uint32_t)typeInfo, (uint32_t)n,
-                (uint32_t)d40, (uint32_t)d48, (uint32_t)d50,
-                (uint32_t)d58, (uint32_t)d60, (uint32_t)d68];
+                @"[SO2] noSF ti=%x 50=%x 58=%x 60=%x 68=%x",
+                (uint32_t)typeInfo,
+                (uint32_t)d50, (uint32_t)d58, (uint32_t)d60, (uint32_t)d68];
             [self.watermarkLabel sizeToFit];
             goto CLEAR_BOXES;
         }
@@ -625,18 +624,11 @@ struct ESPBoxData {
             mach_vm_address_t ent_check = IS_HEAP(dict28)
                 ? STRIP_PAC(Read<mach_vm_address_t>(dict28 + 0x18, so2_task)) : 0;
             if (IS_HEAP(dict28) && !IS_HEAP(ent_check)) {
-                // SF/PM были ложными — показываем typeInfo parent-кандидаты (нижние 32 бит)
-                mach_vm_address_t d40 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x40, so2_task));
-                mach_vm_address_t d48 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x48, so2_task));
-                mach_vm_address_t d50 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x50, so2_task));
-                mach_vm_address_t d58 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x58, so2_task));
-                mach_vm_address_t d60 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x60, so2_task));
-                mach_vm_address_t d68 = STRIP_PAC(Read<mach_vm_address_t>(typeInfo + 0x68, so2_task));
+                // Показываем цепочку: par → sf → pm → dict чтобы понять где false-positive
                 self.watermarkLabel.text = [NSString stringWithFormat:
-                    @"[SO2] badSF ti=%x 40=%x 48=%x 50=%x 58=%x 60=%x 68=%x",
-                    (uint32_t)typeInfo,
-                    (uint32_t)d40, (uint32_t)d48, (uint32_t)d50,
-                    (uint32_t)d58, (uint32_t)d60, (uint32_t)d68];
+                    @"[SO2] badSF par=%x sf=%x pm=%x d=%x",
+                    (uint32_t)parentTypeInfo, (uint32_t)staticFields,
+                    (uint32_t)playerManager, (uint32_t)dict28];
                 [self.watermarkLabel sizeToFit];
                 goto CLEAR_BOXES;
             }
